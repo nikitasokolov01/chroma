@@ -3,6 +3,7 @@
 // kept under CHROMA_UI_TEST_ROOT (default: <working directory>/.chroma-test/ui).
 
 #include <QAction>
+#include <QBuffer>
 #include <QCheckBox>
 #include <QColorDialog>
 #include <QComboBox>
@@ -28,6 +29,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QScopeGuard>
+#include <QScreen>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
@@ -35,6 +37,7 @@
 #include <QStandardPaths>
 #include <QStyle>
 #include <QStyleOptionToolButton>
+#include <QTabBar>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -51,6 +54,8 @@
 #include "icons/IconList.h"
 #include "meta/Index.h"
 #include "meta/VersionList.h"
+#include "minecraft/auth/AccountList.h"
+#include "modplatform/ResourceAPI.h"
 #include "net/HttpMetaCache.h"
 #include "tasks/Task.h"
 #include "ui/InstanceWindow.h"
@@ -59,6 +64,8 @@
 #include "ui/dialogs/NewInstanceDialog.h"
 #include "ui/dialogs/PrismProfileDialog.h"
 #include "ui/dialogs/ProgressDialog.h"
+#include "ui/dialogs/skins/SkinCanvas.h"
+#include "ui/dialogs/skins/SkinEditorDialog.h"
 #include "ui/instanceview/InstanceProxyModel.h"
 #include "ui/instanceview/InstanceView.h"
 #include "ui/pagedialog/PageDialog.h"
@@ -66,16 +73,19 @@
 #include "ui/pages/global/AccountListPage.h"
 #include "ui/pages/modplatform/modrinth/ModrinthModel.h"
 #include "ui/pages/modplatform/modrinth/ModrinthPage.h"
-#include "ui/themes/ThemeManager.h"
 #include "ui/themes/AccentColor.h"
 #include "ui/themes/ClayStyle.h"
+#include "ui/themes/ThemeManager.h"
 #include "ui/widgets/AppearanceWidget.h"
 #include "ui/widgets/ClayWidgets.h"
+#include "ui/widgets/FloatingUi.h"
 #include "ui/widgets/InlineWorkspace.h"
 #include "ui/widgets/LauncherHome.h"
 #include "ui/widgets/ModFilterWidget.h"
 #include "ui/widgets/ModpackBrowser.h"
 #include "ui/widgets/ModpackCardDelegate.h"
+#include "ui/widgets/ProjectDescriptionPage.h"
+#include "ui/widgets/VersionListView.h"
 
 namespace {
 
@@ -420,9 +430,15 @@ class LauncherHomeTest : public QObject {
             const QRect visual = m_view->visualRect(index);
             QVERIFY2(m_view->viewport()->rect().contains(visual.center()),
                      qPrintable(QString("row %1, window %2x%3, viewport %4x%5, card %6,%7 %8x%9")
-                                    .arg(row).arg(m_window->width()).arg(m_window->height())
-                                    .arg(m_view->viewport()->width()).arg(m_view->viewport()->height())
-                                    .arg(visual.x()).arg(visual.y()).arg(visual.width()).arg(visual.height())));
+                                    .arg(row)
+                                    .arg(m_window->width())
+                                    .arg(m_window->height())
+                                    .arg(m_view->viewport()->width())
+                                    .arg(m_view->viewport()->height())
+                                    .arg(visual.x())
+                                    .arg(visual.y())
+                                    .arg(visual.width())
+                                    .arg(visual.height())));
             QCOMPARE(m_view->indexAt(visual.center()), index);
             auto* scroll = m_home->findChild<QScrollArea*>("homeContentScroll");
             QVERIFY(scroll);
@@ -575,6 +591,25 @@ class LauncherHomeTest : public QObject {
         QTest::mouseClick(home, Qt::LeftButton);
         QVERIFY(home->isChecked());
         QVERIFY(recentTitle->isVisible());
+    }
+
+    void recentCardsKeepFocusOnUnrelatedModelUpdates()
+    {
+        m_home->showHomePage(false);
+        m_window->resize(1280, 820);
+        QCoreApplication::processEvents();
+        const auto cards = m_home->findChildren<QFrame*>("recentInstance");
+        QVERIFY(!cards.isEmpty());
+        QPointer<QFrame> first = cards.first();
+        auto* play = first->findChild<QToolButton*>();
+        QVERIFY(play);
+        play->setFocus();
+        const auto source = APPLICATION->instances()->getInstanceIndexById("cobblemon");
+        APPLICATION->instances()->dataChanged(source, source);
+        QTest::qWait(30);
+        QVERIFY(first);
+        QCOMPARE(m_home->findChildren<QFrame*>("recentInstance").first(), first.data());
+        QCOMPARE(QApplication::focusWidget(), play);
     }
 
     void customAccentPersistsAndReapplies()
@@ -798,9 +833,12 @@ class LauncherHomeTest : public QObject {
             const QStyleOptionToolButton option = button.options();
             const QRect menuRect = button.style()->subControlRect(QStyle::CC_ToolButton, &option, QStyle::SC_ToolButtonMenu, &button);
             QVERIFY2(menuRect.contains(arrowPosition), qPrintable(QString("Menu rectangle %1,%2 %3x%4 misses target %5,%6")
-                                                                      .arg(menuRect.x()).arg(menuRect.y())
-                                                                      .arg(menuRect.width()).arg(menuRect.height())
-                                                                      .arg(arrowPosition.x()).arg(arrowPosition.y())));
+                                                                      .arg(menuRect.x())
+                                                                      .arg(menuRect.y())
+                                                                      .arg(menuRect.width())
+                                                                      .arg(menuRect.height())
+                                                                      .arg(arrowPosition.x())
+                                                                      .arg(arrowPosition.y())));
             QTimer::singleShot(30, &menu, [&] {
                 opened = menu.isVisible();
                 menu.hide();
@@ -815,6 +853,68 @@ class LauncherHomeTest : public QObject {
         button.setFocus();
         QTest::keyClick(&button, Qt::Key_Space);
         QCOMPARE(triggered.count(), 2);
+    }
+
+    void floatingMenusKeepKeyboardAndScreenPlacement()
+    {
+        m_window->activateWindow();
+        ClayToolButton trigger(m_home);
+        trigger.setText("Actions");
+        trigger.setGeometry(100, 100, 140, 54);
+        trigger.show();
+        QMenu menu(m_home);
+        auto* disabled = menu.addAction("Unavailable");
+        disabled->setEnabled(false);
+        auto* action = menu.addAction("Pin instance");
+        action->setCheckable(true);
+        menu.addSeparator();
+        auto* submenu = menu.addMenu("More");
+        submenu->addAction("Details");
+        QSignalSpy activated(action, &QAction::triggered);
+        const auto screen = trigger.screen()->availableGeometry();
+        menu.popup(screen.bottomRight() - QPoint(2, 2));
+        QTRY_VERIFY(menu.isVisible());
+        QTest::qWait(20);
+        // Native Windows QMenu placement may use the taskbar area. Qt uses the
+        // full screen for unanchored popups, while our anchored menus use the work area.
+        QVERIFY(menu.screen()->geometry().contains(menu.geometry()));
+        QTest::keyClick(&menu, Qt::Key_Down);
+        QCOMPARE(menu.activeAction(), action);
+        QTest::keyClick(&menu, Qt::Key_Return);
+        QTRY_VERIFY(!menu.isVisible());
+        QCOMPARE(activated.count(), 1);
+        QVERIFY(action->isChecked());
+        FloatingUi::anchor(&menu, &trigger);
+        menu.popup(trigger.mapToGlobal(QPoint(0, trigger.height())));
+        QTRY_VERIFY(menu.isVisible());
+        QVERIFY(menu.y() >= trigger.mapToGlobal(QPoint(0, trigger.height())).y() + Clay::Space::Small);
+        QVERIFY(menu.screen()->availableGeometry().contains(menu.geometry()));
+        QTest::keyClick(&menu, Qt::Key_Escape);
+        QTRY_VERIFY(!menu.isVisible());
+        QCOMPARE(activated.count(), 1);
+        QVERIFY(!menu.property("chromaPopupAnchor").isValid());
+    }
+
+    void nativeWindowControlsSurviveThemeChanges()
+    {
+        const auto flags = m_window->windowFlags();
+        QVERIFY(!flags.testFlag(Qt::FramelessWindowHint));
+        QVERIFY(flags.testFlag(Qt::WindowMinimizeButtonHint));
+        QVERIFY(flags.testFlag(Qt::WindowMaximizeButtonHint));
+        const auto original = APPLICATION->settings()->get("ApplicationTheme");
+        for (const auto& theme : { "chroma", "chroma-dark", "bright" }) {
+            APPLICATION->settings()->set("ApplicationTheme", theme);
+            APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+            QCoreApplication::processEvents();
+            QCOMPARE(m_window->windowFlags(), flags);
+        }
+        APPLICATION->settings()->set("ApplicationTheme", original);
+        APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+        m_window->showMaximized();
+        QTRY_VERIFY(m_window->isMaximized());
+        m_window->showNormal();
+        m_window->resize(1280, 820);
+        QTRY_COMPARE(m_window->size(), QSize(1280, 820));
     }
 
     void responsiveGeometryAndScreenshots()
@@ -968,6 +1068,281 @@ class LauncherHomeTest : public QObject {
         const auto lastCenter = m_view->viewport()->mapTo(scroll->viewport(), m_view->visualRect(m_view->currentIndex()).center());
         QVERIFY(scroll->viewport()->rect().contains(lastCenter));
         scroll->verticalScrollBar()->setValue(0);
+    }
+
+    void navigationRestoresScrollAndReducedMotion()
+    {
+        m_home->showHomePage(false);
+        m_window->resize(680, 640);
+        QCoreApplication::processEvents();
+        auto* scroll = m_home->findChild<QScrollArea*>("homeContentScroll");
+        QVERIFY(scroll);
+        QTRY_VERIFY(scroll->verticalScrollBar()->maximum() > 120);
+        scroll->verticalScrollBar()->setValue(120);
+        QWidget page;
+        m_home->showPage(&page, "Temporary page");
+        m_home->showHomePage(false);
+        QTRY_COMPARE(scroll->verticalScrollBar()->value(), 120);
+        m_home->showHomePage(true);
+        QCoreApplication::processEvents();
+        scroll->verticalScrollBar()->setValue(60);
+        m_home->showPage(&page, "Temporary page");
+        m_home->showHomePage(true);
+        QTRY_COMPARE(scroll->verticalScrollBar()->value(), 60);
+        m_home->showHomePage(false);
+        QTRY_COMPARE(scroll->verticalScrollBar()->value(), 120);
+
+        const auto reduced = qgetenv("CHROMA_REDUCED_MOTION");
+        const bool hadReduced = qEnvironmentVariableIsSet("CHROMA_REDUCED_MOTION");
+        auto restoreMotion = qScopeGuard([&] {
+            if (hadReduced)
+                qputenv("CHROMA_REDUCED_MOTION", reduced);
+            else
+                qunsetenv("CHROMA_REDUCED_MOTION");
+        });
+        qputenv("CHROMA_REDUCED_MOTION", "1");
+        scroll->verticalScrollBar()->setValue(0);
+        QWheelEvent wheel(QPointF(20, 20), QPointF(scroll->viewport()->mapToGlobal(QPoint(20, 20))), QPoint(), QPoint(0, -120),
+                          Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QApplication::sendEvent(scroll->viewport(), &wheel);
+        const int position = scroll->verticalScrollBar()->value();
+        QVERIFY(position > 0);
+        QTest::qWait(200);
+        QCOMPARE(scroll->verticalScrollBar()->value(), position);
+        qunsetenv("CHROMA_REDUCED_MOTION");
+        if (Clay::motionAllowed()) {
+            scroll->verticalScrollBar()->setValue(0);
+            QApplication::sendEvent(scroll->viewport(), &wheel);
+            QTest::qWait(200);
+            const int firstEnd = scroll->verticalScrollBar()->value();
+            QVERIFY(firstEnd > 0);
+            QSignalSpy positions(scroll->verticalScrollBar(), &QScrollBar::valueChanged);
+            QApplication::sendEvent(scroll->viewport(), &wheel);
+            QTest::qWait(200);
+            int previous = firstEnd;
+            for (const auto& change : positions) {
+                QVERIFY(change.first().toInt() >= previous);
+                previous = change.first().toInt();
+            }
+            QVERIFY(previous > firstEnd);
+            QApplication::sendEvent(scroll->viewport(), &wheel);
+            QTest::qWait(30);
+            scroll->verticalScrollBar()->setValue(17);
+            QTest::qWait(200);
+            QCOMPARE(scroll->verticalScrollBar()->value(), 17);
+        }
+        scroll->verticalScrollBar()->setValue(0);
+    }
+
+    void richProjectDetailsWorkForBothProviders()
+    {
+        QVERIFY(m_window->inlineWorkspace()->closeAllPages());
+        for (const auto provider : { ModPlatform::ResourceProvider::MODRINTH, ModPlatform::ResourceProvider::FLAME }) {
+            auto pack = catalogFixtures().first();
+            pack->provider = provider;
+            pack->extraData.categories = { "Adventure", "Technology" };
+            pack->extraData.downloads = 123456;
+            pack->versions[0].changelog = "A fixture release with updated worlds.";
+            pack->versions[1].changelog = "First fixture release.";
+            ProjectDescriptionPage details;
+            details.setProject(pack);
+            m_window->openInlinePage(&details, "Project information");
+            auto* tabs = details.findChild<QTabBar*>("projectInformationTabs");
+            QVERIFY(tabs);
+            for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
+                m_window->resize(size);
+                QTest::qWait(80);
+                tabs->setCurrentIndex(0);
+                QVERIFY(details.toPlainText().contains("Explore at your own pace"));
+                QCOMPARE(details.horizontalScrollBar()->maximum(), 0);
+                tabs->setCurrentIndex(1);
+                QVERIFY(details.toPlainText().contains("no gallery images"));
+                tabs->setCurrentIndex(2);
+                QVERIFY(details.toPlainText().contains("updated worlds"));
+                details.setSelectedVersion(1);
+                QVERIFY(details.toPlainText().contains("First fixture release"));
+                details.setSelectedVersion(0);
+                details.setProjectNotice("Offline: showing saved project information.");
+                tabs->setCurrentIndex(0);
+                QVERIFY(details.toPlainText().contains("showing saved project information"));
+                QVERIFY(m_window->grab().save(
+                    QDir(m_root).filePath(QString("project-%1-%2.png")
+                                              .arg(provider == ModPlatform::ResourceProvider::FLAME ? "curseforge" : "modrinth")
+                                              .arg(size.width()))));
+            }
+            QVERIFY(m_window->inlineWorkspace()->closeAllPages());
+        }
+    }
+
+    void publicProjectCacheHandlesFreshStaleAndCanceledRequests()
+    {
+        for (const auto& url :
+             { QUrl("https://api.modrinth.com/v2/project/chroma-ui-fixture"), QUrl(BuildConfig.FLAME_BASE_URL + "/mods/999999999") }) {
+            const auto base = url.host() == QUrl(BuildConfig.FLAME_BASE_URL).host() ? "FlamePacks" : "ModrinthPacks";
+            const auto key = QString::fromLatin1(QCryptographicHash::hash(url.toEncoded(), QCryptographicHash::Sha256).toHex());
+            const auto path = APPLICATION->metacache()->resolveEntry(base, "metadata/" + key + ".json")->getFullPath();
+            QVERIFY(QDir().mkpath(QFileInfo(path).absolutePath()));
+            const QByteArray fixture("{\"name\":\"Saved project\"}");
+            QVERIFY(writeFile(path, fixture));
+            auto response = std::make_shared<QByteArray>();
+            auto request = ResourceAPI::cachedRequest(url, response);
+            QSignalSpy succeeded(request.get(), &Task::succeeded);
+            request->start();
+            QTRY_COMPARE(succeeded.count(), 1);
+            QCOMPARE(*response, fixture);
+            QVERIFY(request->warnings().isEmpty());
+
+            auto canceled = ResourceAPI::cachedRequest(url, response);
+            QSignalSpy canceledSuccess(canceled.get(), &Task::succeeded);
+            QSignalSpy aborted(canceled.get(), &Task::aborted);
+            canceled->start();
+            QVERIFY(canceled->abort());
+            QCoreApplication::processEvents();
+            QCOMPARE(aborted.count(), 1);
+            QCOMPARE(canceledSuccess.count(), 0);
+
+            QFile cache(path);
+            QVERIFY(cache.open(QIODevice::ReadWrite));
+            QVERIFY(cache.setFileTime(QDateTime::currentDateTime().addSecs(-3600), QFileDevice::FileModificationTime));
+            cache.close();
+            auto stale = ResourceAPI::cachedRequest(url, response);
+            QSignalSpy staleSuccess(stale.get(), &Task::succeeded);
+            stale->start();
+            QTRY_COMPARE_WITH_TIMEOUT(staleSuccess.count(), 1, 5000);
+            QCOMPARE(*response, fixture);
+            QVERIFY(!stale->warnings().isEmpty());
+
+            QVERIFY(writeFile(path, "invalid JSON"));
+            auto invalid = ResourceAPI::cachedRequest(url, response);
+            QSignalSpy failure(invalid.get(), &Task::failed);
+            invalid->start();
+            QTRY_COMPARE_WITH_TIMEOUT(failure.count(), 1, 5000);
+        }
+    }
+
+    void accountProfilesFollowSelection()
+    {
+        QVERIFY(m_window->inlineWorkspace()->closeAllPages());
+        const auto accounts = APPLICATION->accounts();
+        QCOMPARE(accounts->count(), 0);
+        auto first = MinecraftAccount::createOffline("StudioPlayer");
+        auto second = MinecraftAccount::createOffline("Explorer");
+        QImage texture(64, 64, QImage::Format_ARGB32);
+        texture.fill(QColor("#86bdb5"));
+        QBuffer imageBytes(&first->accountData()->minecraftProfile.skin.data);
+        QVERIFY(imageBytes.open(QIODevice::WriteOnly));
+        QVERIFY(texture.save(&imageBytes, "PNG"));
+        first->accountData()->minecraftProfile.skin.variant = "SLIM";
+        accounts->addAccount(first);
+        accounts->addAccount(second);
+        accounts->setDefaultAccount(first);
+        auto cleanAccounts = qScopeGuard([&] {
+            m_window->inlineWorkspace()->closeAllPages();
+            while (accounts->count())
+                accounts->removeAccount(accounts->index(0, 0));
+        });
+        AccountListPage profile;
+        m_window->openInlinePage(&profile, "Accounts");
+        auto* list = profile.findChild<VersionListView*>("listView");
+        auto* name = profile.findChild<QLabel*>("accountProfileName");
+        auto* status = profile.findChild<QLabel*>("accountProfileStatus");
+        auto* customize = profile.findChild<QPushButton*>("accountCustomizeSkin");
+        QVERIFY(list && name && status && customize);
+        QCOMPARE(name->text(), QString("StudioPlayer"));
+        QVERIFY(status->text().contains("Offline account"));
+        QVERIFY(status->text().contains("Active account"));
+        for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
+            m_window->resize(size);
+            QTest::qWait(80);
+            QVERIFY(m_window->rect().contains(QRect(customize->mapTo(m_window, QPoint()), customize->size())));
+            QVERIFY(m_window->grab().save(QDir(m_root).filePath(QString("account-profile-%1.png").arg(size.width()))));
+        }
+        list->setCurrentIndex(accounts->index(1, 0));
+        QCOMPARE(name->text(), QString("Explorer"));
+        QVERIFY(QMetaObject::invokeMethod(&profile, "on_actionSetDefault_triggered", Qt::DirectConnection));
+        QCOMPARE(accounts->defaultAccount(), second);
+        QVERIFY(status->text().contains("Active account"));
+    }
+
+    void skinEditorKeepsTexturePreviewAndHistoryInSync()
+    {
+        QVERIFY(m_window->inlineWorkspace()->closeAllPages());
+        m_window->resize(1280, 820);
+        QImage texture(64, 64, QImage::Format_ARGB32);
+        texture.fill(QColor("#86bdb5"));
+        SkinModel skin(texture, SkinModel::CLASSIC);
+        SkinEditorDialog editor(m_window, MinecraftAccountPtr(), skin);
+        m_window->openInlinePage(&editor, "Skin Studio");
+        verifyInline(&editor, 1);
+        auto* canvas = editor.findChild<SkinCanvas*>("skinCanvas");
+        auto* undo = editor.findChild<QPushButton*>("skinUndo");
+        auto* redo = editor.findChild<QPushButton*>("skinRedo");
+        auto* apply = editor.findChild<QPushButton*>("skinApply");
+        auto* model = editor.findChild<QComboBox*>("skinModel");
+        QVERIFY(canvas && undo && redo && model && apply);
+        QVERIFY(!apply->isEnabled());
+        QVERIFY(!undo->isEnabled());
+        canvas->setFocus();
+        QTest::keyClick(canvas, Qt::Key_Space);
+        QCOMPARE(editor.getSelectedSkin()->getTexture().pixelColor(8, 8), QColor(Qt::white));
+        QVERIFY(undo->isEnabled());
+        QTest::mouseClick(undo, Qt::LeftButton);
+        QCOMPARE(editor.getSelectedSkin()->getTexture().pixelColor(8, 8), QColor("#86bdb5"));
+        QVERIFY(redo->isEnabled());
+        QTest::mouseClick(redo, Qt::LeftButton);
+        QCOMPARE(editor.getSelectedSkin()->getTexture().pixelColor(8, 8), QColor(Qt::white));
+        model->setCurrentIndex(1);
+        QCOMPARE(editor.getSelectedSkin()->getModel(), SkinModel::SLIM);
+        QTest::qWait(100);
+        if (QGuiApplication::platformName() == "windows" && SkinOpenGLWindow::hasOpenGL()) {
+            SkinOpenGLWindow* preview = nullptr;
+            for (auto* window : QGuiApplication::allWindows()) {
+                if (auto* candidate = qobject_cast<SkinOpenGLWindow*>(window); candidate && candidate->isVisible())
+                    preview = candidate;
+            }
+            QVERIFY(preview);
+            QImage latestFrame;
+            const auto capture = connect(
+                preview, &SkinOpenGLWindow::frameRendered, &editor, [&] { latestFrame = preview->grabFramebuffer(); },
+                Qt::DirectConnection);
+            auto disconnectCapture = qScopeGuard([&] { disconnect(capture); });
+            preview->update();
+            QTRY_VERIFY(!latestFrame.isNull());
+            const auto slimFrame = latestFrame;
+            QVERIFY(slimFrame.save(QDir(m_root).filePath("skin-preview-slim.png")));
+            model->setCurrentIndex(0);
+            QTRY_VERIFY(latestFrame != slimFrame);
+            const auto classicFrame = latestFrame;
+            QVERIFY(classicFrame.save(QDir(m_root).filePath("skin-preview-classic.png")));
+            preview->setPartVisible(0, false);
+            QTRY_VERIFY(latestFrame != classicFrame);
+            preview->setPartVisible(0, true);
+            preview->resetView();
+            model->setCurrentIndex(1);
+        }
+        QVERIFY(m_window->grab().save(QDir(m_root).filePath("skin-editor.png")));
+        m_window->resize(680, 640);
+        QTest::qWait(100);
+        QCOMPARE(m_window->size(), QSize(680, 640));
+        QVERIFY(m_window->grab().save(QDir(m_root).filePath("skin-editor-compact.png")));
+        for (auto* scroll : editor.findChildren<QScrollArea*>())
+            QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+        const auto oldDirectory = APPLICATION->settings()->get("SkinsDir");
+        auto restoreDirectory = qScopeGuard([&] { APPLICATION->settings()->set("SkinsDir", oldDirectory); });
+        APPLICATION->settings()->set("SkinsDir", QDir(m_root).filePath("skin-editor-library"));
+        QSignalSpy saved(&editor, &SkinEditorDialog::skinSaved);
+        auto* save = editor.findChild<QPushButton*>("skinSave");
+        QVERIFY(save);
+        save->click();
+        QCOMPARE(saved.count(), 1);
+        const auto savedPath = saved.first().at(0).toString();
+        QVERIFY(savedPath.startsWith(QDir(m_root).filePath("skin-editor-library/")));
+        const QImage exported(savedPath);
+        QVERIFY(!exported.isNull());
+        QCOMPARE(exported.size(), QSize(64, 64));
+        QCOMPARE(exported.pixelColor(8, 8), QColor(Qt::white));
+        editor.reject();
+        QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
     }
 
     void pinnedInstancesPersistAndOpenInline()
@@ -1621,6 +1996,7 @@ class LauncherHomeTest : public QObject {
     {
         HeldTask task;
         ProgressDialog progress(m_window);
+        QSignalSpy finished(&progress, &QDialog::finished);
         progress.setSkipButton(true, "Cancel");
         bool visited = false;
         QTimer::singleShot(100, &progress, [&] {
@@ -1651,6 +2027,8 @@ class LauncherHomeTest : public QObject {
         });
         QCOMPARE(progress.execWithTask(&task), int(QDialog::Rejected));
         QVERIFY(visited);
+        QCOMPARE(finished.count(), 1);
+        QCOMPARE(finished.first().first().toInt(), int(QDialog::Rejected));
         QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
         QVERIFY(!m_window->inlineWorkspace()->navigationBlocked());
         QVERIFY(navigationButton(m_home, "Home")->isEnabled());

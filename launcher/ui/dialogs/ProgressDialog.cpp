@@ -150,7 +150,7 @@ int ProgressDialog::execWithTask(Task* task)
     this->m_taskConnections.push_back(connect(task, &Task::details, this, &ProgressDialog::changeStatus));
     this->m_taskConnections.push_back(connect(task, &Task::stepProgress, this, &ProgressDialog::changeStepProgress));
     this->m_taskConnections.push_back(connect(task, &Task::progress, this, &ProgressDialog::changeProgress));
-    this->m_taskConnections.push_back(connect(task, &Task::aborted, this, &ProgressDialog::hide));
+    this->m_taskConnections.push_back(connect(task, &Task::aborted, this, &QDialog::reject));
     this->m_taskConnections.push_back(connect(task, &Task::abortStatusChanged, ui->skipButton, &QPushButton::setEnabled));
 
     m_is_multi_step = task->isMultiStep();
