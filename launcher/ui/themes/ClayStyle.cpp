@@ -21,8 +21,7 @@
 namespace {
 QColor mix(const QColor& first, const QColor& second, qreal amount)
 {
-    return QColor::fromRgbF(first.redF() * (1 - amount) + second.redF() * amount,
-                            first.greenF() * (1 - amount) + second.greenF() * amount,
+    return QColor::fromRgbF(first.redF() * (1 - amount) + second.redF() * amount, first.greenF() * (1 - amount) + second.greenF() * amount,
                             first.blueF() * (1 - amount) + second.blueF() * amount);
 }
 
@@ -36,8 +35,7 @@ void outerLight(QPainter* painter, const QRectF& rect, qreal radius, QColor colo
         layer.setAlphaF(color.alphaF() * (1.0 - qreal(step) / (spread + 1)));
         painter->setBrush(layer);
         const qreal growth = step * 0.5;
-        painter->drawRoundedRect(rect.translated(offset).adjusted(-growth, -growth, growth, growth),
-                                 radius + growth, radius + growth);
+        painter->drawRoundedRect(rect.translated(offset).adjusted(-growth, -growth, growth, growth), radius + growth, radius + growth);
     }
 }
 
@@ -62,10 +60,8 @@ namespace Clay {
 
 const Colors& colors(bool dark)
 {
-    static const Colors lightColors{ QColor("#F4F1FA"), QColor("#FAF8FF"), QColor("#EFEBF5"), QColor("#332F3A"),
-                                      QColor("#635F69") };
-    static const Colors darkColors{ QColor("#191622"), QColor("#292333"), QColor("#211C2B"), QColor("#F4EFFA"),
-                                     QColor("#BEB4CB") };
+    static const Colors lightColors{ QColor("#F4F1FA"), QColor("#FAF8FF"), QColor("#EFEBF5"), QColor("#332F3A"), QColor("#635F69") };
+    static const Colors darkColors{ QColor("#191622"), QColor("#292333"), QColor("#211C2B"), QColor("#F4EFFA"), QColor("#BEB4CB") };
     return dark ? darkColors : lightColors;
 }
 
@@ -127,7 +123,49 @@ QString formStyleSheet(const QString& selector)
         }
         %1 QGroupBox { border-radius: 24px; margin-top: 18px; padding: 12px; }
         %1 QTabWidget::pane { border-radius: 20px; }
-    )").arg(selector);
+    )")
+        .arg(selector);
+}
+
+QString scrollBarStyleSheet(const QString& selector)
+{
+    return QStringLiteral(R"(
+        %1 QScrollBar:vertical { width: 10px; background: transparent; margin: 2px; }
+        %1 QScrollBar:horizontal { height: 10px; background: transparent; margin: 2px; }
+        %1 QScrollBar::handle { background: palette(mid); border-radius: 3px; }
+        %1 QScrollBar::handle:vertical { min-height: 36px; }
+        %1 QScrollBar::handle:horizontal { min-width: 36px; }
+        %1 QScrollBar::handle:hover, %1 QScrollBar::handle:pressed { background: palette(link); }
+        %1 QScrollBar::add-line, %1 QScrollBar::sub-line { width: 0; height: 0; }
+        %1 QScrollBar::add-page, %1 QScrollBar::sub-page { background: transparent; }
+    )")
+        .arg(selector);
+}
+
+QString menuStyleSheet()
+{
+    // QMenu keeps its native popup window, scrolling, shortcut labels, check
+    // marks, submenus, keyboard navigation and screen-edge placement.
+    return QStringLiteral(R"(
+        QMenu {
+            background: palette(base); color: palette(text);
+            border: 1px solid palette(mid); border-radius: %1px;
+            padding: %2px; menu-scrollable: 1;
+        }
+        QMenu::item { padding: 9px 28px; border: 1px solid transparent; border-radius: 10px; }
+        QMenu::item:selected { background: palette(highlight); color: palette(highlighted-text); }
+        QMenu::item:disabled { color: palette(placeholder-text); }
+        QMenu::separator { height: 1px; background: palette(mid); margin: 5px 10px; }
+        QMenu::icon { margin-left: 8px; }
+        QComboBox QAbstractItemView {
+            background: palette(base); color: palette(text); border: 1px solid palette(mid);
+            padding: 4px; selection-background-color: palette(highlight);
+            selection-color: palette(highlighted-text); outline: 0;
+        }
+        QComboBox QAbstractItemView::item { min-height: 28px; padding: 4px 8px; }
+    )")
+        .arg(Radius::Popup)
+        .arg(Space::Small);
 }
 
 bool motionAllowed()
@@ -159,10 +197,9 @@ void drawSurface(QPainter* painter, const QRectF& rect, const QColor& color, qre
     const QColor rim = darkSurface ? QColor(181, 163, 214) : QColor(Qt::white);
     if (!pressed) {
         outerLight(painter, rect, radius,
-                   darkSurface ? QColor(0, 0, 0, qRound(25 + 4 * lift)) : QColor(121, 101, 155, qRound(13 + 4 * lift)),
-                   QPointF(1.0, 1.5), 6);
-        outerLight(painter, rect, radius, darkSurface ? QColor(181, 163, 214, 4) : QColor(255, 255, 255, 18),
-                   QPointF(-0.8, -0.8), 6);
+                   darkSurface ? QColor(0, 0, 0, qRound(25 + 4 * lift)) : QColor(121, 101, 155, qRound(13 + 4 * lift)), QPointF(1.0, 1.5),
+                   6);
+        outerLight(painter, rect, radius, darkSurface ? QColor(181, 163, 214, 4) : QColor(255, 255, 255, 18), QPointF(-0.8, -0.8), 6);
     }
 
     QLinearGradient fill(rect.topLeft(), rect.bottomRight());
@@ -171,22 +208,15 @@ void drawSurface(QPainter* painter, const QRectF& rect, const QColor& color, qre
     painter->fillPath(shape, fill);
     painter->setClipPath(shape, Qt::IntersectClip);
     if (pressed) {
-        innerLight(painter, rect, radius, darkSurface ? QColor(0, 0, 0, 44) : QColor(115, 97, 148, 30),
-                   QPointF(3.5, 3.5), 6);
-        innerLight(painter, rect, radius, darkSurface ? QColor(181, 163, 214, 15) : QColor(255, 255, 255, 36),
-                   QPointF(-3.5, -3.5), 6);
+        innerLight(painter, rect, radius, darkSurface ? QColor(0, 0, 0, 44) : QColor(115, 97, 148, 30), QPointF(3.5, 3.5), 6);
+        innerLight(painter, rect, radius, darkSurface ? QColor(181, 163, 214, 15) : QColor(255, 255, 255, 36), QPointF(-3.5, -3.5), 6);
         innerLight(painter, rect, radius, darkSurface ? QColor(0, 0, 0, 12) : QColor(115, 97, 148, 8), QPointF(1, 1), 3);
-        innerLight(painter, rect, radius, darkSurface ? QColor(181, 163, 214, 5) : QColor(255, 255, 255, 10),
-                   QPointF(-1, -1), 3);
+        innerLight(painter, rect, radius, darkSurface ? QColor(181, 163, 214, 5) : QColor(255, 255, 255, 10), QPointF(-1, -1), 3);
     } else {
-        innerLight(painter, rect, radius, darkSurface ? QColor(0, 0, 0, 25) : QColor(91, 61, 129, 12),
-                   QPointF(-2.5, -2.5), 5);
-        innerLight(painter, rect, radius, darkSurface ? QColor(181, 163, 214, 12) : QColor(255, 255, 255, 22),
-                   QPointF(2.5, 2.5), 5);
+        innerLight(painter, rect, radius, darkSurface ? QColor(0, 0, 0, 25) : QColor(91, 61, 129, 12), QPointF(-2.5, -2.5), 5);
+        innerLight(painter, rect, radius, darkSurface ? QColor(181, 163, 214, 12) : QColor(255, 255, 255, 22), QPointF(2.5, 2.5), 5);
     }
     painter->restore();
 }
 
 }  // namespace Clay
-
-

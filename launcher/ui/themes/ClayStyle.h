@@ -32,19 +32,37 @@ namespace Radius {
 inline constexpr qreal Control = 20;
 inline constexpr qreal Card = 32;
 inline constexpr qreal Container = 48;
-}
+inline constexpr int Popup = 16;
+}  // namespace Radius
+namespace Space {
+inline constexpr int Small = 6;
+inline constexpr int Medium = 12;
+inline constexpr int Large = 20;
+}  // namespace Space
+namespace Motion {
+inline constexpr int Hover = 140;
+inline constexpr int Popup = 100;
+inline constexpr int Scroll = 140;
+}  // namespace Motion
 inline constexpr int ShadowMargin = 5;
 inline constexpr int MinimumTarget = 44;
+inline constexpr int IconSize = 20;
 
 bool enabled();
 QFont headingFont(int pixelSize = 0);
 // Scoped form surfaces shared by inline dialogs and their nested page containers.
 QString formStyleSheet(const QString& selector);
+QString scrollBarStyleSheet(const QString& selector);
+QString menuStyleSheet();
 // Windows follows the system's client-area animation preference. Other
 // platforms use Qt's UI effects preference; CHROMA_REDUCED_MOTION=1 is an
 // explicit, cross-platform opt-out for decorative and interaction motion.
 bool motionAllowed();
-void drawSurface(QPainter* painter, const QRectF& rect, const QColor& color, qreal radius = Radius::Card,
-                 bool pressed = false, qreal lift = 0);
+void drawSurface(QPainter* painter,
+                 const QRectF& rect,
+                 const QColor& color,
+                 qreal radius = Radius::Card,
+                 bool pressed = false,
+                 qreal lift = 0);
 
 }  // namespace Clay

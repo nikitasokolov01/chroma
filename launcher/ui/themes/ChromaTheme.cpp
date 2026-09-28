@@ -160,18 +160,27 @@ QString ChromaTheme::appStyleSheet()
         }
         QLineEdit:focus { background: %2; border-color: %4; }
         QLineEdit:disabled { color: %5; }
+        QAbstractButton:focus, QComboBox:focus, QAbstractSpinBox:focus { border-color: %4; }
+        QLabel[tone="muted"] { color: %5; }
+        QLabel[tone="error"] { color: palette(bright-text); }
+        QLabel[tone="success"] { color: %4; }
+        QTabBar::tab { padding: 8px 14px; border-bottom: 2px solid transparent; }
+        QTabBar::tab:selected { border-bottom-color: %4; }
+        QTabBar::tab:hover { background: %3; }
+        QTabBar::tab:focus { border-bottom: 2px solid %4; }
         QComboBox::drop-down {
             subcontrol-origin: padding; subcontrol-position: top right;
             width: 28px; border: none;
         }
         QComboBox::down-arrow { image: url(%10); width: 12px; height: 12px; }
     )")
-        .arg(colors.Foreground.name(), colors.Surface.name(), colors.Input.name(), AccentColor::link(accent, linkSurface).name(),
-             colors.Muted.name(), accent.name(), AccentColor::foreground(accent).name(),
-             m_dark ? QStringLiteral("#4A4058") : colors.Input.name(),
-             m_dark ? QStringLiteral("#4A4058") : QStringLiteral("transparent"))
-        .arg(m_dark ? QStringLiteral(":/chroma/style/chevron-down-dark.svg")
-                    : QStringLiteral(":/chroma/style/chevron-down-light.svg"));
+               .arg(colors.Foreground.name(), colors.Surface.name(), colors.Input.name(), AccentColor::link(accent, linkSurface).name(),
+                    colors.Muted.name(), accent.name(), AccentColor::foreground(accent).name(),
+                    m_dark ? QStringLiteral("#4A4058") : colors.Input.name(),
+                    m_dark ? QStringLiteral("#4A4058") : QStringLiteral("transparent"))
+               .arg(m_dark ? QStringLiteral(":/chroma/style/chevron-down-dark.svg")
+                           : QStringLiteral(":/chroma/style/chevron-down-light.svg")) +
+           Clay::menuStyleSheet() + Clay::scrollBarStyleSheet(QString());
 }
 
 QString ChromaTheme::tooltip()
