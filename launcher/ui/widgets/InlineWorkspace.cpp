@@ -3,6 +3,7 @@
 #include "ui/dialogs/ProgressDialog.h"
 #include "ui/themes/ClayStyle.h"
 #include "ui/widgets/ClayWidgets.h"
+#include "ui/widgets/SmoothScroll.h"
 
 #include <QApplication>
 #include <QDialog>
@@ -98,6 +99,11 @@ void InlineWorkspace::presentPage(QWidget* page, const QString& title, bool defe
 {
     if (!page || m_adopting)
         return;
+    if (auto* previous = currentPage(); previous && previous != page) {
+        auto* focused = QApplication::focusWidget();
+        if (focused && previous->isAncestorOf(focused))
+            m_pages[previous].focusedWidget = focused;
+    }
     QScopedValueRollback<bool> adopting(m_adopting, true);
     if (!m_pages.contains(page)) {
         const bool ownsScrolling = page->property("chromaOwnsScrolling").toBool();
@@ -106,6 +112,7 @@ void InlineWorkspace::presentPage(QWidget* page, const QString& title, bool defe
         wrapper->setObjectName(ownsScrolling ? "inlineResponsivePage" : "inlinePageScroll");
         wrapper->hide();
         if (scroll) {
+            SmoothScroll::install(scroll);
             scroll->setFrameShape(QFrame::NoFrame);
             scroll->setWidgetResizable(true);
             scroll->viewport()->setAutoFillBackground(true);
@@ -172,6 +179,11 @@ void InlineWorkspace::leave(QWidget* page)
     if (entry.wrapper)
         entry.wrapper->hide();
     updateCurrent();
+    if (auto* current = currentPage()) {
+        const auto focused = m_pages.value(current).focusedWidget;
+        if (focused && focused->isVisible() && focused->isEnabled())
+            focused->setFocus(Qt::OtherFocusReason);
+    }
 }
 
 void InlineWorkspace::updateCurrent()
@@ -299,6 +311,7 @@ void InlineWorkspace::applyStyle()
     )");
     if (m_clayStyle) {
         sheet += Clay::formStyleSheet(QStringLiteral("QWidget#inlineWorkspace"));
+        sheet += Clay::scrollBarStyleSheet(QStringLiteral("QWidget#inlineWorkspace"));
         sheet += QStringLiteral(R"(
             QLabel#inlinePageTitle { font-family: "Nunito"; font-size: 28px; font-weight: 900; }
             QWidget#inlineWorkspace QToolButton#inlineBackButton { background: transparent; border: none; }

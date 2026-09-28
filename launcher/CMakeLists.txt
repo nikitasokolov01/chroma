@@ -856,6 +856,8 @@ SET(LAUNCHER_SOURCES
     ui/widgets/ClayWidgets.h
     ui/widgets/FloatingUi.cpp
     ui/widgets/FloatingUi.h
+    ui/widgets/SmoothScroll.cpp
+    ui/widgets/SmoothScroll.h
     ui/themes/ClayStyle.cpp
     ui/themes/ClayStyle.h
     ui/themes/WindowChrome.cpp

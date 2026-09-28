@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QHash>
+#include <QStringList>
 #include <QWidget>
 
 class QAction;
@@ -46,6 +47,7 @@ class LauncherHome : public QWidget {
     QWidget* pageHost() const { return m_pageHost; }
     void showPage(QWidget* page, const QString& title);
     void showHomePage(bool libraryOnly = false);
+    bool libraryOnly() const { return m_libraryOnly; }
     void toggleSelectedPin();
     bool selectedInstancePinned() const;
 
@@ -76,6 +78,8 @@ class LauncherHome : public QWidget {
     QTimer* m_refreshTimer = nullptr;
     int m_recentLimit = 3;
     bool m_libraryOnly = false;
+    int m_scrollPositions[2] = { 0, 0 };
+    QStringList m_recentSignature;
     bool m_clayStyle = false;
     QStackedWidget* m_pages;
     QWidget* m_homePage;

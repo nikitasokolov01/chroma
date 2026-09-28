@@ -481,7 +481,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     m_home->setSelectedInstance(m_selectedInstance ? m_selectedInstance->id() : QString());
     m_workspace = new InlineWorkspace(this, m_home->pageHost());
     connect(m_workspace, &InlineWorkspace::pagePresented, this, [this](const QString& title) { m_home->showPage(m_workspace, title); });
-    connect(m_workspace, &InlineWorkspace::emptied, this, [this] { m_home->showHomePage(); });
+    connect(m_workspace, &InlineWorkspace::emptied, this, [this] { m_home->showHomePage(m_home->libraryOnly()); });
     connect(m_workspace, &InlineWorkspace::navigationLockChanged, this, [this](bool locked) {
         m_home->findChild<QWidget*>("homeRail")->setEnabled(!locked);
         ui->menuBar->setEnabled(!locked);

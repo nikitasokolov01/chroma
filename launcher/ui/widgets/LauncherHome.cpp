@@ -34,6 +34,7 @@
 #include "ui/instanceview/InstanceView.h"
 #include "ui/themes/ClayStyle.h"
 #include "ui/widgets/ClayWidgets.h"
+#include "ui/widgets/SmoothScroll.h"
 
 namespace {
 class HeaderTitleLabel : public QLabel {
@@ -155,6 +156,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     connect(add, &QToolButton::clicked, m_actions.add, &QAction::trigger);
     railLayout->addWidget(divider(rail));
     m_pinsScroll = new QScrollArea(rail);
+    SmoothScroll::install(m_pinsScroll);
     m_pinsScroll->setObjectName("pinnedInstances");
     m_pinsScroll->setAccessibleName(tr("Pinned instances"));
     m_pinsScroll->setWidgetResizable(true);
@@ -195,6 +197,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     m_pages->addWidget(m_pageHost);
 
     m_homeScroll = new QScrollArea(m_homePage);
+    SmoothScroll::install(m_homeScroll);
     m_homeScroll->setObjectName("homeContentScroll");
     m_homeScroll->setWidgetResizable(true);
     m_homeScroll->setFrameShape(QFrame::NoFrame);
@@ -294,6 +297,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     homeLayout->addWidget(m_homeScroll, 1);
 
     auto* detailsScroll = new QScrollArea(m_homePage);
+    SmoothScroll::install(detailsScroll);
     detailsScroll->setObjectName("homeDetails");
     detailsScroll->setWidgetResizable(true);
     detailsScroll->setFrameShape(QFrame::NoFrame);
@@ -411,6 +415,8 @@ void LauncherHome::showPage(QWidget* page, const QString& title)
 {
     if (!page)
         return;
+    if (m_pages->currentWidget() == m_homePage)
+        m_scrollPositions[m_libraryOnly] = m_homeScroll->verticalScrollBar()->value();
     auto* layout = m_pageHost->layout();
     while (auto* item = layout->takeAt(0)) {
         if (item->widget() && item->widget() != page)
@@ -428,9 +434,19 @@ void LauncherHome::showPage(QWidget* page, const QString& title)
 
 void LauncherHome::showHomePage(bool libraryOnly)
 {
+    if (m_pages->currentWidget() == m_homePage)
+        m_scrollPositions[m_libraryOnly] = m_homeScroll->verticalScrollBar()->value();
     m_pages->setCurrentWidget(m_homePage);
     setLibraryOnly(libraryOnly);
-    m_homeScroll->verticalScrollBar()->setValue(0);
+    const int position = m_scrollPositions[libraryOnly];
+    m_homeScroll->verticalScrollBar()->setValue(position);
+    const int restored = m_homeScroll->verticalScrollBar()->value();
+    QTimer::singleShot(0, this, [this, libraryOnly, position, restored] {
+        // A user may scroll before the next layout pass. Do not undo that input.
+        if (m_pages->currentWidget() == m_homePage && m_libraryOnly == libraryOnly &&
+            m_homeScroll->verticalScrollBar()->value() == restored)
+            m_homeScroll->verticalScrollBar()->setValue(position);
+    });
 }
 
 void LauncherHome::setLibraryOnly(bool enabled)
@@ -549,84 +565,102 @@ void LauncherHome::refresh()
             return a->isRunning();
         return a->lastLaunch() > b->lastLaunch();
     });
-    while (auto* item = m_recentRows->takeAt(0)) {
-        if (item->widget()) {
-            item->widget()->hide();
-            item->widget()->deleteLater();
-        }
-        delete item;
-    }
-    if (recent.isEmpty()) {
-        auto* welcome =
-            label(tr("Your next adventure starts here.\nAdd an instance or import a modpack to get started."), "welcome", m_recent);
-        welcome->setWordWrap(true);
-        m_recentRows->addWidget(welcome);
-    }
+    QStringList signature;
     for (int i = 0; i < qMin(m_recentLimit, int(recent.size())); ++i) {
-        auto instance = recent.at(i);
-        auto* row = new ClayPanel(m_recent);
-        row->setObjectName("recentInstance");
-        row->setProperty("featured", i == 0);
-        row->setProperty("clayTint", QColor(i == 0 ? "#E8DDFC" : (i == 1 ? "#E2F2FB" : "#FBE4EF")));
-        row->setProperty("clayDarkTint", QColor(i == 0 ? "#392A51" : (i == 1 ? "#203B48" : "#482B3F")));
-        row->setMinimumHeight(i == 0 ? 164 : 82);
-        row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
-        auto* cardLayout = new QVBoxLayout(row);
-        cardLayout->setContentsMargins(20, 12, 20, 12);
-        cardLayout->setSpacing(12);
-        auto* rowLayout = new QHBoxLayout();
-        rowLayout->setSpacing(10);
-        cardLayout->addLayout(rowLayout, 1);
-        auto* icon = new QLabel(row);
-        const int iconSize = i == 0 ? 64 : 40;
-        icon->setPixmap(APPLICATION->icons()->getIcon(instance->iconKey()).pixmap(iconSize, iconSize));
-        rowLayout->addWidget(icon);
-        auto* description = new QVBoxLayout();
-        description->setContentsMargins(0, 0, 0, 0);
-        description->setSpacing(4);
-        auto* name = new HeaderTitleLabel(instance->name(), row);
-        name->setTextFormat(Qt::PlainText);
-        name->setProperty("role", i == 0 ? "featureTitle" : "strong");
-        name->setMinimumWidth(0);
-        name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
-        name->ensurePolished();
-        name->setMinimumHeight(name->fontMetrics().height() + 2);
-        name->setToolTip(instance->name());
-        description->addWidget(name);
-        auto lastPlayed = QDateTime::fromMSecsSinceEpoch(instance->lastLaunch()).toString(tr("MMM d, yyyy"));
-        auto* subtitle = new HeaderTitleLabel(instance->isRunning() ? tr("Running") : tr("Last played %1").arg(lastPlayed), row);
-        subtitle->setTextFormat(Qt::PlainText);
-        subtitle->setProperty("role", "muted");
-        subtitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
-        subtitle->setToolTip(subtitle->text());
-        subtitle->ensurePolished();
-        subtitle->setMinimumHeight(subtitle->fontMetrics().height() + 2);
-        description->addWidget(subtitle);
-        rowLayout->addLayout(description, 1);
-        auto* play = new ClayToolButton(row);
-        play->setText(instance->isRunning() ? tr("Running") : tr("Play"));
-        play->setIcon(QIcon::fromTheme("launch"));
-        play->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
-        play->setProperty("role", "primary");
-        play->setProperty("claySymbolic", true);
-        play->setMinimumHeight(48);
-        play->setAccessibleName(tr("Play %1").arg(instance->name()));
-        play->setEnabled(instance->canLaunch() && !instance->isRunning());
-        const auto id = instance->id();
-        connect(play, &QToolButton::clicked, this, [this, id] { emit launchRequested(id); });
-        if (i == 0) {
-            auto* footer = new QHBoxLayout();
-            auto* invitation = label(tr("Your world is waiting."), "muted", row);
-            invitation->setWordWrap(true);
-            footer->addWidget(invitation, 1);
-            footer->addWidget(play);
-            cardLayout->addLayout(footer);
-        } else {
-            rowLayout->addWidget(play);
-        }
-        m_recentRows->addWidget(row, i, 0);
+        const auto& instance = recent.at(i);
+        signature << instance->id() << instance->name() << QString::number(instance->lastLaunch()) << QString::number(instance->isRunning())
+                  << QString::number(instance->canLaunch())
+                  << QString::number(APPLICATION->icons()->getIcon(instance->iconKey()).cacheKey());
     }
-    layoutRecentCards();
+    // Filtering, selection and unrelated downloads often emit model updates.
+    // Keep existing cards (and their keyboard focus) when their contents match.
+    if (signature != m_recentSignature || m_recentRows->count() == 0) {
+        m_recentSignature = signature;
+        QString focusedId;
+        if (auto* focused = QApplication::focusWidget(); focused && m_recent->isAncestorOf(focused))
+            focusedId = focused->property("recentInstanceId").toString();
+        while (auto* item = m_recentRows->takeAt(0)) {
+            if (item->widget()) {
+                item->widget()->hide();
+                item->widget()->deleteLater();
+            }
+            delete item;
+        }
+        if (recent.isEmpty()) {
+            auto* welcome =
+                label(tr("Your next adventure starts here.\nAdd an instance or import a modpack to get started."), "welcome", m_recent);
+            welcome->setWordWrap(true);
+            m_recentRows->addWidget(welcome);
+        }
+        for (int i = 0; i < qMin(m_recentLimit, int(recent.size())); ++i) {
+            auto instance = recent.at(i);
+            auto* row = new ClayPanel(m_recent);
+            row->setObjectName("recentInstance");
+            row->setProperty("featured", i == 0);
+            row->setProperty("clayTint", QColor(i == 0 ? "#E8DDFC" : (i == 1 ? "#E2F2FB" : "#FBE4EF")));
+            row->setProperty("clayDarkTint", QColor(i == 0 ? "#392A51" : (i == 1 ? "#203B48" : "#482B3F")));
+            row->setMinimumHeight(i == 0 ? 164 : 82);
+            row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+            auto* cardLayout = new QVBoxLayout(row);
+            cardLayout->setContentsMargins(20, 12, 20, 12);
+            cardLayout->setSpacing(12);
+            auto* rowLayout = new QHBoxLayout();
+            rowLayout->setSpacing(10);
+            cardLayout->addLayout(rowLayout, 1);
+            auto* icon = new QLabel(row);
+            const int iconSize = i == 0 ? 64 : 40;
+            icon->setPixmap(APPLICATION->icons()->getIcon(instance->iconKey()).pixmap(iconSize, iconSize));
+            rowLayout->addWidget(icon);
+            auto* description = new QVBoxLayout();
+            description->setContentsMargins(0, 0, 0, 0);
+            description->setSpacing(4);
+            auto* name = new HeaderTitleLabel(instance->name(), row);
+            name->setTextFormat(Qt::PlainText);
+            name->setProperty("role", i == 0 ? "featureTitle" : "strong");
+            name->setMinimumWidth(0);
+            name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
+            name->ensurePolished();
+            name->setMinimumHeight(name->fontMetrics().height() + 2);
+            name->setToolTip(instance->name());
+            description->addWidget(name);
+            auto lastPlayed = QDateTime::fromMSecsSinceEpoch(instance->lastLaunch()).toString(tr("MMM d, yyyy"));
+            auto* subtitle = new HeaderTitleLabel(instance->isRunning() ? tr("Running") : tr("Last played %1").arg(lastPlayed), row);
+            subtitle->setTextFormat(Qt::PlainText);
+            subtitle->setProperty("role", "muted");
+            subtitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
+            subtitle->setToolTip(subtitle->text());
+            subtitle->ensurePolished();
+            subtitle->setMinimumHeight(subtitle->fontMetrics().height() + 2);
+            description->addWidget(subtitle);
+            rowLayout->addLayout(description, 1);
+            auto* play = new ClayToolButton(row);
+            play->setText(instance->isRunning() ? tr("Running") : tr("Play"));
+            play->setIcon(QIcon::fromTheme("launch"));
+            play->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+            play->setProperty("role", "primary");
+            play->setProperty("claySymbolic", true);
+            play->setMinimumHeight(48);
+            play->setAccessibleName(tr("Play %1").arg(instance->name()));
+            play->setEnabled(instance->canLaunch() && !instance->isRunning());
+            const auto id = instance->id();
+            play->setProperty("recentInstanceId", id);
+            connect(play, &QToolButton::clicked, this, [this, id] { emit launchRequested(id); });
+            if (i == 0) {
+                auto* footer = new QHBoxLayout();
+                auto* invitation = label(tr("Your world is waiting."), "muted", row);
+                invitation->setWordWrap(true);
+                footer->addWidget(invitation, 1);
+                footer->addWidget(play);
+                cardLayout->addLayout(footer);
+            } else {
+                rowLayout->addWidget(play);
+            }
+            m_recentRows->addWidget(row, i, 0);
+            if (!focusedId.isEmpty() && focusedId == id && play->isEnabled())
+                play->setFocus(Qt::OtherFocusReason);
+        }
+        layoutRecentCards();
+    }
     m_running->setText(running == 0 ? tr("No instances running") : tr("%n instance(s) running", nullptr, running));
     m_count->setText(tr("%1 / %2").arg(m_model->rowCount()).arg(instances->count()));
     m_recent->setVisible(!m_libraryOnly && instances->count() > 0);
@@ -682,8 +716,7 @@ void LauncherHome::layoutRecentCards()
         m_libraryControls->removeItem(m_libraryTitleRow);
         m_libraryControls->removeItem(m_libraryFilters);
         m_libraryControls->addLayout(m_libraryTitleRow, 0, 0, 1, width() >= 1180 ? 1 : 2);
-        m_libraryControls->addLayout(m_libraryFilters, width() >= 1180 ? 0 : 2, width() >= 1180 ? 1 : 0,
-                                    1, width() >= 1180 ? 1 : 2);
+        m_libraryControls->addLayout(m_libraryFilters, width() >= 1180 ? 0 : 2, width() >= 1180 ? 1 : 0, 1, width() >= 1180 ? 1 : 2);
     }
     QList<QWidget*> cards;
     while (auto* item = m_recentRows->takeAt(0)) {
@@ -712,6 +745,7 @@ void LauncherHome::changeEvent(QEvent* event)
 
 void LauncherHome::retranslate()
 {
+    m_recentSignature.clear();
     m_search->setPlaceholderText(tr("Search your instances"));
     m_search->setAccessibleName(tr("Search your instances"));
     m_sort->setItemText(0, tr("Name"));
@@ -779,10 +813,7 @@ void LauncherHome::applyStyle()
                 border: none; background: transparent; width: 26px; subcontrol-origin: padding;
                 subcontrol-position: center right;
             }
-            QWidget#launcherHome QScrollBar:vertical { width: 10px; background: transparent; }
-            QWidget#launcherHome QScrollBar::handle:vertical { background: palette(mid); border-radius: 5px; min-height: 40px; }
-            QWidget#launcherHome QScrollBar::add-line:vertical, QWidget#launcherHome QScrollBar::sub-line:vertical { height: 0; }
-        )"));
+        )") + Clay::scrollBarStyleSheet(QStringLiteral("QWidget#launcherHome")));
         m_view->doItemsLayout();
         return;
     }

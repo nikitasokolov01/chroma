@@ -57,9 +57,10 @@
 
 #include "settings/SettingsObject.h"
 
+#include "ui/themes/ClayStyle.h"
 #include "ui/widgets/ClayWidgets.h"
 #include "ui/widgets/IconLabel.h"
-#include "ui/themes/ClayStyle.h"
+#include "ui/widgets/SmoothScroll.h"
 
 #include "Application.h"
 #include "DesktopServices.h"
@@ -104,6 +105,7 @@ PageContainer::PageContainer(BasePageProvider* pageProvider, QString defaultId, 
             page->stackIndex = m_pageStack->addWidget(widget);
         } else {
             auto scroll = new QScrollArea(this);
+            SmoothScroll::install(scroll);
             scroll->setObjectName("pageScroll_" + page->id());
             scroll->setProperty("role", "pageViewport");
             scroll->setFrameShape(QFrame::NoFrame);
@@ -273,6 +275,7 @@ void PageContainer::applyStyle()
     )");
     if (m_clayStyle) {
         sheet += Clay::formStyleSheet(QStringLiteral("QWidget#pageContainer"));
+        sheet += Clay::scrollBarStyleSheet(QStringLiteral("QWidget#pageContainer"));
         sheet += QStringLiteral(R"(
             QLabel#pageHeader { font-family: "Nunito"; font-weight: 800; }
             QListView#pageNavigation { border-radius: 24px; }

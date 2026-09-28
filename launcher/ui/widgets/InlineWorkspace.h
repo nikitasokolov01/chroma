@@ -38,6 +38,7 @@ class InlineWorkspace : public QWidget {
         QPointer<QWidget> widget;
         QPointer<QWidget> wrapper;
         QString title;
+        QPointer<QWidget> focusedWidget;
     };
     void leave(QWidget* page);
     void presentPage(QWidget* page, const QString& title, bool deferShow);
