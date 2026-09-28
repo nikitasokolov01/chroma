@@ -725,9 +725,7 @@ void LauncherHome::refresh()
             connect(play, &QToolButton::clicked, this, [this, id] { emit launchRequested(id); });
             if (i == 0) {
                 auto* footer = new QHBoxLayout();
-                auto* invitation = label(tr("Your world is waiting."), "muted", row);
-                invitation->setWordWrap(true);
-                footer->addWidget(invitation, 1);
+                footer->addStretch();
                 footer->addWidget(play);
                 cardLayout->addLayout(footer);
             } else {
@@ -745,7 +743,7 @@ void LauncherHome::refresh()
     m_profileButton->setVisible(instances->count() == 0);
     m_empty->setVisible(m_model->rowCount() == 0);
     m_empty->setText(instances->count() == 0
-                         ? tr("Your Minecraft library, ready to play.\nUse your Prism folder or create a new instance above.")
+                         ? tr("No instances yet.\nUse your Prism folder or create a new instance above.")
                          : tr("No instances match your search.\nTry a different name or clear the search."));
     refreshPins();
     refreshSelection();
