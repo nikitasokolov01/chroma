@@ -33,6 +33,8 @@ class Scene : protected QOpenGLFunctions {
     void setMode(bool slim);
     void setCapeVisible(bool visible);
     void setElytraVisible(bool elytraVisible);
+    void setLayersVisible(bool base, bool overlay);
+    void setPartVisible(int part, bool visible);
 
    private:
     QList<BoxGeometry*> m_staticComponents;
@@ -48,5 +50,8 @@ class Scene : protected QOpenGLFunctions {
     bool m_slim = false;
     bool m_capeVisible = false;
     bool m_elytraVisible = false;
+    bool m_baseVisible = true;
+    bool m_overlayVisible = true;
+    unsigned m_visibleParts = 0x3f;
 };
 }  // namespace opengl

@@ -42,29 +42,40 @@ class SkinOpenGLWindow : public QOpenGLWindow, protected QOpenGLFunctions {
     virtual ~SkinOpenGLWindow();
 
     void updateScene(SkinModel* skin);
+    void setTexture(const QImage& texture, SkinModel::Model model);
     void updateCape(const QImage& cape);
     void setElytraVisible(bool visible);
+    void resetView();
+    void setLayersVisible(bool base, bool overlay);
+    void setPartVisible(int part, bool visible);
 
     static bool hasOpenGL();
+
+   signals:
+    void renderingFailed();
+    // Consumers taking a snapshot must read the default framebuffer before
+    // Qt swaps it; its back-buffer contents are otherwise undefined.
+    void frameRendered();
 
    protected:
     void mousePressEvent(QMouseEvent* e) override;
     void mouseReleaseEvent(QMouseEvent* e) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
     void initializeGL() override;
     void resizeGL(int w, int h) override;
     void paintGL() override;
 
-    void initShaders();
+    bool initShaders();
 
     void generateBackgroundTexture(int width, int height, int tileSize);
     void renderBackground();
 
    private:
-    QOpenGLShaderProgram* m_modelProgram;
-    QOpenGLShaderProgram* m_backgroundProgram;
+    QOpenGLShaderProgram* m_modelProgram = nullptr;
+    QOpenGLShaderProgram* m_backgroundProgram = nullptr;
     opengl::Scene* m_scene = nullptr;
 
     QMatrix4x4 m_projection;
@@ -82,4 +93,13 @@ class SkinOpenGLWindow : public QOpenGLWindow, protected QOpenGLFunctions {
     QOpenGLTexture* m_backgroundTexture = nullptr;
     QColor m_baseColor;
     SkinProvider* m_parent = nullptr;
+    QImage m_pendingTexture;
+    QImage m_pendingCape;
+    SkinModel::Model m_model = SkinModel::CLASSIC;
+    bool m_textureDirty = false;
+    bool m_capeDirty = false;
+    bool m_baseVisible = true;
+    bool m_overlayVisible = true;
+    bool m_elytraVisible = false;
+    unsigned m_visibleParts = 0x3f;
 };

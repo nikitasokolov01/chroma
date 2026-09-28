@@ -18,6 +18,7 @@
 
 #include "ui/dialogs/skins/draw/SkinOpenGLWindow.h"
 
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLBuffer>
 #include <QVector2D>
@@ -40,6 +41,8 @@ SkinOpenGLWindow::SkinOpenGLWindow(SkinProvider* parent, QColor color)
 
 SkinOpenGLWindow::~SkinOpenGLWindow()
 {
+    if (!context())
+        return;
     // Make sure the context is current when deleting the texture
     // and the buffers.
     makeCurrent();
@@ -76,6 +79,8 @@ SkinOpenGLWindow::~SkinOpenGLWindow()
 
 void SkinOpenGLWindow::mousePressEvent(QMouseEvent* e)
 {
+    if (e->button() != Qt::LeftButton)
+        return;
     // Save mouse press position
     m_mousePosition = QVector2D(e->pos());
     m_isMousePressed = true;
@@ -94,7 +99,7 @@ void SkinOpenGLWindow::mouseMoveEvent(QMouseEvent* event)
         int dy = event->position().y() - m_mousePosition.y();
 
         m_yaw += dx * 0.5f;
-        m_pitch += dy * 0.5f;
+        m_pitch = qBound(-80.f, m_pitch + dy * 0.5f, 80.f);
 
         // Normalize yaw to keep it manageable
         if (m_yaw > 360.0f)
@@ -116,9 +121,12 @@ void SkinOpenGLWindow::initializeGL()
 {
     initializeOpenGLFunctions();
 
-    glClearColor(0, 0, 1, 1);
+    glClearColor(m_baseColor.redF(), m_baseColor.greenF(), m_baseColor.blueF(), 1);
 
-    initShaders();
+    if (!initShaders()) {
+        emit renderingFailed();
+        return;
+    }
 
     generateBackgroundTexture(32, 32, 1);
 
@@ -132,48 +140,62 @@ void SkinOpenGLWindow::initializeGL()
         }
     }
 
+    if (m_textureDirty) {
+        skin = m_pendingTexture;
+        slim = m_model == SkinModel::SLIM;
+        m_textureDirty = false;
+    }
+    if (m_capeDirty) {
+        cape = m_pendingCape;
+        m_capeDirty = false;
+    }
     m_scene = new opengl::Scene(skin, slim, cape);
+    m_scene->setLayersVisible(m_baseVisible, m_overlayVisible);
+    m_scene->setElytraVisible(m_elytraVisible);
+    for (int part = 0; part < 6; ++part)
+        m_scene->setPartVisible(part, m_visibleParts & (1u << part));
     m_background = opengl::BoxGeometry::Plane();
     glEnable(GL_TEXTURE_2D);
 }
 
-void SkinOpenGLWindow::initShaders()
+bool SkinOpenGLWindow::initShaders()
 {
     // Skin model shaders
     m_modelProgram = new QOpenGLShaderProgram(this);
     // Compile vertex shader
     if (!m_modelProgram->addCacheableShaderFromSourceFile(QOpenGLShader::Vertex, ":/shaders/vshader_skin_model.glsl"))
-        close();
+        return false;
 
     // Compile fragment shader
     if (!m_modelProgram->addCacheableShaderFromSourceFile(QOpenGLShader::Fragment, ":/shaders/fshader.glsl"))
-        close();
+        return false;
 
     // Link shader pipeline
     if (!m_modelProgram->link())
-        close();
+        return false;
 
     // Bind shader pipeline for use
     if (!m_modelProgram->bind())
-        close();
+        return false;
 
     // Background shaders
     m_backgroundProgram = new QOpenGLShaderProgram(this);
     // Compile vertex shader
     if (!m_backgroundProgram->addCacheableShaderFromSourceFile(QOpenGLShader::Vertex, ":/shaders/vshader_skin_background.glsl"))
-        close();
+        return false;
 
     // Compile fragment shader
     if (!m_backgroundProgram->addCacheableShaderFromSourceFile(QOpenGLShader::Fragment, ":/shaders/fshader.glsl"))
-        close();
+        return false;
 
     // Link shader pipeline
     if (!m_backgroundProgram->link())
-        close();
+        return false;
 
     // Bind shader pipeline for use (verification)
     if (!m_backgroundProgram->bind())
-        close();
+        return false;
+    return true;
 }
 
 void SkinOpenGLWindow::resizeGL(int w, int h)
@@ -203,6 +225,21 @@ void SkinOpenGLWindow::resizeGL(int w, int h)
 
 void SkinOpenGLWindow::paintGL()
 {
+    if (!m_scene)
+        return;
+    // GPU uploads only happen inside paintGL, where Qt has made this window's
+    // context current. Painting the editor never invokes OpenGL directly.
+    if (m_textureDirty) {
+        m_scene->setMode(m_model == SkinModel::SLIM);
+        m_scene->setSkin(m_pendingTexture);
+        m_textureDirty = false;
+    }
+    if (m_capeDirty) {
+        m_scene->setCapeVisible(!m_pendingCape.isNull());
+        if (!m_pendingCape.isNull())
+            m_scene->setCape(m_pendingCape);
+        m_capeDirty = false;
+    }
     // Adjust the viewport to account for fractional scaling
     qreal dpr = devicePixelRatio();
     if (dpr != 1.f) {
@@ -250,23 +287,26 @@ void SkinOpenGLWindow::paintGL()
         m_isFirstFrame = false;
         update();
     }
+    emit frameRendered();
 }
 
 void SkinOpenGLWindow::updateScene(SkinModel* skin)
 {
-    if (skin && m_scene) {
-        m_scene->setMode(skin->getModel() == SkinModel::SLIM);
-        m_scene->setSkin(skin->getTexture());
-        update();
-    }
+    if (skin)
+        setTexture(skin->getTexture(), skin->getModel());
+}
+void SkinOpenGLWindow::setTexture(const QImage& texture, SkinModel::Model model)
+{
+    m_pendingTexture = texture;
+    m_model = model;
+    m_textureDirty = true;
+    update();
 }
 void SkinOpenGLWindow::updateCape(const QImage& cape)
 {
-    if (m_scene) {
-        m_scene->setCapeVisible(!cape.isNull());
-        m_scene->setCape(cape);
-        update();
-    }
+    m_pendingCape = cape;
+    m_capeDirty = true;
+    update();
 }
 
 QColor calculateContrastingColor(const QColor& color)
@@ -322,13 +362,79 @@ void SkinOpenGLWindow::wheelEvent(QWheelEvent* event)
     // Adjust distance based on scroll
     int delta = event->angleDelta().y();  // Positive for scroll up, negative for scroll down
     m_distance -= delta * 0.01f;          // Adjust sensitivity factor
-    m_distance = qMax(16.f, m_distance);  // Clamp distance
-    update();                             // Trigger a repaint
+    m_distance = qBound(28.f, m_distance, 120.f);
+    update();  // Trigger a repaint
 }
 void SkinOpenGLWindow::setElytraVisible(bool visible)
 {
+    m_elytraVisible = visible;
     if (m_scene)
         m_scene->setElytraVisible(visible);
+    update();
+}
+
+void SkinOpenGLWindow::resetView()
+{
+    m_distance = 48;
+    m_yaw = 90;
+    m_pitch = 0;
+    update();
+}
+
+void SkinOpenGLWindow::setLayersVisible(bool base, bool overlay)
+{
+    m_baseVisible = base;
+    m_overlayVisible = overlay;
+    if (m_scene)
+        m_scene->setLayersVisible(base, overlay);
+    update();
+}
+
+void SkinOpenGLWindow::setPartVisible(int part, bool visible)
+{
+    if (part < 0 || part > 5)
+        return;
+    if (visible)
+        m_visibleParts |= (1u << part);
+    else
+        m_visibleParts &= ~(1u << part);
+    if (m_scene)
+        m_scene->setPartVisible(part, visible);
+    update();
+}
+
+void SkinOpenGLWindow::keyPressEvent(QKeyEvent* event)
+{
+    switch (event->key()) {
+        case Qt::Key_Home:
+        case Qt::Key_R:
+            resetView();
+            break;
+        case Qt::Key_Left:
+            m_yaw -= 10;
+            break;
+        case Qt::Key_Right:
+            m_yaw += 10;
+            break;
+        case Qt::Key_Up:
+            m_pitch = qMax(-80.f, m_pitch - 10);
+            break;
+        case Qt::Key_Down:
+            m_pitch = qMin(80.f, m_pitch + 10);
+            break;
+        case Qt::Key_Plus:
+        case Qt::Key_Equal:
+            m_distance = qMax(28.f, m_distance - 4);
+            break;
+        case Qt::Key_Minus:
+            m_distance = qMin(120.f, m_distance + 4);
+            break;
+        default:
+            QOpenGLWindow::keyPressEvent(event);
+            return;
+    }
+    update();
+    event->accept();
 }
 
 bool SkinOpenGLWindow::hasOpenGL()

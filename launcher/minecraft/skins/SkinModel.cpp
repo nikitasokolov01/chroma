@@ -25,9 +25,9 @@
 
 static void setAlpha(QImage& image, const QRect& region, const int alpha)
 {
-    for (int y = region.top(); y < region.bottom(); ++y) {
+    for (int y = region.top(); y <= region.bottom(); ++y) {
         QRgb* line = reinterpret_cast<QRgb*>(image.scanLine(y));
-        for (int x = region.left(); x < region.right(); ++x) {
+        for (int x = region.left(); x <= region.right(); ++x) {
             QRgb pixel = line[x];
             line[x] = qRgba(qRed(pixel), qGreen(pixel), qBlue(pixel), alpha);
         }
@@ -48,19 +48,17 @@ static void doNotchTransparencyHack(QImage& image)
     setAlpha(image, { 32, 0, 32, 32 }, 0);
 }
 
-static QImage improveSkin(QImage skin)
+QImage SkinModel::normalizeTexture(QImage skin)
 {
     int height = skin.height();
     int width = skin.width();
     if (width != 64 || (height != 32 && height != 64)) {  // this is no minecraft skin
-        return skin;
+        return {};
     }
     // It seems some older skins may use this format, which can't be drawn onto
     // https://github.com/PrismLauncher/PrismLauncher/issues/4032
     // https://doc.qt.io/qt-6/qpainter.html#begin
-    if (skin.format() == QImage::Format_Indexed8) {
-        skin = skin.convertToFormat(QImage::Format_ARGB32);
-    }
+    skin = skin.convertToFormat(QImage::Format_ARGB32);
 
     auto isLegacy = height == 32;  // old format
     if (isLegacy) {
@@ -91,6 +89,7 @@ static QImage improveSkin(QImage skin)
         for (const auto& face : faces) {
             copyRect(face.x, face.y, face.offsetX, face.offsetY, face.width, face.height);
         }
+        p.end();
         doNotchTransparencyHack(newSkin);
         skin = newSkin;
     }
@@ -108,7 +107,7 @@ static QImage improveSkin(QImage skin)
 
 static QImage getSkin(const QString path)
 {
-    return improveSkin(QImage(path));
+    return SkinModel::normalizeTexture(QImage(path));
 }
 
 static QImage generatePreviews(QImage texture, bool slim)
@@ -165,6 +164,17 @@ static QImage generatePreviews(QImage texture, bool slim)
 SkinModel::SkinModel(QString path) : m_path(path), m_texture(getSkin(path)), m_model(Model::CLASSIC)
 {
     m_preview = generatePreviews(m_texture, false);
+}
+
+SkinModel::SkinModel(const QImage& texture, Model model) : m_model(model)
+{
+    setTexture(texture);
+}
+
+void SkinModel::setTexture(const QImage& texture)
+{
+    m_texture = normalizeTexture(texture);
+    m_preview = generatePreviews(m_texture, m_model == Model::SLIM);
 }
 
 SkinModel::SkinModel(QDir skinDir, QJsonObject obj)

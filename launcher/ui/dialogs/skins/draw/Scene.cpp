@@ -96,11 +96,13 @@ Scene::Scene(const QImage& skin, bool slim, const QImage& cape) : QOpenGLFunctio
     m_elytra << leftWing << rightWing;
 
     // texture init
-    m_skinTexture = new QOpenGLTexture(skin.mirrored());
+    QImage emptyTexture(64, 64, QImage::Format_ARGB32);
+    emptyTexture.fill(Qt::transparent);
+    m_skinTexture = new QOpenGLTexture(skin.isNull() ? emptyTexture : skin.mirrored());
     m_skinTexture->setMinificationFilter(QOpenGLTexture::Nearest);
     m_skinTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
 
-    m_capeTexture = new QOpenGLTexture(cape.mirrored());
+    m_capeTexture = new QOpenGLTexture(cape.isNull() ? emptyTexture : cape.mirrored());
     m_capeTexture->setMinificationFilter(QOpenGLTexture::Nearest);
     m_capeTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
 }
@@ -125,11 +127,19 @@ void Scene::draw(QOpenGLShaderProgram* program)
 {
     m_skinTexture->bind();
     program->setUniformValue("texture", 0);
-    for (auto toDraw : { m_staticComponents, m_slim ? m_slimArms : m_normalArms, m_staticComponentsOverlay,
-                         m_slim ? m_slimArmsOverlay : m_normalArmsOverlay }) {
-        for (auto g : toDraw) {
-            g->draw(program);
-        }
+    auto drawParts = [this, program](const QList<BoxGeometry*>& parts, bool arms) {
+        const int ids[] = { 0, 1, 4, 5 };
+        for (int i = 0; i < parts.size(); ++i)
+            if (m_visibleParts & (1u << (arms ? i + 2 : ids[i])))
+                parts[i]->draw(program);
+    };
+    if (m_baseVisible) {
+        drawParts(m_staticComponents, false);
+        drawParts(m_slim ? m_slimArms : m_normalArms, true);
+    }
+    if (m_overlayVisible) {
+        drawParts(m_staticComponentsOverlay, false);
+        drawParts(m_slim ? m_slimArmsOverlay : m_normalArmsOverlay, true);
     }
     m_skinTexture->release();
     if (m_capeVisible) {
@@ -182,5 +192,19 @@ void Scene::setCapeVisible(bool visible)
 void Scene::setElytraVisible(bool elytraVisible)
 {
     m_elytraVisible = elytraVisible;
+}
+void Scene::setLayersVisible(bool base, bool overlay)
+{
+    m_baseVisible = base;
+    m_overlayVisible = overlay;
+}
+void Scene::setPartVisible(int part, bool visible)
+{
+    if (part < 0 || part > 5)
+        return;
+    if (visible)
+        m_visibleParts |= (1u << part);
+    else
+        m_visibleParts &= ~(1u << part);
 }
 }  // namespace opengl

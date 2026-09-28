@@ -28,6 +28,7 @@ class SkinModel {
 
     SkinModel() = default;
     SkinModel(QString path);
+    SkinModel(const QImage& texture, Model model = CLASSIC);
     SkinModel(QDir skinDir, QJsonObject obj);
     virtual ~SkinModel() = default;
 
@@ -46,6 +47,8 @@ class SkinModel {
     void setModel(Model model);
     void setURL(QString url) { m_url = url; }
     void refresh();
+    void setTexture(const QImage& texture);
+    static QImage normalizeTexture(QImage texture);
 
     QJsonObject toJSON() const;
 
@@ -54,6 +57,6 @@ class SkinModel {
     QImage m_texture;
     QImage m_preview;
     QString m_capeId;
-    Model m_model;
+    Model m_model = CLASSIC;
     QString m_url;
 };
