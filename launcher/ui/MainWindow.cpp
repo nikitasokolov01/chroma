@@ -105,6 +105,7 @@
 #include "ui/dialogs/NewsDialog.h"
 #include "ui/dialogs/PrismProfileDialog.h"
 #include "ui/dialogs/ProgressDialog.h"
+#include "ui/dialogs/skins/SkinManageDialog.h"
 #include "ui/instanceview/InstanceDelegate.h"
 #include "ui/instanceview/InstanceProxyModel.h"
 #include "ui/instanceview/InstanceView.h"
@@ -480,7 +481,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->horizontalLayout->addWidget(m_home);
     m_home->setSelectedInstance(m_selectedInstance ? m_selectedInstance->id() : QString());
     m_workspace = new InlineWorkspace(this, m_home->pageHost());
-    connect(m_workspace, &InlineWorkspace::pagePresented, this, [this](const QString& title) { m_home->showPage(m_workspace, title); });
+    connect(m_workspace, &InlineWorkspace::pagePresented, this, [this](const QString& title) {
+        auto* page = m_workspace->currentPage();
+        m_workspace->setProperty("chromaSkinPage", page && (page->inherits("SkinManageDialog") || page->inherits("SkinEditorDialog")));
+        m_home->showPage(m_workspace, title);
+    });
     connect(m_workspace, &InlineWorkspace::emptied, this, [this] { m_home->showHomePage(m_home->libraryOnly()); });
     connect(m_workspace, &InlineWorkspace::navigationLockChanged, this, [this](bool locked) {
         m_home->findChild<QWidget*>("homeRail")->setEnabled(!locked);
@@ -489,6 +494,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(m_home, &LauncherHome::homeRequested, this, [this](bool libraryOnly) {
         if (m_workspace->closeAllPages())
             m_home->showHomePage(libraryOnly);
+    });
+    connect(m_home, &LauncherHome::skinsRequested, this, [this] {
+        if (!prepareInlineNavigation())
+            return;
+        auto accounts = APPLICATION->accounts();
+        auto account = accounts->defaultAccount();
+        if (!account && accounts->count())
+            account = accounts->at(0);
+        auto* page = new SkinManageDialog(this, account);
+        page->setAttribute(Qt::WA_DeleteOnClose);
+        connect(page, &SkinManageDialog::manageAccountsRequested, this, &MainWindow::on_actionManageAccounts_triggered);
+        openInlinePage(page);
     });
     connect(m_home, &LauncherHome::instanceOpenRequested, this, [this](const QString& id) {
         if (!m_workspace->closeAllPages())
@@ -541,18 +558,6 @@ bool MainWindow::prepareInlineNavigation()
 {
     return !m_workspace || m_workspace->closeAllPages();
 }
-
-// macOS always has a native menu bar, so these fixes are not applicable
-// Other systems may or may not have a native menu bar (most do not - it seems like only Ubuntu Unity does)
-#ifndef Q_OS_MAC
-void MainWindow::keyReleaseEvent(QKeyEvent* event)
-{
-    if (event->key() == Qt::Key_Alt && !APPLICATION->settings()->get("MenuBarInsteadOfToolBar").toBool())
-        ui->menuBar->setVisible(!ui->menuBar->isVisible());
-    else
-        QMainWindow::keyReleaseEvent(event);
-}
-#endif
 
 void MainWindow::retranslateUi()
 {

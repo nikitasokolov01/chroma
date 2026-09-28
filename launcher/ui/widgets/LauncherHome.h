@@ -54,12 +54,14 @@ class LauncherHome : public QWidget {
    signals:
     void launchRequested(const QString& id);
     void homeRequested(bool libraryOnly);
+    void skinsRequested();
     void instanceOpenRequested(const QString& id);
     void pinsChanged();
 
    protected:
     void resizeEvent(QResizeEvent* event) override;
     void changeEvent(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
    private:
     void refresh();
@@ -106,6 +108,7 @@ class LauncherHome : public QWidget {
     QLabel* m_playtime;
     QToolButton* m_homeButton;
     QToolButton* m_libraryButton;
+    QToolButton* m_skinsButton;
     QToolButton* m_profileButton;
     QLabel* m_pageTitle;
 };

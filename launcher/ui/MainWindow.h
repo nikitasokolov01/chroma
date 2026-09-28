@@ -216,10 +216,6 @@ class MainWindow : public QMainWindow {
 
     void lockToolbars(bool);
 
-#ifndef Q_OS_MAC
-    void keyReleaseEvent(QKeyEvent* event) override;
-#endif
-
     void refreshCurrentInstance();
 
    private:

@@ -87,7 +87,8 @@ class InstanceList : public QAbstractListModel {
     enum AdditionalRoles {
         GroupRole = Qt::UserRole,
         InstancePointerRole = 0x34B1CB48,  ///< Return pointer to real instance
-        InstanceIDRole = 0x34B1CB49        ///< Return id if the instance
+        InstanceIDRole = 0x34B1CB49,       ///< Return id if the instance
+        ManualOrderRole = 0x34B1CB4A
     };
     /*!
      * \brief Error codes returned by functions in the InstanceList class.
@@ -113,6 +114,8 @@ class InstanceList : public QAbstractListModel {
 
     GroupId getInstanceGroup(const InstanceId& id) const;
     void setInstanceGroup(const InstanceId& id, GroupId name);
+    void setManualOrder(const QStringList& ids);
+    QStringList manualOrder() const { return m_manualOrder; }
 
     void deleteGroup(const GroupId& name);
     void renameGroup(const GroupId& src, const GroupId& dst);
@@ -164,6 +167,7 @@ class InstanceList : public QAbstractListModel {
     void instancesChanged();
     void instanceSelectRequest(QString instanceId);
     void groupsChanged(QSet<QString> groups);
+    void manualOrderChanged();
 
    public slots:
     void on_InstFolderChanged(const Setting& setting, QVariant value);
@@ -193,6 +197,8 @@ class InstanceList : public QAbstractListModel {
     int totalPlayTime = 0;
     bool m_dirty = false;
     QList<InstancePtr> m_instances;
+    QStringList m_manualOrder;
+    QHash<QString, int> m_manualRanks;
     // id -> refs
     QMap<QString, int> m_groupNameCache;
 

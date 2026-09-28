@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "FloatingUi.h"
 
+#include <QAbstractButton>
 #include <QApplication>
+#include <QComboBox>
 #include <QEvent>
 #include <QMenu>
 #include <QPropertyAnimation>
@@ -33,6 +35,12 @@ void FloatingUi::anchor(QMenu* menu, QWidget* trigger)
 
 bool FloatingUi::eventFilter(QObject* watched, QEvent* event)
 {
+    if (event->type() == QEvent::Polish || event->type() == QEvent::EnabledChange || event->type() == QEvent::Enter) {
+        if (auto* widget = qobject_cast<QWidget*>(watched);
+            widget && (qobject_cast<QAbstractButton*>(widget) || qobject_cast<QComboBox*>(widget))) {
+            widget->setCursor(widget->isEnabled() ? Qt::PointingHandCursor : Qt::ArrowCursor);
+        }
+    }
     auto* menu = qobject_cast<QMenu*>(watched);
     if (!menu)
         return false;

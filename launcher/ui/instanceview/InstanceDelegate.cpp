@@ -93,8 +93,8 @@ QRect clayCardRect(const QRect& bounds)
 QRect clayTitleRect(const QRect& bounds, const QFont& font)
 {
     const auto card = clayCardRect(bounds);
-    return QRect(card.left() + CardPadding, card.top() + CardPadding + ArtworkHeight + TitleGap,
-                 card.width() - CardPadding * 2, QFontMetrics(clayTitleFont(font)).height());
+    return QRect(card.left() + CardPadding, card.top() + CardPadding + ArtworkHeight + TitleGap, card.width() - CardPadding * 2,
+                 QFontMetrics(clayTitleFont(font)).height());
 }
 
 QColor blendColors(const QColor& background, const QColor& foreground, qreal amount)
@@ -208,8 +208,8 @@ void drawClayCard(QPainter* painter, const QStyleOptionViewItem& option, const Q
     painter->setClipRect(option.rect, Qt::IntersectClip);
     painter->setRenderHint(QPainter::Antialiasing, true);
     painter->translate(0, -lift);
-    Clay::drawSurface(painter, card, selected ? blendColors(surface, accent, dark ? 0.10 : 0.045) : surface,
-                      Clay::Radius::Card, false, lift);
+    Clay::drawSurface(painter, card, selected ? blendColors(surface, accent, dark ? 0.10 : 0.045) : surface, Clay::Radius::Card, false,
+                      lift);
 
     QPainterPath artworkClip;
     artworkClip.addRoundedRect(QRectF(artwork), 24, 24);
@@ -344,15 +344,19 @@ void ListViewDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
 
 QSize ListViewDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    QStyleOptionViewItem opt = option;
-    initStyleOption(&opt, index);
+    // Card dimensions depend only on the font. Avoid resolving the icon and
+    // instance text for every item during a large library relayout.
+    auto font = option.font;
+    const auto customFont = index.data(Qt::FontRole);
+    if (customFont.isValid())
+        font = qvariant_cast<QFont>(customFont).resolve(font);
+    const QFontMetrics metrics(font);
     if (Clay::enabled()) {
-        return QSize(ClayCardWidth, ClayTopInset + CardPadding + ArtworkHeight + TitleGap +
-                                       QFontMetrics(clayTitleFont(opt.font)).height() + DetailGap + opt.fontMetrics.height() +
-                                       BottomPadding + ClayBottomInset);
+        return QSize(ClayCardWidth, ClayTopInset + CardPadding + ArtworkHeight + TitleGap + QFontMetrics(clayTitleFont(font)).height() +
+                                        DetailGap + metrics.height() + BottomPadding + ClayBottomInset);
     }
-    return QSize(CardWidth, CardPadding + ArtworkHeight + TitleGap + QFontMetrics(titleFont(opt.font)).height() + DetailGap +
-                                opt.fontMetrics.height() + BottomPadding);
+    return QSize(CardWidth, CardPadding + ArtworkHeight + TitleGap + QFontMetrics(titleFont(font)).height() + DetailGap + metrics.height() +
+                                BottomPadding);
 }
 
 class NoReturnTextEdit : public QTextEdit {

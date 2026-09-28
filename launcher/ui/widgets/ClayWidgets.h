@@ -2,16 +2,12 @@
 #pragma once
 
 #include <QComboBox>
-#include <QElapsedTimer>
 #include <QFrame>
 #include <QLineEdit>
 #include <QToolButton>
 #include <QWidget>
 
 class QEnterEvent;
-class QHideEvent;
-class QShowEvent;
-class QTimer;
 class QVariantAnimation;
 
 // Native event handling, actions, accessibility, and menu hit testing remain
@@ -91,13 +87,4 @@ class ClayCanvas : public QWidget {
 
    protected:
     void paintEvent(QPaintEvent* event) override;
-    void showEvent(QShowEvent* event) override;
-    void hideEvent(QHideEvent* event) override;
-    void changeEvent(QEvent* event) override;
-    bool eventFilter(QObject* watched, QEvent* event) override;
-
-   private:
-    void updateAnimation();
-    QTimer* m_driftTimer;
-    QElapsedTimer m_elapsed;
 };

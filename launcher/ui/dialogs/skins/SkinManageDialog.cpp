@@ -22,6 +22,7 @@
 
 #include <FileSystem.h>
 #include <QAction>
+#include <QComboBox>
 #include <QDialog>
 #include <QEventLoop>
 #include <QFileDialog>
@@ -35,6 +36,7 @@
 #include <QPainter>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSignalBlocker>
 #include <QTemporaryDir>
 #include <QUrl>
 
@@ -43,6 +45,7 @@
 #include "Json.h"
 #include "QObjectPtr.h"
 
+#include "minecraft/auth/AccountList.h"
 #include "minecraft/auth/Parsers.h"
 #include "minecraft/skins/CapeChange.h"
 #include "minecraft/skins/SkinApplyTask.h"
@@ -60,6 +63,7 @@
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/ProgressDialog.h"
 #include "ui/instanceview/InstanceDelegate.h"
+#include "ui/widgets/ClayWidgets.h"
 
 SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
     : QDialog(parent), m_acct(acct), m_ui(new Ui::SkinManageDialog), m_list(this, APPLICATION->settings()->get("SkinsDir").toString(), acct)
@@ -69,8 +73,10 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
     int controlIndex = 0;
     while (auto* item = m_ui->buttonsHLayout->takeAt(0)) {
         if (auto* widget = item->widget()) {
-            importControls->addWidget(widget, controlIndex / 3, controlIndex % 3);
-            ++controlIndex;
+            if (widget != m_ui->buttonBox) {
+                importControls->addWidget(widget, controlIndex / 3, controlIndex % 3);
+                ++controlIndex;
+            }
         }
         delete item;
     }
@@ -78,22 +84,39 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
     delete m_ui->buttonsHLayout;
     m_ui->buttonsHLayout = nullptr;
     m_ui->verticalLayout->addLayout(importControls);
+    m_ui->verticalLayout->addWidget(m_ui->buttonBox);
     setWindowTitle(tr("Skin Library"));
     auto* header = new QHBoxLayout;
-    auto* heading = new QLabel(tr("%1’s skins").arg(m_acct->profileName()), this);
-    heading->setTextFormat(Qt::PlainText);
-    auto headingFont = heading->font();
-    headingFont.setPointSize(headingFont.pointSize() + 5);
-    headingFont.setBold(true);
-    heading->setFont(headingFont);
-    header->addWidget(heading, 1);
+    auto* accountLabel = new QLabel(tr("Account"), this);
+    m_accountCombo = new ClayComboBox(this);
+    m_accountCombo->setObjectName("skinAccountCombo");
+    m_accountCombo->setAccessibleName(tr("Account for skin management"));
+    m_accountCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_accountCombo->setMinimumContentsLength(12);
+    accountLabel->setBuddy(m_accountCombo);
+    header->addWidget(accountLabel);
+    header->addWidget(m_accountCombo, 1);
+    auto* manageAccounts = new QPushButton(tr("Manage Accounts"), this);
+    manageAccounts->setObjectName("skinManageAccounts");
+    manageAccounts->setAutoDefault(false);
+    header->addWidget(manageAccounts);
+    connect(manageAccounts, &QPushButton::clicked, this, &SkinManageDialog::manageAccountsRequested);
+    m_ui->verticalLayout->insertLayout(0, header);
+    auto* actions = new QHBoxLayout;
+    m_accountStatus = new QLabel(this);
+    m_accountStatus->setObjectName("skinAccountStatus");
+    m_accountStatus->setTextFormat(Qt::PlainText);
+    m_accountStatus->setWordWrap(true);
+    actions->addWidget(m_accountStatus, 1);
     m_editButton = new QPushButton(tr("Edit Skin…"), this);
     m_editButton->setObjectName("editSkinButton");
-    header->addWidget(m_editButton);
+    m_editButton->setAutoDefault(false);
+    actions->addWidget(m_editButton);
     connect(m_editButton, &QPushButton::clicked, this, &SkinManageDialog::editSelectedSkin);
     auto* resetView = new QPushButton(tr("Reset View"), this);
-    header->addWidget(resetView);
-    m_ui->verticalLayout->insertLayout(0, header);
+    resetView->setAutoDefault(false);
+    actions->addWidget(resetView);
+    m_ui->verticalLayout->insertLayout(1, actions);
     m_ui->urlLine->setPlaceholderText(tr("Skin URL or Minecraft username"));
 
     m_skinPreviewLabel = new QLabel(this);
@@ -103,7 +126,7 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
     m_skinPreviewLabel->setText(tr("Import a skin PNG to start your collection."));
     m_skinPreviewLabel->setWordWrap(true);
     if (SkinOpenGLWindow::hasOpenGL()) {
-        m_skinPreview = new SkinOpenGLWindow(this, palette().color(QPalette::Normal, QPalette::Base));
+        m_skinPreview = new SkinOpenGLWindow(this, palette().color(QPalette::Normal, QPalette::Base), this);
         connect(resetView, &QPushButton::clicked, m_skinPreview, &SkinOpenGLWindow::resetView);
     }
     resetView->setEnabled(m_skinPreview != nullptr);
@@ -162,12 +185,10 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
 
     m_ui->buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("Close"));
     m_ui->buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Apply Skin"));
-    m_ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(getSelectedSkin() && m_acct->accountType() == AccountType::MSA);
-    m_editButton->setEnabled(getSelectedSkin() != nullptr);
-    m_ui->resetBtn->setEnabled(m_acct->accountType() == AccountType::MSA);
+    updateAccountActions();
 
     if (m_skinPreview) {
-        m_skinPreviewContainer = QWidget::createWindowContainer(m_skinPreview, this);
+        m_skinPreviewContainer = m_skinPreview;
         m_skinPreviewContainer->setMinimumSize(180, 200);
         m_skinPreviewContainer->setFocusPolicy(Qt::StrongFocus);
         m_skinPreviewContainer->setAccessibleName(tr("Interactive 3D skin preview"));
@@ -183,12 +204,72 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
     }
     m_ui->skinLayout->addWidget(m_skinPreviewLabel);
     m_skinPreviewLabel->setVisible(m_skinPreview == nullptr);
+    connect(m_accountCombo, &QComboBox::currentIndexChanged, this,
+            [this] { selectAccount(m_accountCombo->currentData().value<MinecraftAccountPtr>()); });
+    connect(APPLICATION->accounts().get(), &AccountList::listChanged, this, &SkinManageDialog::refreshAccounts);
+    connect(APPLICATION->accounts().get(), &AccountList::listActivityChanged, this, &SkinManageDialog::updateAccountActions);
+    refreshAccounts();
 }
 
 SkinManageDialog::~SkinManageDialog()
 {
+    // The preview's provider refers to members destroyed before QWidget children.
+    delete m_skinPreviewContainer;
     delete m_ui;
-    // createWindowContainer owns the QWindow.
+}
+
+void SkinManageDialog::refreshAccounts()
+{
+    const QSignalBlocker blocker(m_accountCombo);
+    m_accountCombo->clear();
+    const auto accounts = APPLICATION->accounts();
+    int selected = -1;
+    for (int i = 0; i < accounts->count(); ++i) {
+        const auto account = accounts->at(i);
+        m_accountCombo->addItem(
+            tr("%1 · %2").arg(account->profileName(), account->accountType() == AccountType::MSA ? tr("Microsoft") : tr("Offline")),
+            QVariant::fromValue(account));
+        if (account == m_acct)
+            selected = i;
+    }
+    if (!accounts->count()) {
+        m_accountCombo->addItem(tr("No accounts added"));
+        m_accountCombo->setEnabled(false);
+        selectAccount(MinecraftAccountPtr());
+    } else {
+        m_accountCombo->setEnabled(true);
+        if (selected < 0)
+            selected =
+                qMax(0, accounts->findAccountByProfileId(accounts->defaultAccount() ? accounts->defaultAccount()->profileId() : QString()));
+        m_accountCombo->setCurrentIndex(selected);
+        selectAccount(accounts->at(selected));
+    }
+    updateAccountActions();
+}
+
+void SkinManageDialog::selectAccount(MinecraftAccountPtr account)
+{
+    if (m_acct == account)
+        return;
+    m_acct = account;
+    m_selectedSkinKey.clear();
+    setupCapes();
+    m_list.setAccount(account);
+    updateAccountActions();
+}
+
+void SkinManageDialog::updateAccountActions()
+{
+    const bool online = m_acct && m_acct->accountType() == AccountType::MSA && m_acct->hasProfile();
+    const bool ready = online && !m_acct->isActive() && !m_acct->isInUse();
+    const auto* skin = getSelectedSkin();
+    m_editButton->setEnabled(skin != nullptr);
+    m_ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(skin && ready);
+    m_ui->resetBtn->setEnabled(ready);
+    m_accountStatus->setText(!m_acct   ? tr("Local library · Add an account to apply skins.")
+                             : !online ? tr("Local editing · Microsoft sign-in is required to apply skins.")
+                             : !ready  ? tr("Close Minecraft and finish sign-in before applying a skin.")
+                                       : tr("Applying a skin updates %1’s Minecraft profile.").arg(m_acct->profileName()));
 }
 
 void SkinManageDialog::activated(QModelIndex index)
@@ -210,8 +291,7 @@ void SkinManageDialog::selectionChanged(QItemSelection selected, [[maybe_unused]
         return;
     m_selectedSkinKey = key;
     auto skin = getSelectedSkin();
-    m_editButton->setEnabled(skin != nullptr);
-    m_ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(skin && m_acct->accountType() == AccountType::MSA);
+    updateAccountActions();
     if (!skin)
         return;
 
@@ -270,24 +350,36 @@ QPixmap previewCape(QImage capeImage, bool elytra = false)
 
 void SkinManageDialog::setupCapes()
 {
+    const QSignalBlocker blocker(m_ui->capeCombo);
+    m_ui->capeCombo->clear();
+    m_capes.clear();
+    m_capesIdx.clear();
+    m_ui->capeImage->clear();
+    m_ui->capeCombo->addItem(tr("No Cape"), QVariant());
+    m_ui->capeBox->setEnabled(m_acct != nullptr);
+    if (m_skinPreview)
+        m_skinPreview->updateCape({});
+    if (!m_acct)
+        return;
     // FIXME: add a model for this, download/refresh the capes on demand
     auto& accountData = *m_acct->accountData();
     int index = 0;
-    m_ui->capeCombo->addItem(tr("No Cape"), QVariant());
     auto currentCape = accountData.minecraftProfile.currentCape;
     if (currentCape.isEmpty()) {
         m_ui->capeCombo->setCurrentIndex(index);
     }
 
     auto capesDir = FS::PathCombine(m_list.getDir(), "capes");
+    QDir().mkpath(capesDir);
     NetJob::Ptr job{ new NetJob(tr("Download capes"), APPLICATION->network()) };
     bool needsToDownload = false;
     for (auto& cape : accountData.minecraftProfile.capes) {
         auto path = FS::PathCombine(capesDir, cape.id + ".png");
         if (cape.data.size()) {
             QImage capeImage;
-            if (capeImage.loadFromData(cape.data, "PNG") && capeImage.save(path)) {
+            if (capeImage.loadFromData(cape.data, "PNG")) {
                 m_capes[cape.id] = capeImage;
+                capeImage.save(path);
                 continue;
             }
         }
@@ -305,7 +397,7 @@ void SkinManageDialog::setupCapes()
     }
     for (auto& cape : accountData.minecraftProfile.capes) {
         index++;
-        QImage capeImage;
+        QImage capeImage = m_capes.value(cape.id);
         if (!m_capes.contains(cape.id)) {
             auto path = FS::PathCombine(capesDir, cape.id + ".png");
             if (QFileInfo(path).exists() && capeImage.load(path)) {
@@ -320,6 +412,7 @@ void SkinManageDialog::setupCapes()
 
         m_capesIdx[cape.id] = index;
     }
+    m_ui->capeCombo->setCurrentIndex(m_capesIdx.value(currentCape));
 }
 
 void SkinManageDialog::on_capeCombo_currentIndexChanged(int index)
@@ -361,6 +454,8 @@ void SkinManageDialog::on_steveBtn_toggled(bool checked)
 
 void SkinManageDialog::accept()
 {
+    if (!m_acct)
+        return;
     auto skin = m_list.skin(m_selectedSkinKey);
     if (!skin)
         return;
@@ -399,7 +494,7 @@ void SkinManageDialog::changeEvent(QEvent* event)
 
 void SkinManageDialog::on_resetBtn_clicked()
 {
-    if (m_acct->accountType() != AccountType::MSA || m_acct->isActive() || m_acct->isInUse()) {
+    if (!m_acct || m_acct->accountType() != AccountType::MSA || m_acct->isActive() || m_acct->isInUse()) {
         CustomMessageBox::selectable(this, tr("Reset skin"),
                                      tr("Close Minecraft and wait for account sign-in to finish before resetting your skin."),
                                      QMessageBox::Warning)
@@ -529,7 +624,7 @@ void SkinManageDialog::on_urlBtn_clicked()
 
 class WaitTask : public Task {
    public:
-    WaitTask() : m_loop(), m_done(false){};
+    WaitTask() : m_loop(), m_done(false) {};
     virtual ~WaitTask() = default;
 
    public slots:

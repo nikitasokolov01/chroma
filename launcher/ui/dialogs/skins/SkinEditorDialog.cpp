@@ -12,6 +12,8 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPainter>
+#include <QPainterPath>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QScrollArea>
@@ -26,6 +28,55 @@
 #include "Application.h"
 #include "ui/dialogs/skins/SkinCanvas.h"
 #include "ui/widgets/ClayWidgets.h"
+
+namespace {
+QPixmap toolPixmap(SkinCanvas::Tool tool, QColor color)
+{
+    QPixmap pixmap(48, 48);
+    pixmap.fill(Qt::transparent);
+    pixmap.setDevicePixelRatio(2);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(QPen(color, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    QPainterPath path;
+    switch (tool) {
+        case SkinCanvas::Brush:
+            path.moveTo(10, 14);
+            path.lineTo(18, 4);
+            path.cubicTo(20, 2, 22, 4, 20, 6);
+            path.lineTo(12, 16);
+            path.closeSubpath();
+            painter.drawPath(path);
+            path = {};
+            path.moveTo(10, 14);
+            path.cubicTo(4, 13, 8, 20, 3, 20);
+            path.cubicTo(9, 23, 15, 18, 12, 16);
+            path.closeSubpath();
+            painter.fillPath(path, color);
+            break;
+        case SkinCanvas::Eraser:
+            painter.drawPolygon(QPolygonF{ { 3, 14 }, { 13, 4 }, { 21, 12 }, { 13, 20 }, { 9, 20 } });
+            painter.drawLine(QPointF(8, 9), QPointF(16, 17));
+            painter.drawLine(QPointF(10, 21), QPointF(21, 21));
+            break;
+        case SkinCanvas::Eyedropper:
+            painter.drawLine(QPointF(12, 5), QPointF(20, 13));
+            painter.drawPolygon(QPolygonF{ { 13, 7 }, { 5, 15 }, { 4, 20 }, { 9, 19 }, { 17, 11 } });
+            painter.setBrush(color);
+            painter.drawRoundedRect(QRectF(16, 3, 4, 6), 2, 2);
+            break;
+        case SkinCanvas::Pan:
+            painter.drawLine(12, 3, 12, 21);
+            painter.drawLine(3, 12, 21, 12);
+            painter.drawPolyline(QPolygonF{ { 9, 6 }, { 12, 3 }, { 15, 6 } });
+            painter.drawPolyline(QPolygonF{ { 9, 18 }, { 12, 21 }, { 15, 18 } });
+            painter.drawPolyline(QPolygonF{ { 6, 9 }, { 3, 12 }, { 6, 15 } });
+            painter.drawPolyline(QPolygonF{ { 18, 9 }, { 21, 12 }, { 18, 15 } });
+            break;
+    }
+    return pixmap;
+}
+}  // namespace
 
 SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account, const SkinModel& skin)
     : QDialog(parent), m_account(account), m_document(this), m_previewModel(skin)
@@ -114,23 +165,54 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     m_canvasLayout = canvasLayout;
     canvasLayout->setContentsMargins(8, 8, 8, 8);
     canvasLayout->setSpacing(6);
-    auto* tools = new QHBoxLayout;
+    auto* toolbox = new QWidget(canvasPanel);
+    toolbox->setObjectName("skinToolbox");
+    toolbox->setAccessibleName(tr("Painting tools"));
+    auto* tools = new QHBoxLayout(toolbox);
+    tools->setContentsMargins(0, 0, 0, 0);
+    tools->setSpacing(4);
     auto* group = new QButtonGroup(this);
     const QStringList toolNames{ tr("Brush"), tr("Eraser"), tr("Pick Color"), tr("Pan") };
+    const QStringList toolIds{ "skinToolBrush", "skinToolEraser", "skinToolPicker", "skinToolPan" };
+    const QList<Qt::Key> toolKeys{ Qt::Key_B, Qt::Key_E, Qt::Key_I, Qt::Key_H };
+    const QStringList descriptions{ tr("Paint pixels with the selected color."), tr("Erase outer-layer pixels. Base layers stay opaque."),
+                                    tr("Sample a color from the texture. Alt-click also picks a color."),
+                                    tr("Drag to move around the texture.") };
     m_canvas = new SkinCanvas(&m_document, canvasPanel);
     m_canvas->setObjectName("skinCanvas");
     for (int i = 0; i < toolNames.size(); ++i) {
-        auto* button = new QPushButton(toolNames[i], canvasPanel);
-        button->setFixedHeight(32);
-        button->setAutoDefault(false);
+        auto* button = new QToolButton(toolbox);
+        button->setObjectName(toolIds[i]);
+        button->setToolButtonStyle(Qt::ToolButtonIconOnly);
+        button->setText(toolNames[i]);
+        button->setIconSize(QSize(22, 22));
+        button->setStyleSheet(QString("QToolButton#%1 { padding: 0; min-width: 30px; max-width: 30px; "
+                                      "min-height: 30px; max-height: 30px; border: 2px solid palette(mid); "
+                                      "border-radius: 7px; background: palette(button); } "
+                                      "QToolButton#%1:checked { background: palette(highlight); border-color: palette(highlight); } "
+                                      "QToolButton#%1:hover { border-color: palette(highlight); } "
+                                      "QToolButton#%1:focus { border-color: palette(text); }")
+                                  .arg(toolIds[i]));
+        button->setFixedSize(34, 34);
+        button->setFocusPolicy(Qt::StrongFocus);
         button->setCheckable(true);
         button->setChecked(i == 0);
+        button->setToolTip(tr("%1 (%2)\n%3").arg(toolNames[i], QKeySequence(toolKeys[i]).toString(), descriptions[i]));
+        button->setAccessibleName(toolNames[i]);
+        button->setAccessibleDescription(
+            tr("%1 Shortcut %2 while the canvas is focused.").arg(descriptions[i], QKeySequence(toolKeys[i]).toString()));
         group->addButton(button, i);
+        m_toolButtons.append(button);
         tools->addWidget(button);
     }
-    group->button(SkinCanvas::Eraser)->setToolTip(tr("Erase outer-layer pixels. Minecraft base layers must remain opaque."));
-    connect(group, &QButtonGroup::idClicked, this, [this](int id) { m_canvas->setTool(SkinCanvas::Tool(id)); });
-    canvasLayout->addLayout(tools);
+    updateToolIcons();
+    tools->addStretch();
+    connect(group, &QButtonGroup::idClicked, this, [this](int id) {
+        m_canvas->setTool(SkinCanvas::Tool(id));
+        m_canvas->setFocus(Qt::ShortcutFocusReason);
+    });
+    connect(m_canvas, &SkinCanvas::toolChanged, this, [group](SkinCanvas::Tool tool) { group->button(tool)->setChecked(true); });
+    canvasLayout->addWidget(toolbox);
     auto* colors = new QHBoxLayout;
     m_colorButton = new QPushButton(canvasPanel);
     m_colorButton->setFixedHeight(28);
@@ -245,8 +327,8 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     m_fallback->setAccessibleName(tr("Front and back skin preview"));
     previewLayout->addWidget(m_fallback, 1);
     if (SkinOpenGLWindow::hasOpenGL()) {
-        m_preview = new SkinOpenGLWindow(this, palette().color(QPalette::Base));
-        m_previewContainer = QWidget::createWindowContainer(m_preview, previewPanel);
+        m_preview = new SkinOpenGLWindow(this, palette().color(QPalette::Base), previewPanel);
+        m_previewContainer = m_preview;
         m_previewContainer->setMinimumSize(200, 200);
         m_previewContainer->setFocusPolicy(Qt::StrongFocus);
         m_previewContainer->setAccessibleName(tr("Interactive 3D skin preview"));
@@ -519,9 +601,24 @@ void SkinEditorDialog::reject()
 void SkinEditorDialog::changeEvent(QEvent* event)
 {
     QDialog::changeEvent(event);
-    // Native child windows otherwise remain above a nested inline dialog.
+    if (event->type() == QEvent::PaletteChange)
+        updateToolIcons();
     if (event->type() == QEvent::EnabledChange && m_previewContainer)
         m_previewContainer->setVisible(isEnabled() && !m_previewFailed);
+}
+
+void SkinEditorDialog::updateToolIcons()
+{
+    for (int i = 0; i < m_toolButtons.size(); ++i) {
+        QIcon icon;
+        const auto tool = SkinCanvas::Tool(i);
+        for (auto mode : { QIcon::Normal, QIcon::Active, QIcon::Selected }) {
+            icon.addPixmap(toolPixmap(tool, palette().color(QPalette::ButtonText)), mode, QIcon::Off);
+            icon.addPixmap(toolPixmap(tool, palette().color(QPalette::HighlightedText)), mode, QIcon::On);
+        }
+        icon.addPixmap(toolPixmap(tool, palette().color(QPalette::Disabled, QPalette::ButtonText)), QIcon::Disabled);
+        m_toolButtons[i]->setIcon(icon);
+    }
 }
 
 void SkinEditorDialog::resizeEvent(QResizeEvent* event)

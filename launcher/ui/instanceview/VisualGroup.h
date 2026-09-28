@@ -35,6 +35,7 @@
 
 #pragma once
 
+#include <QHash>
 #include <QList>
 #include <QRect>
 #include <QString>
@@ -64,10 +65,11 @@ struct VisualGroup {
     QList<VisualRow> rows;
     int firstItemIndex = 0;
     int m_verticalPosition = 0;
+    QHash<int, QPair<int, int>> positions;
 
     /* logic */
     /// update the internal list of items and flow them into the rows.
-    void update();
+    void update(const QList<QModelIndex>& items);
 
     /// draw the header at y-position.
     void drawHeader(QPainter* painter, const QStyleOptionViewItem& option) const;

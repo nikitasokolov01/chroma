@@ -22,7 +22,8 @@
 #include <QOpenGLFunctions>
 #include <QOpenGLShaderProgram>
 #include <QOpenGLTexture>
-#include <QOpenGLWindow>
+#include <QOpenGLVertexArrayObject>
+#include <QOpenGLWidget>
 #include <QVector2D>
 #include "minecraft/skins/SkinModel.h"
 #include "ui/dialogs/skins/draw/BoxGeometry.h"
@@ -34,11 +35,13 @@ class SkinProvider {
     virtual SkinModel* getSelectedSkin() = 0;
     virtual QHash<QString, QImage> capes() = 0;
 };
-class SkinOpenGLWindow : public QOpenGLWindow, protected QOpenGLFunctions {
+// Kept under its existing name for callers; a widget framebuffer lets Qt
+// composite the preview correctly inside scrolling and stacked inline pages.
+class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     Q_OBJECT
 
    public:
-    SkinOpenGLWindow(SkinProvider* parent, QColor color);
+    SkinOpenGLWindow(SkinProvider* provider, QColor color, QWidget* parent = nullptr);
     virtual ~SkinOpenGLWindow();
 
     void updateScene(SkinModel* skin);
@@ -53,8 +56,8 @@ class SkinOpenGLWindow : public QOpenGLWindow, protected QOpenGLFunctions {
 
    signals:
     void renderingFailed();
-    // Consumers taking a snapshot must read the default framebuffer before
-    // Qt swaps it; its back-buffer contents are otherwise undefined.
+    // Signals completed drawing. Read grabFramebuffer() outside this callback
+    // because a widget framebuffer readback may itself invoke paintGL().
     void frameRendered();
 
    protected:
@@ -74,6 +77,9 @@ class SkinOpenGLWindow : public QOpenGLWindow, protected QOpenGLFunctions {
     void renderBackground();
 
    private:
+    void cleanupGL();
+    QMetaObject::Connection m_contextCleanup;
+    QOpenGLVertexArrayObject m_vertexArray;
     QOpenGLShaderProgram* m_modelProgram = nullptr;
     QOpenGLShaderProgram* m_backgroundProgram = nullptr;
     opengl::Scene* m_scene = nullptr;

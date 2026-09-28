@@ -21,6 +21,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QOpenGLBuffer>
+#include <QOpenGLContext>
 #include <QVector2D>
 #include <QVector3D>
 #include <QtMath>
@@ -31,50 +32,45 @@
 #include "ui/dialogs/skins/draw/BoxGeometry.h"
 #include "ui/dialogs/skins/draw/Scene.h"
 
-SkinOpenGLWindow::SkinOpenGLWindow(SkinProvider* parent, QColor color)
-    : QOpenGLWindow(), QOpenGLFunctions(), m_baseColor(color), m_parent(parent)
+SkinOpenGLWindow::SkinOpenGLWindow(SkinProvider* provider, QColor color, QWidget* parent)
+    : QOpenGLWidget(parent), QOpenGLFunctions(), m_baseColor(color), m_parent(provider)
 {
     QSurfaceFormat format = QSurfaceFormat::defaultFormat();
     format.setDepthBufferSize(24);
     setFormat(format);
+    setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
+    setFocusPolicy(Qt::StrongFocus);
 }
 
 SkinOpenGLWindow::~SkinOpenGLWindow()
 {
-    if (!context())
-        return;
-    // Make sure the context is current when deleting the texture
-    // and the buffers.
-    makeCurrent();
-    // double check if resources were initialized because they are not
-    // initialized together with the object
-    if (m_scene) {
-        delete m_scene;
-    }
-    if (m_background) {
-        delete m_background;
-    }
-    if (m_backgroundTexture) {
-        if (m_backgroundTexture->isCreated()) {
-            m_backgroundTexture->destroy();
-        }
-        delete m_backgroundTexture;
-    }
-    if (m_modelProgram) {
-        if (m_modelProgram->isLinked()) {
-            m_modelProgram->release();
-        }
-        m_modelProgram->removeAllShaders();
-        delete m_modelProgram;
-    }
-    if (m_backgroundProgram) {
-        if (m_backgroundProgram->isLinked()) {
-            m_backgroundProgram->release();
-        }
-        m_backgroundProgram->removeAllShaders();
-        delete m_backgroundProgram;
-    }
-    doneCurrent();
+    cleanupGL();
+}
+
+void SkinOpenGLWindow::cleanupGL()
+{
+    // Reparenting an inline page can replace its top-level context. Release
+    // every resource with its original context current, then rebuild on show.
+    disconnect(m_contextCleanup);
+    const bool hadScene = m_scene != nullptr;
+    if (context())
+        makeCurrent();
+    delete m_scene;
+    m_scene = nullptr;
+    delete m_background;
+    m_background = nullptr;
+    delete m_backgroundTexture;
+    m_backgroundTexture = nullptr;
+    delete m_modelProgram;
+    m_modelProgram = nullptr;
+    delete m_backgroundProgram;
+    m_backgroundProgram = nullptr;
+    m_vertexArray.destroy();
+    if (context())
+        doneCurrent();
+    m_textureDirty = m_textureDirty || hadScene;
+    m_capeDirty = m_capeDirty || hadScene;
+    m_isFirstFrame = true;
 }
 
 void SkinOpenGLWindow::mousePressEvent(QMouseEvent* e)
@@ -120,8 +116,7 @@ void SkinOpenGLWindow::mouseReleaseEvent([[maybe_unused]] QMouseEvent* e)
 void SkinOpenGLWindow::initializeGL()
 {
     initializeOpenGLFunctions();
-
-    glClearColor(m_baseColor.redF(), m_baseColor.greenF(), m_baseColor.blueF(), 1);
+    m_contextCleanup = connect(context(), &QOpenGLContext::aboutToBeDestroyed, this, &SkinOpenGLWindow::cleanupGL, Qt::DirectConnection);
 
     if (!initShaders()) {
         emit renderingFailed();
@@ -129,6 +124,9 @@ void SkinOpenGLWindow::initializeGL()
     }
 
     generateBackgroundTexture(32, 32, 1);
+    m_vertexArray.create();
+    if (m_vertexArray.isCreated())
+        m_vertexArray.bind();
 
     QImage skin, cape;
     bool slim = false;
@@ -149,13 +147,19 @@ void SkinOpenGLWindow::initializeGL()
         cape = m_pendingCape;
         m_capeDirty = false;
     }
+    m_pendingTexture = skin;
+    m_model = slim ? SkinModel::SLIM : SkinModel::CLASSIC;
+    m_pendingCape = cape;
     m_scene = new opengl::Scene(skin, slim, cape);
     m_scene->setLayersVisible(m_baseVisible, m_overlayVisible);
     m_scene->setElytraVisible(m_elytraVisible);
     for (int part = 0; part < 6; ++part)
         m_scene->setPartVisible(part, m_visibleParts & (1u << part));
     m_background = opengl::BoxGeometry::Plane();
-    glEnable(GL_TEXTURE_2D);
+    if (m_vertexArray.isCreated())
+        m_vertexArray.release();
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 bool SkinOpenGLWindow::initShaders()
@@ -225,9 +229,23 @@ void SkinOpenGLWindow::resizeGL(int w, int h)
 
 void SkinOpenGLWindow::paintGL()
 {
+    // QOpenGLWidget renders to its own FBO, never the top-level window's
+    // default target. Reestablish state after Qt paints other widget content.
+    glBindFramebuffer(GL_FRAMEBUFFER, defaultFramebufferObject());
+    const QSize pixels = size() * devicePixelRatioF();
+    glViewport(0, 0, pixels.width(), pixels.height());
+    glDisable(GL_SCISSOR_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDepthMask(GL_TRUE);
+    glClearDepthf(1.0f);
+    glClearColor(m_baseColor.redF(), m_baseColor.greenF(), m_baseColor.blueF(), 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     if (!m_scene)
         return;
-    // GPU uploads only happen inside paintGL, where Qt has made this window's
+    glActiveTexture(GL_TEXTURE0);
+    if (m_vertexArray.isCreated())
+        m_vertexArray.bind();
+    // GPU uploads only happen inside paintGL, where Qt has made this widget's
     // context current. Painting the editor never invokes OpenGL directly.
     if (m_textureDirty) {
         m_scene->setMode(m_model == SkinModel::SLIM);
@@ -240,25 +258,20 @@ void SkinOpenGLWindow::paintGL()
             m_scene->setCape(m_pendingCape);
         m_capeDirty = false;
     }
-    // Adjust the viewport to account for fractional scaling
-    qreal dpr = devicePixelRatio();
-    if (dpr != 1.f) {
-        QSize scaledSize = size() * dpr;
-        glViewport(0, 0, scaledSize.width(), scaledSize.height());
-    }
-
-    // Clear color and depth buffer
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
     // Enable depth buffer
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
 
     // Enable back face culling
     glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glFrontFace(GL_CCW);
 
     glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendEquation(GL_FUNC_ADD);
+    // Keep the checkerboard-backed preview opaque for Qt's compositor even
+    // when an outer skin layer uses partial transparency.
+    glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
 
     m_backgroundProgram->bind();
     renderBackground();
@@ -280,6 +293,13 @@ void SkinOpenGLWindow::paintGL()
 
     m_scene->draw(m_modelProgram);
     m_modelProgram->release();
+    if (m_vertexArray.isCreated())
+        m_vertexArray.release();
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
 
     // Redraw the first frame; this is necessary because the pixel ratio for Wayland fractional scaling is not negotiated properly on the
     // first frame
@@ -430,7 +450,7 @@ void SkinOpenGLWindow::keyPressEvent(QKeyEvent* event)
             m_distance = qMin(120.f, m_distance + 4);
             break;
         default:
-            QOpenGLWindow::keyPressEvent(event);
+            QOpenGLWidget::keyPressEvent(event);
             return;
     }
     update();

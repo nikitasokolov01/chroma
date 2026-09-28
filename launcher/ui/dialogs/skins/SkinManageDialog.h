@@ -32,6 +32,7 @@ namespace Ui {
 class SkinManageDialog;
 }
 class QPushButton;
+class QComboBox;
 class SkinManageDialog : public QDialog, public SkinProvider {
     Q_OBJECT
    public:
@@ -41,6 +42,9 @@ class SkinManageDialog : public QDialog, public SkinProvider {
 
     virtual SkinModel* getSelectedSkin() override;
     virtual QHash<QString, QImage> capes() override;
+
+   signals:
+    void manageAccountsRequested();
 
    public slots:
     void selectionChanged(QItemSelection, QItemSelection);
@@ -65,6 +69,9 @@ class SkinManageDialog : public QDialog, public SkinProvider {
 
    private:
     void setupCapes();
+    void refreshAccounts();
+    void selectAccount(MinecraftAccountPtr account);
+    void updateAccountActions();
 
    private:
     MinecraftAccountPtr m_acct;
@@ -77,5 +84,7 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     QLabel* m_skinPreviewLabel = nullptr;
     QWidget* m_skinPreviewContainer = nullptr;
     QPushButton* m_editButton = nullptr;
+    QComboBox* m_accountCombo = nullptr;
+    QLabel* m_accountStatus = nullptr;
     bool m_previewFailed = false;
 };

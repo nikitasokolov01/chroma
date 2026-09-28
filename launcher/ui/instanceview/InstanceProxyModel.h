@@ -18,6 +18,7 @@
 #include <QCollator>
 #include <QDateTime>
 #include <QHash>
+#include <QSet>
 #include <QSortFilterProxyModel>
 
 #include "modplatform/ModIndex.h"
@@ -33,6 +34,7 @@ class InstanceProxyModel : public QSortFilterProxyModel {
     InstanceProxyModel(QObject* parent = 0);
     void setSourceModel(QAbstractItemModel* sourceModel) override;
     static QString formatSummary(const QString& version, ModPlatform::ModLoaderTypes loaders);
+    QStringList orderedInstanceIds() const;
 
    protected:
     QVariant data(const QModelIndex& index, int role) const override;
@@ -55,4 +57,6 @@ class InstanceProxyModel : public QSortFilterProxyModel {
     QHash<QString, SummaryCacheEntry> m_summaries;
     QList<QMetaObject::Connection> m_sourceConnections;
     QTimer* m_summaryTimer;
+    QSet<int> m_summaryRows;
+    bool m_allSummariesDirty = true;
 };

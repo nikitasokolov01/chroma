@@ -30,6 +30,7 @@
 #include <QJsonObject>
 #include <QSet>
 #include <QTimer>
+#include <algorithm>
 
 InstanceProxyModel::InstanceProxyModel(QObject* parent) : QSortFilterProxyModel(parent)
 {
@@ -49,12 +50,26 @@ void InstanceProxyModel::setSourceModel(QAbstractItemModel* model)
     m_sourceConnections.clear();
     m_summaryTimer->stop();
     m_summaries.clear();
+    m_summaryRows.clear();
+    m_allSummariesDirty = true;
     QSortFilterProxyModel::setSourceModel(model);
     if (!model)
         return;
+    if (auto* instances = qobject_cast<InstanceList*>(model))
+        m_sourceConnections.append(connect(instances, &InstanceList::manualOrderChanged, this, [this] { invalidate(); }));
 
-    const auto schedule = [this] { m_summaryTimer->start(0); };
-    m_sourceConnections.append(connect(model, &QAbstractItemModel::dataChanged, this, schedule));
+    const auto schedule = [this] {
+        m_allSummariesDirty = true;
+        m_summaryTimer->start(0);
+    };
+    m_sourceConnections.append(connect(model, &QAbstractItemModel::dataChanged, this,
+                                       [this](const QModelIndex& first, const QModelIndex& last, const QList<int>& roles) {
+                                           if (!roles.isEmpty() && !roles.contains(Qt::DisplayRole) && !roles.contains(InstanceSummaryRole))
+                                               return;
+                                           for (int row = first.row(); row <= last.row(); ++row)
+                                               m_summaryRows.insert(row);
+                                           m_summaryTimer->start(0);
+                                       }));
     m_sourceConnections.append(connect(model, &QAbstractItemModel::rowsInserted, this, schedule));
     m_sourceConnections.append(connect(model, &QAbstractItemModel::rowsRemoved, this, schedule));
     m_sourceConnections.append(connect(model, &QAbstractItemModel::modelReset, this, [this, schedule] {
@@ -95,10 +110,20 @@ QString InstanceProxyModel::formatSummary(const QString& version, ModPlatform::M
 
 void InstanceProxyModel::refreshSummaries()
 {
-    QHash<QString, SummaryCacheEntry> summaries;
+    QHash<QString, SummaryCacheEntry> summaries = m_allSummariesDirty ? QHash<QString, SummaryCacheEntry>() : m_summaries;
     bool changed = false;
+    QList<QModelIndex> changedIndices;
     if (auto* model = sourceModel()) {
-        for (int row = 0; row < model->rowCount(); ++row) {
+        QList<int> rows;
+        if (m_allSummariesDirty) {
+            rows.reserve(model->rowCount());
+            for (int row = 0; row < model->rowCount(); ++row)
+                rows.append(row);
+        } else
+            rows = m_summaryRows.values();
+        for (int row : rows) {
+            if (row < 0 || row >= model->rowCount())
+                continue;
             const auto sourceIndex = model->index(row, 0);
             const auto id = sourceIndex.data(InstanceList::InstanceIDRole).toString();
             auto* instance = static_cast<BaseInstance*>(sourceIndex.data(InstanceList::InstancePointerRole).value<void*>());
@@ -153,14 +178,24 @@ void InstanceProxyModel::refreshSummaries()
                     }
                 }
             }
-            changed |= previous == m_summaries.cend() || previous->version != entry.version || previous->loaders != entry.loaders;
+            const bool entryChanged =
+                previous == m_summaries.cend() || previous->version != entry.version || previous->loaders != entry.loaders;
+            changed |= entryChanged;
+            if (entryChanged)
+                changedIndices.append(sourceIndex);
             summaries.insert(id, entry);
         }
     }
-    changed |= summaries.size() != m_summaries.size();
     m_summaries = std::move(summaries);
-    if (changed && rowCount() > 0)
-        emit dataChanged(index(0, 0), index(rowCount() - 1, 0), { InstanceSummaryRole });
+    m_allSummariesDirty = false;
+    m_summaryRows.clear();
+    if (changed) {
+        for (const auto& sourceIndex : changedIndices) {
+            const auto index = mapFromSource(sourceIndex);
+            if (index.isValid())
+                emit dataChanged(index, index, { InstanceSummaryRole });
+        }
+    }
 }
 
 QVariant InstanceProxyModel::data(const QModelIndex& index, int role) const
@@ -200,9 +235,30 @@ bool InstanceProxyModel::subSortLessThan(const QModelIndex& left, const QModelIn
     BaseInstance* pdataLeft = static_cast<BaseInstance*>(left.internalPointer());
     BaseInstance* pdataRight = static_cast<BaseInstance*>(right.internalPointer());
     QString sortMode = APPLICATION->settings()->get("InstSortMode").toString();
+    if (sortMode == "Manual") {
+        const int leftRank = left.data(InstanceList::ManualOrderRole).toInt();
+        const int rightRank = right.data(InstanceList::ManualOrderRole).toInt();
+        if (leftRank != rightRank)
+            return leftRank < rightRank;
+    }
     if (sortMode == "LastLaunch") {
         return pdataLeft->lastLaunch() > pdataRight->lastLaunch();
     } else {
         return m_naturalSort.compare(pdataLeft->name(), pdataRight->name()) < 0;
     }
+}
+
+QStringList InstanceProxyModel::orderedInstanceIds() const
+{
+    QList<QModelIndex> indices;
+    if (!sourceModel())
+        return {};
+    for (int row = 0; row < sourceModel()->rowCount(); ++row)
+        indices.append(sourceModel()->index(row, 0));
+    std::stable_sort(indices.begin(), indices.end(),
+                     [this](const QModelIndex& left, const QModelIndex& right) { return lessThan(left, right); });
+    QStringList ids;
+    for (const auto& index : indices)
+        ids.append(index.data(InstanceList::InstanceIDRole).toString());
+    return ids;
 }

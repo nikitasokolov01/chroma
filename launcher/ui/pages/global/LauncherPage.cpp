@@ -62,7 +62,8 @@ enum InstSortMode {
     // Sort alphabetically by name.
     Sort_Name,
     // Sort by which instance was launched most recently.
-    Sort_LastLaunch
+    Sort_LastLaunch,
+    Sort_Manual
 };
 
 LauncherPage::LauncherPage(QWidget* parent) : QWidget(parent), ui(new Ui::LauncherPage)
@@ -71,6 +72,7 @@ LauncherPage::LauncherPage(QWidget* parent) : QWidget(parent), ui(new Ui::Launch
 
     ui->sortingModeGroup->setId(ui->sortByNameBtn, Sort_Name);
     ui->sortingModeGroup->setId(ui->sortLastLaunchedBtn, Sort_LastLaunch);
+    ui->sortingModeGroup->setId(ui->sortManualBtn, Sort_Manual);
 
     loadSettings();
 
@@ -224,6 +226,9 @@ void LauncherPage::applySettings()
     // Instance
     auto sortMode = (InstSortMode)ui->sortingModeGroup->checkedId();
     switch (sortMode) {
+        case Sort_Manual:
+            s->set("InstSortMode", "Manual");
+            break;
         case Sort_LastLaunch:
             s->set("InstSortMode", "LastLaunch");
             break;
@@ -278,7 +283,9 @@ void LauncherPage::loadSettings()
 
     // Instance
     QString sortMode = s->get("InstSortMode").toString();
-    if (sortMode == "LastLaunch") {
+    if (sortMode == "Manual") {
+        ui->sortManualBtn->setChecked(true);
+    } else if (sortMode == "LastLaunch") {
         ui->sortLastLaunchedBtn->setChecked(true);
     } else {
         ui->sortByNameBtn->setChecked(true);

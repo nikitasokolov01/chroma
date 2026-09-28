@@ -12,8 +12,13 @@ ecm_add_test(ProjectMetadata_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSI
     TEST_NAME ProjectMetadata)
 ecm_add_test(SkinTextureDocument_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME SkinTextureDocument)
+ecm_add_test(SkinPreview_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME SkinPreview)
+ecm_add_test(InstanceView_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME InstanceView)
+set_tests_properties(InstanceView PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(UNIX AND NOT APPLE)
-    set_tests_properties(WindowChrome ProjectMetadata PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(WindowChrome ProjectMetadata SkinPreview PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 # Opt-in native UI verification and screenshots; deliberately excluded from the

@@ -463,59 +463,9 @@ void ClayPanel::paintEvent(QPaintEvent* event)
     Clay::drawSurface(&painter, QRectF(rect()).adjusted(5, 5, -5, -5), tint, radius);
 }
 
-ClayCanvas::ClayCanvas(QWidget* parent) : QWidget(parent), m_driftTimer(new QTimer(this))
+ClayCanvas::ClayCanvas(QWidget* parent) : QWidget(parent)
 {
-    qApp->installEventFilter(this);
     setAutoFillBackground(false);
-    m_driftTimer->setInterval(100);
-    m_driftTimer->setTimerType(Qt::CoarseTimer);
-    connect(m_driftTimer, &QTimer::timeout, this, [this] {
-        if (!isVisible() || !window()->isActiveWindow() || window()->isMinimized() || !Clay::enabled() || !Clay::motionAllowed()) {
-            m_driftTimer->stop();
-            update();
-            return;
-        }
-        update();
-    });
-}
-
-bool ClayCanvas::eventFilter(QObject* watched, QEvent* event)
-{
-    if (watched == window() && (event->type() == QEvent::ActivationChange || event->type() == QEvent::WindowStateChange))
-        updateAnimation();
-    return false;
-}
-
-void ClayCanvas::updateAnimation()
-{
-    const bool animate = isVisible() && window()->isActiveWindow() && !window()->isMinimized() && Clay::enabled() && Clay::motionAllowed();
-    if (animate && !m_driftTimer->isActive()) {
-        m_elapsed.restart();
-        m_driftTimer->start();
-    } else if (!animate) {
-        m_driftTimer->stop();
-    }
-    update();
-}
-
-void ClayCanvas::showEvent(QShowEvent* event)
-{
-    QWidget::showEvent(event);
-    updateAnimation();
-}
-
-void ClayCanvas::hideEvent(QHideEvent* event)
-{
-    m_driftTimer->stop();
-    QWidget::hideEvent(event);
-}
-
-void ClayCanvas::changeEvent(QEvent* event)
-{
-    QWidget::changeEvent(event);
-    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange || event->type() == QEvent::EnabledChange ||
-        event->type() == QEvent::ActivationChange || event->type() == QEvent::WindowStateChange)
-        updateAnimation();
 }
 
 void ClayCanvas::paintEvent(QPaintEvent* event)
@@ -527,12 +477,10 @@ void ClayCanvas::paintEvent(QPaintEvent* event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.fillRect(rect(), Clay::colors().Canvas);
-    const qreal seconds = m_driftTimer->isActive() && m_elapsed.isValid() ? m_elapsed.elapsed() / 1000.0 : 0;
     const qreal radius = qBound<qreal>(180, qMax(width(), height()) * 0.52, 650);
-    const auto blob = [&](QPointF center, QColor color, qreal phase, qreal duration) {
-        if (m_driftTimer->isActive())
-            center += QPointF(std::sin(seconds * 6.28318530718 / duration + phase) * 12,
-                              std::cos(seconds * 6.28318530718 / duration + phase) * 16);
+    // Static gradients preserve the canvas without invalidating every visible
+    // instance card ten times per second while the launcher is idle.
+    const auto blob = [&](QPointF center, QColor color) {
         QRadialGradient gradient(center, radius);
         const bool dark = Clay::dark();
         if (dark)
@@ -545,7 +493,7 @@ void ClayCanvas::paintEvent(QPaintEvent* event)
         gradient.setColorAt(1, color);
         painter.fillRect(rect(), gradient);
     };
-    blob(QPointF(width() * 0.05, height() * 0.12), Clay::Violet, 0, 12);
-    blob(QPointF(width() * 0.92, height() * 0.40), Clay::Pink, 2, 10);
-    blob(QPointF(width() * 0.35, height() * 0.95), Clay::Blue, 4, 8);
+    blob(QPointF(width() * 0.05, height() * 0.12), Clay::Violet);
+    blob(QPointF(width() * 0.92, height() * 0.40), Clay::Pink);
+    blob(QPointF(width() * 0.35, height() * 0.95), Clay::Blue);
 }

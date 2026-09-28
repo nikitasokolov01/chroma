@@ -44,6 +44,7 @@
 #include <QListView>
 #include <QMimeData>
 #include <QMouseEvent>
+#include <QPaintEvent>
 #include <QPainter>
 #include <QPersistentModelIndex>
 #include <QScrollArea>
@@ -51,8 +52,11 @@
 #include <QTimer>
 #include <QWheelEvent>
 #include <QtMath>
+#include <algorithm>
 #include <limits>
 
+#include "InstanceDelegate.h"
+#include "InstanceProxyModel.h"
 #include "VisualGroup.h"
 #include "ui/themes/CatPainter.h"
 #include "ui/themes/ThemeManager.h"
@@ -79,7 +83,7 @@ InstanceView::InstanceView(QWidget* parent) : QAbstractItemView(parent)
     setAutoScroll(true);
     setMouseTracking(true);
     viewport()->setAttribute(Qt::WA_Hover);
-    setPaintCat(APPLICATION->settings()->get("TheCat").toBool());
+    setPaintCat(APPLICATION_DYN && APPLICATION_DYN->settings()->get("TheCat").toBool());
     connect(verticalScrollBar(), &QScrollBar::valueChanged, viewport(), QOverload<>::of(&QWidget::update));
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, viewport(), QOverload<>::of(&QWidget::update));
 }
@@ -132,11 +136,24 @@ void InstanceView::setOuterScrollArea(QScrollArea* area)
     updateGeometries();
 }
 
-void InstanceView::dataChanged([[maybe_unused]] const QModelIndex& topLeft,
-                               [[maybe_unused]] const QModelIndex& bottomRight,
-                               [[maybe_unused]] const QList<int>& roles)
+void InstanceView::dataChanged(const QModelIndex& topLeft, const QModelIndex& bottomRight, const QList<int>& roles)
 {
-    scheduleDelayedItemsLayout();
+    bool geometryChanged = roles.contains(Qt::SizeHintRole) || roles.contains(Qt::FontRole) ||
+                           (!qobject_cast<ListViewDelegate*>(itemDelegate()) && (roles.isEmpty() || roles.contains(Qt::DisplayRole)));
+    if (roles.isEmpty() || roles.contains(InstanceViewRoles::GroupRole)) {
+        for (int row = topLeft.row(); row <= bottomRight.row(); ++row) {
+            if (row >= m_itemGroups.size() || !m_itemGroups[row] ||
+                m_itemGroups[row]->text != model()->index(row, 0).data(InstanceViewRoles::GroupRole).toString()) {
+                geometryChanged = true;
+                break;
+            }
+        }
+    }
+    if (geometryChanged) {
+        scheduleDelayedItemsLayout();
+        return;
+    }
+    QAbstractItemView::dataChanged(topLeft, bottomRight, roles);
 }
 void InstanceView::rowsInserted([[maybe_unused]] const QModelIndex& parent, [[maybe_unused]] int start, [[maybe_unused]] int end)
 {
@@ -220,33 +237,50 @@ void InstanceView::updateGeometries()
 {
     if (!model())
         return;
-    m_geometryCache.clear();
+    m_geometry = QVector<QRect>(model()->rowCount());
+    m_itemGroups = QVector<VisualGroup*>(model()->rowCount(), nullptr);
+    if (model()->rowCount() > 0 && itemDelegate()) {
+        QStyleOptionViewItem option;
+        initViewItemOption(&option);
+        m_itemWidth = itemDelegate()->sizeHint(option, model()->index(0, 0)).width();
+    }
     m_currentItemsPerRow = calculateItemsPerRow();
 
     QMap<LocaleString, VisualGroup*> cats;
+    QMap<LocaleString, QList<QModelIndex>> groupedItems;
+    QHash<QString, VisualGroup*> oldGroups;
+    for (auto* group : m_groups)
+        oldGroups.insert(group->text, group);
 
     for (int i = 0; i < model()->rowCount(); ++i) {
-        const QString groupName = model()->index(i, 0).data(InstanceViewRoles::GroupRole).toString();
+        const auto index = model()->index(i, 0);
+        const QString groupName = index.data(InstanceViewRoles::GroupRole).toString();
+        groupedItems[groupName].append(index);
         if (!cats.contains(groupName)) {
-            VisualGroup* old = this->category(groupName);
+            VisualGroup* old = oldGroups.value(groupName);
             if (old) {
                 auto cat = new VisualGroup(old);
                 cats.insert(groupName, cat);
-                cat->update();
             } else {
                 auto cat = new VisualGroup(groupName, this);
                 if (m_fVisibility) {
                     cat->collapsed = m_fVisibility(groupName);
                 }
                 cats.insert(groupName, cat);
-                cat->update();
             }
         }
+        m_itemGroups[i] = cats.value(groupName);
     }
+    for (auto it = cats.begin(); it != cats.end(); ++it)
+        it.value()->update(groupedItems.value(it.key()));
 
     qDeleteAll(m_groups);
     m_groups = cats.values();
     updateScrollbar();
+    for (int row = 0; row < m_geometry.size(); ++row) {
+        if (!m_geometry[row].isNull())
+            m_geometry[row].translate(0, m_itemGroups[row]->verticalPosition());
+    }
     viewport()->update();
 }
 
@@ -262,7 +296,7 @@ bool InstanceView::isIndexHidden(const QModelIndex& index) const
 
 VisualGroup* InstanceView::category(const QModelIndex& index) const
 {
-    return category(index.data(InstanceViewRoles::GroupRole).toString());
+    return index.isValid() && index.row() < m_itemGroups.size() ? m_itemGroups[index.row()] : nullptr;
 }
 
 VisualGroup* InstanceView::category(const QString& cat) const
@@ -277,11 +311,13 @@ VisualGroup* InstanceView::category(const QString& cat) const
 
 VisualGroup* InstanceView::categoryAt(const QPoint& pos, VisualGroup::HitResults& result) const
 {
-    for (auto group : m_groups) {
+    const auto next = std::upper_bound(m_groups.cbegin(), m_groups.cend(), pos.y(),
+                                       [](int y, const VisualGroup* group) { return y < group->verticalPosition(); });
+    if (next != m_groups.cbegin()) {
+        auto* group = *std::prev(next);
         result = group->hitScan(pos);
-        if (result != VisualGroup::NoHit) {
+        if (result != VisualGroup::NoHit)
             return group;
-        }
     }
     result = VisualGroup::NoHit;
     return nullptr;
@@ -311,11 +347,6 @@ int InstanceView::contentWidth() const
 
 int InstanceView::itemWidth() const
 {
-    if (model() && model()->rowCount() > 0 && itemDelegate()) {
-        QStyleOptionViewItem option;
-        initViewItemOption(&option);
-        return itemDelegate()->sizeHint(option, model()->index(0, 0)).width();
-    }
     return m_itemWidth;
 }
 
@@ -372,6 +403,13 @@ void InstanceView::mouseMoveEvent(QMouseEvent* event)
     QPoint topLeft;
     QPoint visualPos = event->pos();
     QPoint geometryPos = event->pos() + offset();
+
+    const auto hovered = indexAt(visualPos);
+    VisualGroup::HitResults hoverHit;
+    categoryAt(geometryPos, hoverHit);
+    const bool clickable =
+        (hovered.isValid() && hovered.flags().testFlag(Qt::ItemIsEnabled)) || hoverHit.testFlag(VisualGroup::CheckboxHit);
+    viewport()->setCursor(clickable ? Qt::PointingHandCursor : Qt::ArrowCursor);
 
     if (state() == ExpandingState || state() == CollapsingState) {
         return;
@@ -559,33 +597,38 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
         return;
     }
 
-    int wpWidth = viewport()->width();
-    option.rect.setWidth(wpWidth);
-    for (int i = 0; i < m_groups.size(); ++i) {
-        VisualGroup* category = m_groups.at(i);
-        int y = category->verticalPosition();
-        y -= verticalOffset();
-        QRect backup = option.rect;
-        int height = category->totalHeight();
-        option.rect.setTop(y);
-        option.rect.setHeight(height);
-        option.rect.setLeft(m_leftMargin);
-        option.rect.setRight(wpWidth - m_rightMargin);
-        if (event->rect().intersects(option.rect))
-            category->drawHeader(&painter, option);
-        y += category->totalHeight() + m_categoryMargin;
-        option.rect = backup;
+    const QRect dirty = event->rect().intersected(viewport()->visibleRegion().boundingRect());
+    const QRect contentDirty = dirty.translated(offset());
+    const QPoint hoverPosition = viewport()->mapFromGlobal(QCursor::pos());
+    const bool hasHover = viewport()->underMouse();
+    QList<QModelIndex> paintItems;
+    auto groupIterator = std::lower_bound(m_groups.cbegin(), m_groups.cend(), contentDirty.top(), [](const VisualGroup* group, int y) {
+        return group->verticalPosition() + group->totalHeight() < y;
+    });
+    for (; groupIterator != m_groups.cend(); ++groupIterator) {
+        const auto* group = *groupIterator;
+        const int top = group->verticalPosition();
+        if (top > contentDirty.bottom())
+            break;
+        if (top + group->totalHeight() < contentDirty.top())
+            continue;
+        option.rect = QRect(m_leftMargin, top - verticalOffset(), contentWidth(), group->headerHeight());
+        if (dirty.intersects(option.rect))
+            group->drawHeader(&painter, option);
+        if (group->collapsed)
+            continue;
+        const int contentTop = top + group->headerHeight() + 5;
+        auto row = std::lower_bound(group->rows.cbegin(), group->rows.cend(), contentDirty.top() - contentTop,
+                                    [](const VisualRow& item, int y) { return item.top + item.height <= y; });
+        for (; row != group->rows.cend() && row->top + contentTop <= contentDirty.bottom(); ++row)
+            paintItems.append(row->items);
     }
 
-    for (int i = 0; i < model()->rowCount(); ++i) {
-        const QModelIndex index = model()->index(i, 0);
-        if (isIndexHidden(index)) {
+    for (const QModelIndex& index : paintItems) {
+        option.rect = m_geometry[index.row()].translated(-offset());
+        if (!dirty.intersects(option.rect))
             continue;
-        }
         Qt::ItemFlags flags = index.flags();
-        option.rect = visualRect(index);
-        if (!event->rect().intersects(option.rect))
-            continue;
         option.features |= QStyleOptionViewItem::WrapText;
         if (flags & Qt::ItemIsSelectable && selectionModel()->isSelected(index)) {
             option.state |= selectionModel()->isSelected(index) ? QStyle::State_Selected : QStyle::State_None;
@@ -597,7 +640,7 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
             option.state |= QStyle::State_Editing;
         if (index == currentIndex() && hasFocus())
             option.state |= QStyle::State_HasFocus;
-        if (viewport()->underMouse() && option.rect.contains(viewport()->mapFromGlobal(QCursor::pos())))
+        if (hasHover && option.rect.contains(hoverPosition))
             option.state |= QStyle::State_MouseOver;
         option.state |= QStyle::State_Enabled;
         if (!(flags & Qt::ItemIsEnabled)) {
@@ -606,36 +649,11 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
         itemDelegate()->paint(&painter, option, index);
     }
 
-    /*
-     * Drop indicators for manual reordering...
-     */
-#if 0
-    if (!m_lastDragPosition.isNull())
-    {
-        std::pair<VisualGroup *, VisualGroup::HitResults> pair = rowDropPos(m_lastDragPosition);
-        VisualGroup *category = pair.first;
-        VisualGroup::HitResults row = pair.second;
-        if (category)
-        {
-            int internalRow = row - category->firstItemIndex;
-            QLine line;
-            if (internalRow >= category->numItems())
-            {
-                QRect toTheRightOfRect = visualRect(category->lastItem());
-                line = QLine(toTheRightOfRect.topRight(), toTheRightOfRect.bottomRight());
-            }
-            else
-            {
-                QRect toTheLeftOfRect = visualRect(model()->index(row, 0));
-                line = QLine(toTheLeftOfRect.topLeft(), toTheLeftOfRect.bottomLeft());
-            }
-            painter.save();
-            painter.setPen(QPen(Qt::black, 3));
-            painter.drawLine(line);
-            painter.restore();
-        }
+    if (!m_dropIndicator.isNull()) {
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(palette().color(QPalette::Highlight));
+        painter.drawRoundedRect(m_dropIndicator, 1.5, 1.5);
     }
-#endif
 }
 
 void InstanceView::resizeEvent([[maybe_unused]] QResizeEvent* event)
@@ -667,6 +685,13 @@ void InstanceView::wheelEvent(QWheelEvent* event)
     event->setAccepted(forwarded.isAccepted());
 }
 
+bool InstanceView::viewportEvent(QEvent* event)
+{
+    if (event->type() == QEvent::Leave)
+        viewport()->unsetCursor();
+    return QAbstractItemView::viewportEvent(event);
+}
+
 void InstanceView::dragEnterEvent(QDragEnterEvent* event)
 {
     executeDelayedItemsLayout();
@@ -675,6 +700,8 @@ void InstanceView::dragEnterEvent(QDragEnterEvent* event)
         return;
     }
     m_lastDragPosition = event->position().toPoint() + offset();
+    if (event->mimeData()->hasFormat("application/x-instanceid"))
+        updateDropIndicator(event->position().toPoint());
     if (m_outerScrollArea)
         m_outerDragScrollTimer->start();
     viewport()->update();
@@ -689,6 +716,8 @@ void InstanceView::dragMoveEvent(QDragMoveEvent* event)
         return;
     }
     m_lastDragPosition = event->position().toPoint() + offset();
+    if (event->mimeData()->hasFormat("application/x-instanceid"))
+        updateDropIndicator(event->position().toPoint());
     viewport()->update();
     event->accept();
 }
@@ -698,6 +727,8 @@ void InstanceView::dragLeaveEvent([[maybe_unused]] QDragLeaveEvent* event)
     executeDelayedItemsLayout();
 
     m_lastDragPosition = QPoint();
+    m_dropIndicator = {};
+    m_validDrop = false;
     if (m_outerDragScrollTimer)
         m_outerDragScrollTimer->stop();
     viewport()->update();
@@ -717,25 +748,35 @@ void InstanceView::dropEvent(QDropEvent* event)
 
     auto mimedata = event->mimeData();
 
-    if (event->source() == this) {
-        if (event->possibleActions() & Qt::MoveAction) {
-            std::pair<VisualGroup*, VisualGroup::HitResults> dropPos = rowDropPos(event->position().toPoint());
-            const VisualGroup* group = dropPos.first;
-            auto hitResult = dropPos.second;
-
-            if (hitResult == VisualGroup::HitResult::NoHit) {
-                viewport()->update();
-                return;
+    if (mimedata && mimedata->hasFormat("application/x-instanceid") && isDragEventAccepted(event)) {
+        updateDropIndicator(event->position().toPoint());
+        const auto instanceId = QString::fromUtf8(mimedata->data("application/x-instanceid"));
+        auto* proxy = qobject_cast<InstanceProxyModel*>(model());
+        if (m_validDrop && proxy && event->possibleActions().testFlag(Qt::MoveAction)) {
+            auto* instances = APPLICATION->instances().get();
+            auto ids = proxy->orderedInstanceIds();
+            if (m_dropBeforeId != instanceId) {
+                ids.removeAll(instanceId);
+                instances->setInstanceGroup(instanceId, m_dropGroup);
+                int insertion = m_dropBeforeId.isEmpty() ? -1 : ids.indexOf(m_dropBeforeId);
+                if (insertion < 0) {
+                    insertion = ids.size();
+                    for (int i = ids.size() - 1; i >= 0; --i) {
+                        if (instances->getInstanceGroup(ids[i]) == m_dropGroup) {
+                            insertion = i + 1;
+                            break;
+                        }
+                    }
+                }
+                ids.insert(insertion, instanceId);
+                instances->setManualOrder(ids);
             }
-            auto instanceId = QString::fromUtf8(mimedata->data("application/x-instanceid"));
-            auto instanceList = APPLICATION->instances().get();
-            instanceList->setInstanceGroup(instanceId, group->text);
             event->setDropAction(Qt::MoveAction);
             event->accept();
-
-            updateGeometries();
-            viewport()->update();
         }
+        m_dropIndicator = {};
+        m_validDrop = false;
+        viewport()->update();
         return;
     }
 
@@ -776,6 +817,9 @@ void InstanceView::startDrag(Qt::DropActions supportedActions)
     }
     /*auto action = */
     drag->exec(supportedActions, defaultDropAction);
+    m_dropIndicator = {};
+    m_validDrop = false;
+    viewport()->update();
     if (m_outerDragScrollTimer)
         m_outerDragScrollTimer->stop();
 }
@@ -791,40 +835,29 @@ QRect InstanceView::geometryRect(const QModelIndex& index) const
 {
     const_cast<InstanceView*>(this)->executeDelayedItemsLayout();
 
-    if (!index.isValid() || isIndexHidden(index) || index.column() > 0) {
+    if (!index.isValid() || index.model() != model() || index.column() > 0 || index.row() >= m_geometry.size()) {
         return QRect();
     }
-
-    int row = index.row();
-    if (m_geometryCache.contains(row)) {
-        return *m_geometryCache[row];
-    }
-
-    const VisualGroup* cat = category(index);
-    QPair<int, int> pos = cat->positionOf(index);
-    int x = pos.first;
-    // int y = pos.second;
-
-    QStyleOptionViewItem option;
-    initViewItemOption(&option);
-
-    QRect out;
-    out.setTop(cat->verticalPosition() + cat->headerHeight() + 5 + cat->rowTopOf(index));
-    out.setLeft(m_spacing + x * (itemWidth() + m_spacing));
-    out.setSize(itemDelegate()->sizeHint(option, index));
-    m_geometryCache.insert(row, new QRect(out));
-    return out;
+    return m_geometry[index.row()];
 }
 
 QModelIndex InstanceView::indexAt(const QPoint& point) const
 {
     const_cast<InstanceView*>(this)->executeDelayedItemsLayout();
 
-    for (int i = 0; i < model()->rowCount(); ++i) {
-        QModelIndex index = model()->index(i, 0);
-        if (visualRect(index).contains(point)) {
+    const auto position = point + offset();
+    VisualGroup::HitResults hit;
+    const auto* group = categoryAt(position, hit);
+    if (!group || group->collapsed || !hit.testFlag(VisualGroup::BodyHit))
+        return {};
+    const int localY = position.y() - group->verticalPosition() - group->headerHeight() - 5;
+    const auto row = std::lower_bound(group->rows.cbegin(), group->rows.cend(), localY,
+                                      [](const VisualRow& item, int y) { return item.top + item.height <= y; });
+    const int column = (position.x() - m_spacing) / (itemWidth() + m_spacing);
+    if (row != group->rows.cend() && column >= 0 && column < row->items.size()) {
+        const auto index = row->items[column];
+        if (m_geometry[index.row()].contains(position))
             return index;
-        }
     }
     return QModelIndex();
 }
@@ -832,6 +865,13 @@ QModelIndex InstanceView::indexAt(const QPoint& point) const
 void InstanceView::setSelection(const QRect& rect, const QItemSelectionModel::SelectionFlags commands)
 {
     executeDelayedItemsLayout();
+
+    if (rect.size() == QSize(1, 1)) {
+        const auto index = indexAt(rect.topLeft());
+        if (index.isValid())
+            selectionModel()->select(index, commands);
+        return;
+    }
 
     for (int i = 0; i < model()->rowCount(); ++i) {
         QModelIndex index = model()->index(i, 0);
@@ -878,9 +918,59 @@ QList<std::pair<QRect, QModelIndex>> InstanceView::draggablePaintPairs(const QMo
     return ret;
 }
 
-bool InstanceView::isDragEventAccepted([[maybe_unused]] QDropEvent* event)
+bool InstanceView::isDragEventAccepted(QDropEvent* event)
 {
-    return true;
+    const auto* data = event->mimeData();
+    if (!data)
+        return false;
+    if (data->hasFormat("application/x-instanceid"))
+        return APPLICATION_DYN && APPLICATION->instances()->getInstanceById(QString::fromUtf8(data->data("application/x-instanceid")));
+    return data->hasUrls();
+}
+
+void InstanceView::updateDropIndicator(const QPoint& point)
+{
+    m_validDrop = false;
+    m_dropIndicator = {};
+    m_dropBeforeId.clear();
+    const auto position = point + offset();
+    VisualGroup::HitResults hit;
+    const auto* group = categoryAt(position, hit);
+    if (!group && !m_groups.isEmpty() && position.y() >= m_groups.last()->verticalPosition())
+        group = m_groups.last();
+    if (!group)
+        return;
+    m_validDrop = true;
+    m_dropGroup = group->text;
+    if (group->collapsed || hit.testFlag(VisualGroup::HeaderHit)) {
+        m_dropIndicator =
+            QRect(m_leftMargin, group->verticalPosition() + group->headerHeight() - 3, contentWidth(), 3).translated(-offset());
+        return;
+    }
+    const int localY = position.y() - group->verticalPosition() - group->headerHeight() - 5;
+    auto row = std::lower_bound(group->rows.cbegin(), group->rows.cend(), localY,
+                                [](const VisualRow& item, int y) { return item.top + item.height <= y; });
+    if (row == group->rows.cend())
+        row = std::prev(group->rows.cend());
+    if (row->items.isEmpty())
+        return;
+    const int column = qBound(0, (position.x() - m_spacing) / (itemWidth() + m_spacing), int(row->items.size()) - 1);
+    const auto target = row->items[column];
+    auto rect = geometryRect(target);
+    const bool after = position.x() > rect.center().x() || position.y() > rect.bottom();
+    QModelIndex before = target;
+    if (after) {
+        if (column + 1 < row->items.size())
+            before = row->items[column + 1];
+        else if (std::next(row) != group->rows.cend())
+            before = std::next(row)->items.first();
+        else
+            before = {};
+    }
+    if (before.isValid())
+        m_dropBeforeId = before.data(InstanceList::InstanceIDRole).toString();
+    const int x = after ? rect.right() + m_spacing / 2 : rect.left() - m_spacing / 2;
+    m_dropIndicator = QRect(x, rect.top() + 6, 3, rect.height() - 12).translated(-offset());
 }
 
 std::pair<VisualGroup*, VisualGroup::HitResults> InstanceView::rowDropPos(const QPoint& pos)

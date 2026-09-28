@@ -29,7 +29,8 @@ restore focus when returning to the previous page.
 
 Motion follows Qt's UI-effects preference and Windows client-area animation
 settings. `CHROMA_REDUCED_MOTION=1` disables decorative and interaction animation.
-Background drift runs only while its window is visible, active, and not minimized.
+The library background uses static gradients so an idle window does not repeatedly
+repaint all visible cards. Buttons and menus retain their short transitions.
 
 ### Project details
 
@@ -55,25 +56,46 @@ loading. Failed images have a placeholder. Provider content cannot use the text
 browser's local-file loader. Request cancellation and page lifetime guards prevent
 superseded or closed views from receiving stale completions.
 
+### Instance library and navigation
+
+Drag cards before or after another card to save a manual order. The sort selector
+switches to **Manual**; **Name** and **Last played** remain available. Stable instance
+IDs are saved in `instgroups.json`, and filtered-out instances retain their order.
+Dragging between groups keeps the existing group-move behavior. Drop a card onto
+the sidebar to pin it; repeated drops keep one pin and preserve the instance.
+
+Instance layout builds group and card geometry in one pass. Hit testing uses saved
+geometry, painting visits visible rows, and progress changes avoid full layouts.
+Metadata summaries refresh only for affected rows. Enabled cards, buttons, and
+selectors use a hand cursor. Alt no longer reveals the hidden legacy menu bar;
+the sidebar launcher menu keeps those commands available. Decorative slogans have
+been removed.
+
 ### Accounts and Skin Studio
 
 The Accounts page shows the selected profile's avatar, name, UUID, account state,
 and actions to use the account, copy its UUID, or customize its skin.
 
-To open the editor, go to **Settings → Accounts**, select an account, choose
-**Customize Skin…**, select or import a skin in **Skin Library**, then choose
-**Edit Skin…** or double-click the skin. This opens **Skin Studio** inline.
+Open **Skins** from the sidebar, choose an account from the dropdown, then select
+or import a skin and choose **Edit Skin…** (or double-click it). This opens
+**Skin Studio** inline. Switching the skin target leaves the launcher's default
+account unchanged. Local editing is also available before adding an account.
 
 Skin Studio provides PNG import/export, brush and eraser, color picking, brush
 size, body-region and layer selection, grid, zoom/pan, undo/redo, reset, and local
 library saving. Imports preserve edit history. Classic and Slim use their own UV
 regions; legacy 64 × 32 skins normalize to 64 × 64. Base-layer pixels remain
 opaque, while outer layers support transparency. Keyboard users can move the pixel
-cursor with arrow keys, paint with Space, and zoom with plus/minus.
+cursor with arrow keys, paint with Space, and zoom with plus/minus. The compact
+icon toolbox has canvas shortcuts: B for brush, E for eraser, I for color picker,
+and H for pan. Tooltips and accessible names describe each tool.
 
 The existing native OpenGL renderer supports orbit, zoom, view reset, body-part
 visibility, and base/outer-layer visibility. Texture changes are uploaded with the
-GL context current during painting. If OpenGL or shader initialization is
+GL context current during painting. A QOpenGLWidget framebuffer keeps the preview
+inside Qt's regular composition and scrolling hierarchy. It resets GL state on
+each paint and restores edited textures when inline reparenting replaces a context.
+If OpenGL or shader initialization is
 unavailable, a front/back image preview keeps editing and export usable.
 
 **Apply Skin** saves locally, validates a fixed PNG snapshot, refreshes sign-in when
@@ -143,7 +165,7 @@ reduced motion, provider metadata/cache cancellation, account selection, and ski
 editor history/preview synchronization. Final run results are recorded separately
 from the baseline above.
 
-## Final verification — 2026-09-28
+## Initial modernization verification — 2026-09-28
 
 - Windows Qt 6.5.3/MSVC build: passed, including the launcher and test targets.
 - CTest: **27/27 suites passed**. Project metadata has 11 passing cases; skin
@@ -171,6 +193,26 @@ Run the development build with `./scripts/run-chroma.ps1` from the repository
 root. The script supplies the local Qt runtime paths. The feature branch is
 `codex/prism-ui-modernization`; the existing redesign was preserved in a separate
 baseline checkpoint before the feature commits.
+
+## Skin and library refinement verification — 2026-09-28
+
+- Windows Qt 6.5.3/MSVC build: passed.
+- CTest: **29/29 suites passed**, including the new SkinPreview and InstanceView suites.
+- Offscreen UI and native Windows UI: **41/41 cases passed in each run**.
+- Native preview coverage keeps the status bar enabled while resizing and scrolling,
+  checks sibling pixels, resets deliberately altered GL state, and restores edited
+  texture data after context recreation. Native screenshots include the preview.
+- The 4,000-instance regression checks direct geometry lookup without model reads,
+  fewer than 100 card paints at 1920 × 1080, and no relayout for a progress update.
+  An idle canvas no longer schedules continuous repaints.
+- Account switching, local editing without an account, compact tool icons and key
+  selection, Alt behavior, sidebar pin drops, persisted manual order, filtering,
+  group transfers, and creation after reordering are covered by UI workflows.
+- Native skin screenshots at 1280 × 820 and 680 × 640 were reviewed. Changed C++
+  code is formatted and the diff passes whitespace checks.
+
+Logs are under `.tools/ui-refinements-*.log` and `.tools/ui-refinements-*.txt`.
+Screenshots and synthetic profiles are under `.chroma-test/ui-refinements-*`.
 
 ### Checks not executed here
 

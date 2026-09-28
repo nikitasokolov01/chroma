@@ -48,6 +48,7 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     void updateActions();
     void showError(const QString& error);
     void updateLayout();
+    void updateToolIcons();
 
     MinecraftAccountPtr m_account;
     SkinTextureDocument m_document;
@@ -66,6 +67,7 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     QVBoxLayout* m_canvasLayout = nullptr;
     QList<QPushButton*> m_fileButtons;
     QList<QToolButton*> m_swatches;
+    QList<QToolButton*> m_toolButtons;
     int m_layoutMode = -1;
     QComboBox* m_model;
     QPushButton* m_colorButton;

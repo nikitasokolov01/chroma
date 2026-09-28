@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QEvent>
 #include <QFrame>
 #include <QGridLayout>
@@ -12,6 +14,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMimeData>
 #include <QPainter>
 #include <QResizeEvent>
 #include <QScrollArea>
@@ -37,6 +40,34 @@
 #include "ui/widgets/SmoothScroll.h"
 
 namespace {
+class SidebarPanel : public ClayPanel {
+   public:
+    using ClayPanel::ClayPanel;
+    void setDropActive(bool active)
+    {
+        if (m_dropActive == active)
+            return;
+        m_dropActive = active;
+        update();
+    }
+
+   protected:
+    void paintEvent(QPaintEvent* event) override
+    {
+        ClayPanel::paintEvent(event);
+        if (m_dropActive) {
+            QPainter painter(this);
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setPen(QPen(palette().color(QPalette::Highlight), 2));
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(rect().adjusted(3, 3, -3, -3), 24, 24);
+        }
+    }
+
+   private:
+    bool m_dropActive = false;
+};
+
 class HeaderTitleLabel : public QLabel {
    public:
     using QLabel::QLabel;
@@ -119,8 +150,10 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     body->setSpacing(0);
     shell->addLayout(body, 1);
 
-    auto* rail = new ClayPanel(this);
+    auto* rail = new SidebarPanel(this);
     rail->setObjectName("homeRail");
+    rail->setAcceptDrops(true);
+    rail->installEventFilter(this);
     rail->setFixedWidth(80);
     auto* railLayout = new QVBoxLayout(rail);
     railLayout->setContentsMargins(12, 18, 12, 16);
@@ -154,6 +187,13 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     connect(m_libraryButton, &QToolButton::clicked, this, [requestHome] { requestHome(true); });
     auto* add = navigation(tr("Add instance or modpack"), "new");
     connect(add, &QToolButton::clicked, m_actions.add, &QAction::trigger);
+    m_skinsButton = navigation(tr("Skins"), "accounts");
+    m_skinsButton->setObjectName("skinsNavigation");
+    m_skinsButton->setCheckable(true);
+    connect(m_skinsButton, &QToolButton::clicked, this, [this] {
+        m_skinsButton->setChecked(false);
+        emit skinsRequested();
+    });
     railLayout->addWidget(divider(rail));
     m_pinsScroll = new QScrollArea(rail);
     SmoothScroll::install(m_pinsScroll);
@@ -163,6 +203,8 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     m_pinsScroll->setFrameShape(QFrame::NoFrame);
     m_pinsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_pinsScroll->setMinimumHeight(0);
+    m_pinsScroll->viewport()->setAcceptDrops(true);
+    m_pinsScroll->viewport()->installEventFilter(this);
     auto* pins = new QWidget(m_pinsScroll);
     m_pinnedRows = new QVBoxLayout(pins);
     m_pinnedRows->setContentsMargins(0, 0, 0, 0);
@@ -216,10 +258,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     auto* recentLayout = new QVBoxLayout(m_recent);
     recentLayout->setContentsMargins(0, 0, 0, 8);
     recentLayout->setSpacing(6);
-    auto* recentEyebrow = label(tr("A LITTLE PLAY GOES A LONG WAY"), "eyebrow", m_recent);
-    recentEyebrow->setObjectName("recentEyebrow");
-    recentLayout->addWidget(recentEyebrow);
-    auto* recentTitle = label(tr("Jump back in"), "heading", m_recent);
+    auto* recentTitle = label(tr("Recent instances"), "heading", m_recent);
     recentTitle->setObjectName("recentTitle");
     recentLayout->addWidget(recentTitle);
     m_recentRows = new QGridLayout();
@@ -269,7 +308,8 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     m_sort->setAccessibleName(tr("Sort instances"));
     m_sort->addItem(tr("Name"), "Name");
     m_sort->addItem(tr("Last played"), "LastLaunch");
-    m_sort->setCurrentIndex(APPLICATION->settings()->get("InstSortMode").toString() == "LastLaunch" ? 1 : 0);
+    m_sort->addItem(tr("Manual"), "Manual");
+    m_sort->setCurrentIndex(qMax(0, m_sort->findData(APPLICATION->settings()->get("InstSortMode"))));
     connect(m_sort, &QComboBox::currentIndexChanged, this, [this] {
         APPLICATION->settings()->set("InstSortMode", m_sort->currentData());
         m_model->invalidate();
@@ -362,10 +402,6 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     detailsLayout->addStretch();
     detailsLayout->addWidget(divider(details));
     detailsLayout->addWidget(actionButton(m_actions.news, details));
-    auto* tip = label(tr("Make it yours\nChoose your accent in Settings → Launcher → Appearance."), "muted", details);
-    tip->setObjectName("appearanceTip");
-    tip->setWordWrap(true);
-    detailsLayout->addWidget(tip);
     detailsScroll->setWidget(details);
     detailsScroll->viewport()->setAutoFillBackground(false);
     homeLayout->addWidget(detailsScroll);
@@ -385,14 +421,21 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     connect(m_refreshTimer, &QTimer::timeout, this, &LauncherHome::refresh);
     auto schedule = [this] { m_refreshTimer->start(0); };
     auto* instances = APPLICATION->instances().get();
-    connect(instances, &QAbstractItemModel::dataChanged, this, schedule);
+    connect(instances, &QAbstractItemModel::dataChanged, this, [schedule](const QModelIndex&, const QModelIndex&, const QList<int>& roles) {
+        if (!roles.isEmpty() && std::all_of(roles.cbegin(), roles.cend(), [](int role) {
+                return role == InstanceViewRoles::ProgressValueRole || role == InstanceViewRoles::ProgressMaximumRole;
+            }))
+            return;
+        schedule();
+    });
     connect(instances, &QAbstractItemModel::modelReset, this, schedule);
     connect(instances, &QAbstractItemModel::rowsInserted, this, schedule);
     connect(instances, &QAbstractItemModel::rowsRemoved, this, schedule);
+    connect(instances, &InstanceList::manualOrderChanged, this, schedule);
     connect(APPLICATION->icons().get(), &IconList::iconUpdated, this, schedule);
     connect(APPLICATION, &Application::globalSettingsApplied, this, [this, schedule] {
         QSignalBlocker blocker(m_sort);
-        m_sort->setCurrentIndex(APPLICATION->settings()->get("InstSortMode").toString() == "LastLaunch" ? 1 : 0);
+        m_sort->setCurrentIndex(qMax(0, m_sort->findData(APPLICATION->settings()->get("InstSortMode"))));
         applyStyle();
         schedule();
     });
@@ -430,6 +473,7 @@ void LauncherHome::showPage(QWidget* page, const QString& title)
     m_pageTitle->setToolTip(title);
     m_homeButton->setChecked(false);
     m_libraryButton->setChecked(false);
+    m_skinsButton->setChecked(page->property("chromaSkinPage").toBool());
 }
 
 void LauncherHome::showHomePage(bool libraryOnly)
@@ -455,6 +499,8 @@ void LauncherHome::setLibraryOnly(bool enabled)
     const bool homeVisible = m_pages->currentWidget() == m_homePage;
     m_homeButton->setChecked(homeVisible && !enabled);
     m_libraryButton->setChecked(homeVisible && enabled);
+    if (homeVisible)
+        m_skinsButton->setChecked(false);
     m_recent->setVisible(!enabled && APPLICATION->instances()->count() > 0);
     if (homeVisible) {
         m_pageTitle->setText(enabled ? tr("Library") : tr("Home"));
@@ -467,6 +513,35 @@ void LauncherHome::setLibraryOnly(bool enabled)
 bool LauncherHome::selectedInstancePinned() const
 {
     return !m_selectedId.isEmpty() && APPLICATION->settings()->get("ChromaPinnedInstances").toStringList().contains(m_selectedId);
+}
+
+bool LauncherHome::eventFilter(QObject* watched, QEvent* event)
+{
+    if (event->type() != QEvent::DragEnter && event->type() != QEvent::DragMove && event->type() != QEvent::DragLeave &&
+        event->type() != QEvent::Drop)
+        return QWidget::eventFilter(watched, event);
+
+    auto* rail = static_cast<SidebarPanel*>(m_pinsScroll->parentWidget());
+    if (!rail->isEnabled())
+        return false;
+    if (event->type() == QEvent::DragLeave) {
+        rail->setDropActive(false);
+        event->accept();
+        return true;
+    }
+    auto* drop = static_cast<QDropEvent*>(event);
+    const QString id = QString::fromUtf8(drop->mimeData()->data("application/x-instanceid"));
+    const bool valid = !id.isEmpty() && APPLICATION->instances()->getInstanceById(id) && (drop->possibleActions() & Qt::MoveAction);
+    rail->setDropActive(valid && event->type() != QEvent::Drop);
+    if (!valid) {
+        drop->ignore();
+        return true;
+    }
+    if (event->type() == QEvent::Drop && !APPLICATION->settings()->get("ChromaPinnedInstances").toStringList().contains(id))
+        togglePin(id);
+    drop->setDropAction(Qt::MoveAction);
+    drop->accept();
+    return true;
 }
 
 void LauncherHome::toggleSelectedPin()
@@ -551,6 +626,10 @@ void LauncherHome::refreshPins()
 
 void LauncherHome::refresh()
 {
+    {
+        QSignalBlocker blocker(m_sort);
+        m_sort->setCurrentIndex(qMax(0, m_sort->findData(APPLICATION->settings()->get("InstSortMode"))));
+    }
     auto instances = APPLICATION->instances();
     QList<InstancePtr> recent;
     int running = 0;
@@ -587,8 +666,7 @@ void LauncherHome::refresh()
             delete item;
         }
         if (recent.isEmpty()) {
-            auto* welcome =
-                label(tr("Your next adventure starts here.\nAdd an instance or import a modpack to get started."), "welcome", m_recent);
+            auto* welcome = label(tr("No recently played instances."), "welcome", m_recent);
             welcome->setWordWrap(true);
             m_recentRows->addWidget(welcome);
         }
@@ -750,13 +828,15 @@ void LauncherHome::retranslate()
     m_search->setAccessibleName(tr("Search your instances"));
     m_sort->setItemText(0, tr("Name"));
     m_sort->setItemText(1, tr("Last played"));
-    findChild<QLabel*>("recentTitle")->setText(tr("Jump back in"));
-    findChild<QLabel*>("recentEyebrow")->setText(tr("A LITTLE PLAY GOES A LONG WAY"));
+    m_sort->setItemText(2, tr("Manual"));
+    m_skinsButton->setText(tr("Skins"));
+    m_skinsButton->setToolTip(tr("Skins"));
+    m_skinsButton->setAccessibleName(tr("Skins"));
+    findChild<QLabel*>("recentTitle")->setText(tr("Recent instances"));
     findChild<QLabel*>("libraryTitle")->setText(tr("Your library"));
     findChild<QLabel*>("playingLabel")->setText(tr("PLAYING AS"));
     findChild<QLabel*>("selectedLabel")->setText(tr("INSTANCE DETAILS"));
     findChild<QToolButton*>("moreInstanceActions")->setText(tr("More instance actions"));
-    findChild<QLabel*>("appearanceTip")->setText(tr("Make it yours\nChoose your accent in Settings → Launcher → Appearance."));
     setLibraryOnly(m_libraryOnly);
     refresh();
 }
@@ -785,7 +865,6 @@ void LauncherHome::applyStyle()
             QLabel[role="body"] { font-size: 14px; font-weight: 500; }
             QLabel[role="muted"], QLabel[role="eyebrow"] { color: palette(placeholder-text); font-size: 12px; }
             QLabel[role="eyebrow"] { font-family: "Nunito"; font-weight: 800; }
-            QLabel#recentEyebrow { color: palette(link); font-size: 11px; }
             QLabel[role="welcome"], QLabel[role="empty"] {
                 background: palette(alternate-base); border: 1px solid palette(light);
                 border-radius: 24px; padding: 26px; color: palette(placeholder-text); font-size: 15px;

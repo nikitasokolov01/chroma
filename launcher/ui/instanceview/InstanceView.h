@@ -35,7 +35,6 @@
 
 #pragma once
 
-#include <QCache>
 #include <QLineEdit>
 #include <QListView>
 #include <QPointer>
@@ -110,6 +109,7 @@ class InstanceView : public QAbstractItemView {
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
+    bool viewportEvent(QEvent* event) override;
 
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dragMoveEvent(QDragMoveEvent* event) override;
@@ -135,7 +135,8 @@ class InstanceView : public QAbstractItemView {
     int m_itemWidth = 164;
     int m_currentItemsPerRow = -1;
     int m_currentCursorColumn = -1;
-    mutable QCache<int, QRect> m_geometryCache;
+    QVector<QRect> m_geometry;
+    QVector<VisualGroup*> m_itemGroups;
     CatPainter* m_cat = nullptr;
     QPointer<QScrollArea> m_outerScrollArea;
     QTimer* m_outerDragScrollTimer = nullptr;
@@ -143,10 +144,14 @@ class InstanceView : public QAbstractItemView {
     // point where the currently active mouse action started in geometry coordinates
     QPoint m_pressedPosition;
     QPersistentModelIndex m_pressedIndex;
-    bool m_pressedAlreadySelected;
-    VisualGroup* m_pressedCategory;
+    bool m_pressedAlreadySelected = false;
+    VisualGroup* m_pressedCategory = nullptr;
     QItemSelectionModel::SelectionFlag m_ctrlDragSelectionFlag;
     QPoint m_lastDragPosition;
+    QRect m_dropIndicator;
+    QString m_dropGroup;
+    QString m_dropBeforeId;
+    bool m_validDrop = false;
 
     VisualGroup* category(const QModelIndex& index) const;
     VisualGroup* category(const QString& cat) const;
@@ -163,6 +168,7 @@ class InstanceView : public QAbstractItemView {
     QList<std::pair<QRect, QModelIndex>> draggablePaintPairs(const QModelIndexList& indices, QRect* r) const;
 
     bool isDragEventAccepted(QDropEvent* event);
+    void updateDropIndicator(const QPoint& position);
 
     std::pair<VisualGroup*, VisualGroup::HitResults> rowDropPos(const QPoint& pos);
 

@@ -50,9 +50,8 @@ VisualGroup::VisualGroup(QString text, InstanceView* view) : view(view), text(st
 
 VisualGroup::VisualGroup(const VisualGroup* other) : view(other->view), text(other->text), collapsed(other->collapsed) {}
 
-void VisualGroup::update()
+void VisualGroup::update(const QList<QModelIndex>& temp_items)
 {
-    auto temp_items = items();
     auto itemsPerRow = view->itemsPerRow();
 
     int numRows = qMax(1, qCeil((qreal)temp_items.size() / (qreal)itemsPerRow));
@@ -62,6 +61,10 @@ void VisualGroup::update()
     int positionInRow = 0;
     int currentRow = 0;
     int offsetFromTop = 0;
+    QStyleOptionViewItem viewItemOption;
+    view->initViewItemOption(&viewItemOption);
+    const int header = headerHeight();
+    positions.clear();
     for (auto item : temp_items) {
         if (positionInRow == itemsPerRow) {
             rows[currentRow].height = maxRowHeight;
@@ -74,14 +77,16 @@ void VisualGroup::update()
             positionInRow = 0;
             maxRowHeight = 0;
         }
-        QStyleOptionViewItem viewItemOption;
-        view->initViewItemOption(&viewItemOption);
-
-        auto itemHeight = view->itemDelegate()->sizeHint(viewItemOption, item).height();
+        const auto size = view->itemDelegate()->sizeHint(viewItemOption, item);
+        auto itemHeight = size.height();
         if (itemHeight > maxRowHeight) {
             maxRowHeight = itemHeight;
         }
         rows[currentRow].items.append(item);
+        positions.insert(item.row(), qMakePair(positionInRow, currentRow));
+        if (!collapsed)
+            view->m_geometry[item.row()] =
+                QRect(QPoint(view->m_spacing + positionInRow * (view->itemWidth() + view->m_spacing), header + 5 + offsetFromTop), size);
         positionInRow++;
     }
     rows[currentRow].height = maxRowHeight;
@@ -90,15 +95,9 @@ void VisualGroup::update()
 
 QPair<int, int> VisualGroup::positionOf(const QModelIndex& index) const
 {
-    int y = 0;
-    for (auto& row : rows) {
-        for (auto x = 0; x < row.items.size(); x++) {
-            if (row.items[x] == index) {
-                return qMakePair(x, y);
-            }
-        }
-        y++;
-    }
+    const auto found = positions.constFind(index.row());
+    if (found != positions.cend())
+        return *found;
     qWarning() << "Item" << index.row() << index.data(Qt::DisplayRole).toString() << "not found in visual group" << text;
     return qMakePair(0, 0);
 }
@@ -240,8 +239,8 @@ int VisualGroup::contentHeight() const
     if (collapsed) {
         return 0;
     }
-    auto last = rows[numRows() - 1];
-    return last.top + last.height;
+    const auto& last = rows[numRows() - 1];
+    return 5 + last.top + last.height;
 }
 
 int VisualGroup::numRows() const
@@ -257,11 +256,7 @@ int VisualGroup::verticalPosition() const
 QList<QModelIndex> VisualGroup::items() const
 {
     QList<QModelIndex> indices;
-    for (int i = 0; i < view->model()->rowCount(); ++i) {
-        const QModelIndex index = view->model()->index(i, 0);
-        if (index.data(InstanceViewRoles::GroupRole).toString() == text) {
-            indices.append(index);
-        }
-    }
+    for (const auto& row : rows)
+        indices.append(row.items);
     return indices;
 }

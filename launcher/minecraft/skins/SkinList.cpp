@@ -88,8 +88,8 @@ bool SkinList::update()
     }
 
     bool needsSave = false;
-    const auto& skin = m_acct->accountData()->minecraftProfile.skin;
-    if (!skin.url.isEmpty() && !skin.data.isEmpty()) {
+    const auto skin = m_acct ? m_acct->accountData()->minecraftProfile.skin : Skin();
+    if (m_acct && !skin.url.isEmpty() && !skin.data.isEmpty()) {
         QPixmap skinTexture;
         SkinModel* nskin = nullptr;
         for (auto i = 0; i < newSkins.size(); i++) {
@@ -374,6 +374,8 @@ void SkinList::save()
 
 int SkinList::getSelectedAccountSkin()
 {
+    if (!m_acct || m_acct->accountData()->minecraftProfile.skin.url.isEmpty())
+        return -1;
     const auto& skin = m_acct->accountData()->minecraftProfile.skin;
     for (int i = 0; i < m_skinList.count(); i++) {
         if (m_skinList[i].getURL() == skin.url) {
@@ -381,6 +383,15 @@ int SkinList::getSelectedAccountSkin()
         }
     }
     return -1;
+}
+
+void SkinList::setAccount(MinecraftAccountPtr account)
+{
+    if (m_acct == account)
+        return;
+    save();
+    m_acct = account;
+    update();
 }
 
 bool SkinList::setData(const QModelIndex& idx, const QVariant& value, int role)

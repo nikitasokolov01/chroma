@@ -178,6 +178,8 @@ QVariant InstanceList::data(const QModelIndex& index, int role) const
         case InstanceIDRole: {
             return pdata->id();
         }
+        case ManualOrderRole:
+            return m_manualRanks.value(pdata->id(), m_manualOrder.size());
         case Qt::EditRole:
         case Qt::DisplayRole: {
             return pdata->name();
@@ -712,6 +714,29 @@ void InstanceList::decreaseGroupCount(const QString& group)
     }
 }
 
+void InstanceList::setManualOrder(const QStringList& ids)
+{
+    QStringList order;
+    QSet<QString> included;
+    for (const auto& id : ids) {
+        if (instanceSet.contains(id) && !included.contains(id)) {
+            order.append(id);
+            included.insert(id);
+        }
+    }
+    for (const auto& instance : m_instances) {
+        if (!included.contains(instance->id()))
+            order.append(instance->id());
+    }
+    m_manualOrder = order;
+    m_manualRanks.clear();
+    for (int i = 0; i < order.size(); ++i)
+        m_manualRanks.insert(order[i], i);
+    m_globalSettings->set("InstSortMode", "Manual");
+    saveGroupList();
+    emit manualOrderChanged();
+}
+
 void InstanceList::saveGroupList()
 {
     qDebug() << "Will save group list now.";
@@ -757,6 +782,13 @@ void InstanceList::saveGroupList()
         groupsArr.insert(name, groupObj);
     }
     toplevel.insert("groups", groupsArr);
+    QJsonArray order;
+    for (const auto& id : m_manualOrder) {
+        if (instanceSet.contains(id))
+            order.append(id);
+    }
+    if (!order.isEmpty())
+        toplevel.insert("instanceOrder", order);
     // empty string represents ungrouped "group"
     if (m_collapsedGroups.contains("")) {
         QJsonObject ungrouped;
@@ -766,6 +798,7 @@ void InstanceList::saveGroupList()
     QJsonDocument doc(toplevel);
     try {
         FS::write(groupFileName, doc.toJson());
+        m_groupsLoaded = true;
         qDebug() << "Group list saved.";
     } catch (const FS::FileSystemException& e) {
         qCritical() << "Failed to write instance group file :" << e.cause();
@@ -775,12 +808,18 @@ void InstanceList::saveGroupList()
 void InstanceList::loadGroupList()
 {
     qDebug() << "Will load group list now.";
+    m_manualOrder.clear();
+    m_manualRanks.clear();
 
     QString groupFileName = m_instDir + "/instgroups.json";
 
-    // if there's no group file, fail
-    if (!QFileInfo(groupFileName).exists())
+    // A missing file is an empty initial group list. Remember that it was
+    // loaded so a later instance commit cannot reload an older saved snapshot
+    // over the group it has just assigned in memory.
+    if (!QFileInfo(groupFileName).exists()) {
+        m_groupsLoaded = true;
         return;
+    }
 
     QByteArray jsonData;
     try {
@@ -821,6 +860,13 @@ void InstanceList::loadGroupList()
 
     m_instanceGroupIndex.clear();
     m_groupNameCache.clear();
+    for (const auto& value : rootObj.value("instanceOrder").toArray()) {
+        const auto id = value.toString();
+        if (!id.isEmpty() && !m_manualRanks.contains(id)) {
+            m_manualRanks.insert(id, m_manualOrder.size());
+            m_manualOrder.append(id);
+        }
+    }
 
     // Iterate through all the groups.
     QJsonObject groupMapping = rootObj.value("groups").toObject();

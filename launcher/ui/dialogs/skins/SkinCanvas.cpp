@@ -21,8 +21,12 @@ SkinCanvas::SkinCanvas(SkinTextureDocument* document, QWidget* parent) : QWidget
 void SkinCanvas::setTool(Tool tool)
 {
     m_document->endStroke();
+    m_painting = m_panning = false;
+    const bool changed = m_tool != tool;
     m_tool = tool;
     setCursor(tool == Pan ? Qt::OpenHandCursor : Qt::CrossCursor);
+    if (changed)
+        emit toolChanged(tool);
 }
 
 void SkinCanvas::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer)
@@ -190,6 +194,30 @@ void SkinCanvas::focusOutEvent(QFocusEvent* event)
 
 void SkinCanvas::keyPressEvent(QKeyEvent* event)
 {
+    // Keep single-key tools local to the canvas, including when the editor is
+    // reparented into the inline workspace. Text inputs keep their own keys.
+    if (!(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
+        switch (event->key()) {
+            case Qt::Key_B:
+                setTool(Brush);
+                event->accept();
+                return;
+            case Qt::Key_E:
+                setTool(Eraser);
+                event->accept();
+                return;
+            case Qt::Key_I:
+                setTool(Eyedropper);
+                event->accept();
+                return;
+            case Qt::Key_H:
+                setTool(Pan);
+                event->accept();
+                return;
+            default:
+                break;
+        }
+    }
     switch (event->key()) {
         case Qt::Key_Left:
             m_cursor.rx() = qMax(0, m_cursor.x() - 1);

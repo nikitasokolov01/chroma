@@ -23,6 +23,7 @@ class SkinCanvas : public QWidget {
     void zoomBy(qreal factor);
 
    signals:
+    void toolChanged(SkinCanvas::Tool tool);
     void colorPicked(QColor color);
     void pixelHovered(QPoint pixel, QColor color);
 

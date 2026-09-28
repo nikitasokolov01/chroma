@@ -57,6 +57,7 @@ class SkinList : public QAbstractListModel {
     QString getDir() const { return m_dir.absolutePath(); }
     void save();
     int getSelectedAccountSkin();
+    void setAccount(MinecraftAccountPtr account);
 
     void updateSkin(SkinModel* s);
 

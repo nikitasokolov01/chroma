@@ -11,6 +11,8 @@
 #include <QDateTime>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDropEvent>
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -25,7 +27,9 @@
 #include <QLineEdit>
 #include <QListView>
 #include <QMenu>
+#include <QMenuBar>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QPointer>
 #include <QPushButton>
 #include <QScopeGuard>
@@ -51,6 +55,8 @@
 #include "BuildConfig.h"
 #include "ChromaProfile.h"
 #include "InstanceList.h"
+#include "InstanceOrderUiTests.h"
+#include "SkinLibraryUiTests.h"
 #include "icons/IconList.h"
 #include "meta/Index.h"
 #include "meta/VersionList.h"
@@ -66,6 +72,7 @@
 #include "ui/dialogs/ProgressDialog.h"
 #include "ui/dialogs/skins/SkinCanvas.h"
 #include "ui/dialogs/skins/SkinEditorDialog.h"
+#include "ui/dialogs/skins/SkinManageDialog.h"
 #include "ui/instanceview/InstanceProxyModel.h"
 #include "ui/instanceview/InstanceView.h"
 #include "ui/pagedialog/PageDialog.h"
@@ -573,7 +580,8 @@ class LauncherHomeTest : public QObject {
         QCOMPARE(combos.size(), 1);
         auto* sort = combos.constFirst();
         sort->setFocus();
-        QTest::keyClick(sort, Qt::Key_End);
+        QTest::keyClick(sort, Qt::Key_Home);
+        QTest::keyClick(sort, Qt::Key_Down);
         QCOMPARE(APPLICATION->settings()->get("InstSortMode").toString(), QString("LastLaunch"));
         QCOMPARE(m_view->model()->index(0, 0).data(InstanceList::InstanceIDRole).toString(), QString("redstone"));
         QTest::keyClick(sort, Qt::Key_Home);
@@ -1264,6 +1272,114 @@ class LauncherHomeTest : public QObject {
         QVERIFY(status->text().contains("Active account"));
     }
 
+    void skinLibrarySwitchesAccounts() { SkinLibraryUiTests::accountSwitching(m_window, m_root); }
+
+    void persistentInstanceReordering() { InstanceOrderUiTests::persistentReordering(); }
+
+    void skinToolsUseCompactIconsAndKeyboard() { SkinLibraryUiTests::compactToolbox(m_window, m_root); }
+
+    void libraryCanvasDoesNotRepaintWhenIdle()
+    {
+        class CanvasProbe : public ClayCanvas {
+           public:
+            int paints = 0;
+
+           protected:
+            void paintEvent(QPaintEvent* event) override
+            {
+                ++paints;
+                ClayCanvas::paintEvent(event);
+            }
+        };
+        CanvasProbe canvas;
+        canvas.resize(1200, 700);
+        canvas.show();
+        canvas.activateWindow();
+        QTest::qWait(150);
+        QVERIFY(canvas.paints > 0);
+        canvas.paints = 0;
+        QTest::qWait(400);
+        QVERIFY2(canvas.paints <= 1, "An idle library canvas must not continuously repaint its instance cards.");
+    }
+
+    void skinsSidebarAndAltKeepNavigationInline()
+    {
+        QVERIFY(m_window->inlineWorkspace()->closeAllPages());
+        m_home->showHomePage(false);
+        auto* menu = m_window->findChild<QMenuBar*>();
+        auto* skins = m_home->findChild<QToolButton*>("skinsNavigation");
+        QVERIFY(menu && skins);
+        QVERIFY(!menu->isVisible());
+        QTest::keyClick(m_window, Qt::Key_Alt);
+        QVERIFY(!menu->isVisible());
+        QTest::keyClick(m_search, Qt::Key_Alt);
+        QVERIFY(!menu->isVisible());
+        QCOMPARE(skins->cursor().shape(), Qt::PointingHandCursor);
+        QVERIFY(!m_home->findChild<QLabel*>("recentEyebrow"));
+        QVERIFY(!m_home->findChild<QLabel*>("appearanceTip"));
+        QTest::mouseClick(skins, Qt::LeftButton);
+        QTRY_VERIFY(qobject_cast<SkinManageDialog*>(m_window->inlineWorkspace()->currentPage()));
+        auto* library = qobject_cast<SkinManageDialog*>(m_window->inlineWorkspace()->currentPage());
+        verifyInline(library, 1);
+        QVERIFY(skins->isChecked());
+        QVERIFY(m_window->grab().save(QDir(m_root).filePath("skin-library-sidebar.png")));
+        auto* back = m_window->findChild<QToolButton*>("inlineBackButton");
+        QVERIFY(back);
+        QTest::mouseClick(back, Qt::LeftButton);
+        QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
+        QTRY_VERIFY(!skins->isChecked());
+
+        QPushButton button("Clickable", m_home);
+        button.show();
+        QCoreApplication::processEvents();
+        QCOMPARE(button.cursor().shape(), Qt::PointingHandCursor);
+        button.setEnabled(false);
+        QCOMPARE(button.cursor().shape(), Qt::ArrowCursor);
+        button.setEnabled(true);
+        QCOMPARE(button.cursor().shape(), Qt::PointingHandCursor);
+    }
+
+    void droppingOnSidebarPinsWithoutMovingOrDuplicating()
+    {
+        QVERIFY(m_window->inlineWorkspace()->closeAllPages());
+        m_home->showHomePage(true);
+        auto* rail = m_home->findChild<QWidget*>("homeRail");
+        auto* pins = m_home->findChild<QScrollArea*>("pinnedInstances");
+        QVERIFY(rail && pins);
+        const auto originalPins = APPLICATION->settings()->get("ChromaPinnedInstances").toStringList();
+        QVERIFY(!originalPins.contains("redstone"));
+        auto instance = APPLICATION->instances()->getInstanceById("redstone");
+        QVERIFY(instance);
+        const auto originalGroup = APPLICATION->instances()->getInstanceGroup("redstone");
+        const auto originalCount = APPLICATION->instances()->count();
+        QMimeData data;
+        data.setData("application/x-instanceid", "redstone");
+        for (QWidget* target : { rail, pins->viewport() }) {
+            QDragEnterEvent enter(QPoint(15, 15), Qt::MoveAction, &data, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(target, &enter);
+            QVERIFY(enter.isAccepted());
+            QDropEvent drop(QPointF(15, 15), Qt::MoveAction, &data, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(target, &drop);
+            QVERIFY(drop.isAccepted());
+        }
+        auto expected = originalPins;
+        expected.append("redstone");
+        QCOMPARE(APPLICATION->settings()->get("ChromaPinnedInstances").toStringList(), expected);
+        QCOMPARE(APPLICATION->instances()->count(), originalCount);
+        QCOMPARE(APPLICATION->instances()->getInstanceById("redstone"), instance);
+        QCOMPARE(APPLICATION->instances()->getInstanceGroup("redstone"), originalGroup);
+        QSettings stored(QDir(m_root).filePath("chroma-ui.cfg"), QSettings::IniFormat);
+        QCOMPARE(stored.value("ChromaPinnedInstances").toStringList(), expected);
+
+        data.setData("application/x-instanceid", "missing-instance");
+        QDragEnterEvent invalid(QPoint(15, 15), Qt::MoveAction, &data, Qt::LeftButton, Qt::NoModifier);
+        QApplication::sendEvent(rail, &invalid);
+        QVERIFY(!invalid.isAccepted());
+        m_home->setSelectedInstance("redstone");
+        m_home->toggleSelectedPin();
+        QCOMPARE(APPLICATION->settings()->get("ChromaPinnedInstances").toStringList(), originalPins);
+    }
+
     void skinEditorKeepsTexturePreviewAndHistoryInSync()
     {
         QVERIFY(m_window->inlineWorkspace()->closeAllPages());
@@ -1295,27 +1411,18 @@ class LauncherHomeTest : public QObject {
         QCOMPARE(editor.getSelectedSkin()->getModel(), SkinModel::SLIM);
         QTest::qWait(100);
         if (QGuiApplication::platformName() == "windows" && SkinOpenGLWindow::hasOpenGL()) {
-            SkinOpenGLWindow* preview = nullptr;
-            for (auto* window : QGuiApplication::allWindows()) {
-                if (auto* candidate = qobject_cast<SkinOpenGLWindow*>(window); candidate && candidate->isVisible())
-                    preview = candidate;
-            }
+            auto* preview = editor.findChild<SkinOpenGLWindow*>();
             QVERIFY(preview);
-            QImage latestFrame;
-            const auto capture = connect(
-                preview, &SkinOpenGLWindow::frameRendered, &editor, [&] { latestFrame = preview->grabFramebuffer(); },
-                Qt::DirectConnection);
-            auto disconnectCapture = qScopeGuard([&] { disconnect(capture); });
-            preview->update();
-            QTRY_VERIFY(!latestFrame.isNull());
-            const auto slimFrame = latestFrame;
+            QTRY_VERIFY(preview->isValid());
+            const auto slimFrame = preview->grabFramebuffer();
+            QVERIFY(!slimFrame.isNull());
             QVERIFY(slimFrame.save(QDir(m_root).filePath("skin-preview-slim.png")));
             model->setCurrentIndex(0);
-            QTRY_VERIFY(latestFrame != slimFrame);
-            const auto classicFrame = latestFrame;
+            QTRY_VERIFY(preview->grabFramebuffer() != slimFrame);
+            const auto classicFrame = preview->grabFramebuffer();
             QVERIFY(classicFrame.save(QDir(m_root).filePath("skin-preview-classic.png")));
             preview->setPartVisible(0, false);
-            QTRY_VERIFY(latestFrame != classicFrame);
+            QTRY_VERIFY(preview->grabFramebuffer() != classicFrame);
             preview->setPartVisible(0, true);
             preview->resetView();
             model->setCurrentIndex(1);
