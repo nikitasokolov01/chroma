@@ -48,6 +48,8 @@ class AccountListPage;
 }
 
 class AuthenticateTask;
+class QLabel;
+class QPushButton;
 
 class AccountListPage : public QMainWindow, public BasePage {
     Q_OBJECT
@@ -89,8 +91,19 @@ class AccountListPage : public QMainWindow, public BasePage {
    private:
     void updateMicrosoftSignInState();
     void configureMicrosoftSignIn();
+    void updateProfile();
+    void resizeEvent(QResizeEvent* event) override;
+    void updateToolbarLayout();
     void changeEvent(QEvent* event) override;
     QMenu* createPopupMenu() override;
     shared_qobject_ptr<AccountList> m_accounts;
     Ui::AccountListPage* ui;
+    QLabel* m_profileFace = nullptr;
+    QLabel* m_profileName = nullptr;
+    QLabel* m_profileStatus = nullptr;
+    QLabel* m_profileUuid = nullptr;
+    QPushButton* m_copyUuid = nullptr;
+    QPushButton* m_useAccount = nullptr;
+    QPushButton* m_customize = nullptr;
+    QWidget* m_compactActions = nullptr;
 };
