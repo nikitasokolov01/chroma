@@ -31,6 +31,7 @@
 namespace Ui {
 class SkinManageDialog;
 }
+class QPushButton;
 class SkinManageDialog : public QDialog, public SkinProvider {
     Q_OBJECT
    public:
@@ -57,6 +58,10 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     bool eventFilter(QObject* obj, QEvent* ev) override;
     void on_action_Rename_Skin_triggered(bool checked);
     void on_action_Delete_Skin_triggered(bool checked);
+    void editSelectedSkin();
+
+   protected:
+    void changeEvent(QEvent* event) override;
 
    private:
     void setupCapes();
@@ -70,4 +75,7 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     QHash<QString, int> m_capesIdx;
     SkinOpenGLWindow* m_skinPreview = nullptr;
     QLabel* m_skinPreviewLabel = nullptr;
+    QWidget* m_skinPreviewContainer = nullptr;
+    QPushButton* m_editButton = nullptr;
+    bool m_previewFailed = false;
 };

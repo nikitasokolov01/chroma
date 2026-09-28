@@ -24,10 +24,10 @@
 #include "FileSystem.h"
 #include "Json.h"
 #include "minecraft/skins/SkinModel.h"
+#include "minecraft/skins/SkinTextureDocument.h"
 
 SkinList::SkinList(QObject* parent, QString path, MinecraftAccountPtr acct) : QAbstractListModel(parent), m_acct(acct)
 {
-    FS::ensureFolderPathExists(m_dir.absolutePath());
     m_dir.setFilter(QDir::Readable | QDir::NoDotAndDotDot | QDir::Files | QDir::Dirs);
     m_dir.setSorting(QDir::Name | QDir::IgnoreCase | QDir::LocaleAware);
     m_watcher.reset(new QFileSystemWatcher(this));
@@ -121,7 +121,7 @@ bool SkinList::update()
     auto folderContents = m_dir.entryInfoList();
     // if there are any untracked files...
     for (QFileInfo entry : folderContents) {
-        if (!entry.isFile() && entry.suffix() != "png")
+        if (!entry.isFile() || entry.suffix().compare("png", Qt::CaseInsensitive) != 0)
             continue;
 
         SkinModel w(entry.absoluteFilePath());
@@ -288,7 +288,7 @@ QString getUniqueFile(const QString& root, const QString& file)
 
     return result;
 }
-QString SkinList::installSkin(const QString& file, const QString& name)
+QString SkinList::installSkin(const QString& file, const QString& name, QString* installedPath)
 {
     if (file.isEmpty())
         return tr("Path is empty.");
@@ -299,12 +299,16 @@ QString SkinList::installSkin(const QString& file, const QString& name)
         return tr("Not a file.");
     if (!fileinfo.isReadable())
         return tr("File is not readable.");
-    if (fileinfo.suffix() != "png" && !SkinModel(fileinfo.absoluteFilePath()).isValid())
+    if (SkinTextureDocument::readPng(fileinfo.absoluteFilePath()).isNull())
         return tr("Skin images must be 64x64 or 64x32 pixel PNG files.");
 
     QString target = getUniqueFile(m_dir.absolutePath(), name.isEmpty() ? fileinfo.fileName() : name);
 
-    return QFile::copy(file, target) ? "" : tr("Unable to copy file");
+    if (!QFile::copy(file, target))
+        return tr("Unable to copy file");
+    if (installedPath)
+        *installedPath = target;
+    return {};
 }
 
 int SkinList::getSkinIndex(const QString& key) const
@@ -411,7 +415,7 @@ void SkinList::updateSkin(SkinModel* s)
         }
     }
     if (!done) {
-        beginInsertRows(QModelIndex(), m_skinList.count(), m_skinList.count() + 1);
+        beginInsertRows(QModelIndex(), m_skinList.count(), m_skinList.count());
         m_skinList.append(*s);
         endInsertRows();
     }

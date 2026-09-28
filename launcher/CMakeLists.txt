@@ -1133,6 +1133,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/skins/SkinManageDialog.h
     ui/dialogs/skins/SkinCanvas.cpp
     ui/dialogs/skins/SkinCanvas.h
+    ui/dialogs/skins/SkinEditorDialog.cpp
+    ui/dialogs/skins/SkinEditorDialog.h
 
     ui/dialogs/skins/draw/SkinOpenGLWindow.h
     ui/dialogs/skins/draw/SkinOpenGLWindow.cpp
