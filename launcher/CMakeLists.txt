@@ -386,6 +386,8 @@ set(MINECRAFT_SOURCES
     minecraft/skins/SkinModel.h
     minecraft/skins/SkinTextureDocument.cpp
     minecraft/skins/SkinTextureDocument.h
+    minecraft/skins/SkinApplyTask.cpp
+    minecraft/skins/SkinApplyTask.h
     minecraft/skins/SkinList.cpp
     minecraft/skins/SkinList.h
 

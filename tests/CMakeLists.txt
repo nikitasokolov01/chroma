@@ -10,6 +10,8 @@ ecm_add_test(WindowChrome_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_
     TEST_NAME WindowChrome)
 ecm_add_test(ProjectMetadata_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ProjectMetadata)
+ecm_add_test(SkinTextureDocument_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME SkinTextureDocument)
 if(UNIX AND NOT APPLE)
     set_tests_properties(WindowChrome ProjectMetadata PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()

@@ -30,6 +30,8 @@ class SkinUpload : public Net::NetRequest {
     virtual ~SkinUpload() = default;
 
     static SkinUpload::Ptr make(QString token, QString path, QString variant);
+    static SkinUpload::Ptr makeBytes(QString token, QByteArray png, QString variant);
+    QByteArray response() const { return m_response ? *m_response : QByteArray(); }
 
    protected:
     virtual QNetworkReply* getReply(QNetworkRequest&) override;
@@ -37,4 +39,6 @@ class SkinUpload : public Net::NetRequest {
    private:
     QString m_path;
     QString m_variant;
+    std::shared_ptr<QByteArray> m_response;
+    QByteArray m_png;
 };

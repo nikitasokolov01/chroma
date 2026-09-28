@@ -55,7 +55,7 @@ QNetworkReply* SkinUpload::getReply(QNetworkRequest& request)
     skin.setHeader(QNetworkRequest::ContentTypeHeader, QVariant("image/png"));
     skin.setHeader(QNetworkRequest::ContentDispositionHeader, QVariant("form-data; name=\"file\"; filename=\"skin.png\""));
 
-    skin.setBody(FS::read(m_path));
+    skin.setBody(m_png.isEmpty() ? FS::read(m_path) : m_png);
 
     QHttpPart model;
     model.setHeader(QNetworkRequest::ContentDispositionHeader, QVariant("form-data; name=\"variant\""));
@@ -72,9 +72,17 @@ SkinUpload::Ptr SkinUpload::make(QString token, QString path, QString variant)
     auto up = makeShared<SkinUpload>(path, variant);
     up->m_url = QUrl("https://api.minecraftservices.com/minecraft/profile/skins");
     up->setObjectName(QString("BYTES:") + up->m_url.toString());
-    up->m_sink.reset(new Net::ByteArraySink(std::make_shared<QByteArray>()));
+    up->m_response = std::make_shared<QByteArray>();
+    up->m_sink.reset(new Net::ByteArraySink(up->m_response));
     up->addHeaderProxy(new Net::RawHeaderProxy(QList<Net::HeaderPair>{
         { "Authorization", QString("Bearer %1").arg(token).toLocal8Bit() },
     }));
     return up;
+}
+
+SkinUpload::Ptr SkinUpload::makeBytes(QString token, QByteArray png, QString variant)
+{
+    auto upload = make(token, {}, variant);
+    upload->m_png = std::move(png);
+    return upload;
 }
