@@ -384,6 +384,8 @@ set(MINECRAFT_SOURCES
     minecraft/skins/SkinDelete.h
     minecraft/skins/SkinModel.cpp
     minecraft/skins/SkinModel.h
+    minecraft/skins/SkinTextureDocument.cpp
+    minecraft/skins/SkinTextureDocument.h
     minecraft/skins/SkinList.cpp
     minecraft/skins/SkinList.h
 
@@ -1127,6 +1129,8 @@ SET(LAUNCHER_SOURCES
 
     ui/dialogs/skins/SkinManageDialog.cpp
     ui/dialogs/skins/SkinManageDialog.h
+    ui/dialogs/skins/SkinCanvas.cpp
+    ui/dialogs/skins/SkinCanvas.h
 
     ui/dialogs/skins/draw/SkinOpenGLWindow.h
     ui/dialogs/skins/draw/SkinOpenGLWindow.cpp
