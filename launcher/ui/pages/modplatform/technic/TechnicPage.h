@@ -48,6 +48,7 @@ class TechnicPage;
 }
 
 class NewInstanceDialog;
+class ModpackBrowser;
 
 namespace Technic {
 class ListModel;
@@ -101,4 +102,6 @@ class TechnicPage : public QWidget, public ModpackProviderBasePage {
 
     // Used to do instant searching with a delay to cache quick changes
     QTimer m_search_timer;
+    ModpackBrowser* m_browser = nullptr;
+    quint64 m_selectionGeneration = 0;
 };

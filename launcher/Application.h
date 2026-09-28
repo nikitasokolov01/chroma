@@ -169,6 +169,9 @@ class Application : public QApplication {
     /// the data path the application is using
     const QString& dataRoot() { return m_dataPath; }
 
+    // Remember an existing profile and reopen the launcher against that folder.
+    bool usePrismProfile(const QString& path, QString* error);
+
     /// the java installed path the application is using
     const QString javaPath();
 
@@ -189,7 +192,7 @@ class Application : public QApplication {
     void updateIsRunning(bool running);
     bool updatesAreAllowed();
 
-    void ShowGlobalSettings(class QWidget* parent, QString open_page = QString());
+    void ShowGlobalSettings(class QWidget* parent, QString open_page = QString(), bool waitForClose = false);
 
     bool updaterEnabled();
     QString updaterBinaryName();
@@ -263,6 +266,7 @@ class Application : public QApplication {
 
     QString m_rootPath;
     QString m_dataPath;
+    QString m_profileHome;
     Status m_status = Application::StartingUp;
     Capabilities m_capabilities;
     bool m_portable = false;

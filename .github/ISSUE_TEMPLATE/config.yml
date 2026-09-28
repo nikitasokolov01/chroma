@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
-  - name: Prism Launcher Matrix Support Room
-    url: https://matrix.to/#/#prism-support:matrix.org
-    about: Please ask for support here before opening an issue.
+  - name: Chroma support and issues
+    url: https://github.com/nikitasokolov01/chroma/issues
+    about: Report Chroma issues here. Chroma is maintained independently of Prism Launcher.

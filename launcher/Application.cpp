@@ -42,6 +42,7 @@
 
 #include "Application.h"
 #include "BuildConfig.h"
+#include "ChromaProfile.h"
 
 #include "DataMigrationTask.h"
 #include "java/JavaInstallList.h"
@@ -78,6 +79,7 @@
 #include "ui/dialogs/CustomMessageBox.h"
 
 #include "ui/pagedialog/PageDialog.h"
+#include "ui/widgets/InlineWorkspace.h"
 
 #include "ui/themes/ThemeManager.h"
 
@@ -93,9 +95,11 @@
 #include <QFileInfo>
 #include <QFileOpenEvent>
 #include <QIcon>
+#include <QEventLoop>
 #include <QLibraryInfo>
 #include <QList>
 #include <QNetworkAccessManager>
+#include <QProcess>
 #include <QStringList>
 #include <QStringLiteral>
 #include <QStyleFactory>
@@ -115,6 +119,7 @@
 #include "tools/JVisualVM.h"
 #include "tools/MCEditTool.h"
 
+#include "settings/ChromaSettingsObject.h"
 #include "settings/INISettingsObject.h"
 #include "settings/Setting.h"
 
@@ -313,6 +318,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     setApplicationName(BuildConfig.LAUNCHER_NAME);
     setApplicationDisplayName(QString("%1 %2").arg(BuildConfig.LAUNCHER_DISPLAYNAME, BuildConfig.printableVersionString()));
     setApplicationVersion(BuildConfig.printableVersionString() + "\n" + BuildConfig.GIT_COMMIT);
+    // File and color selection use the same inline workspace as other features.
+    setAttribute(Qt::AA_DontUseNativeDialogs);
     setDesktopFileName(BuildConfig.LAUNCHER_APPID);
     m_startTime = QDateTime::currentDateTime();
 
@@ -389,8 +396,26 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 #endif
     }
 
-    QString adjustedBy;
+    QString adjustedBy = "Persistent data path";
     QString dataPath;
+    if (DesktopServices::isSnap()) {
+        dataPath = QDir(qEnvironmentVariable("SNAP_USER_COMMON")).absolutePath();
+    } else {
+        dataPath = QDir(FS::PathCombine(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), "..")).absolutePath();
+    }
+#ifndef Q_OS_MACOS
+    if (auto portableUserData = FS::PathCombine(m_rootPath, "UserData"); QDir(portableUserData).exists()) {
+        dataPath = portableUserData;
+        adjustedBy = "Portable user data path";
+        m_portable = true;
+    } else if (QFile::exists(FS::PathCombine(m_rootPath, "portable.txt"))) {
+        dataPath = m_rootPath;
+        adjustedBy = "Portable data path";
+        m_portable = true;
+    }
+#endif
+    // The pointer belongs to Chroma's own home, even when another profile is open.
+    m_profileHome = dataPath;
     // change folder
     QString dataDirEnv;
     QString dirParam = parser.value("dir");
@@ -403,28 +428,22 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
                !dataDirEnv.isEmpty()) {
         adjustedBy = "System environment";
         dataPath = dataDirEnv;
-    } else {
-        QDir foo;
-        if (DesktopServices::isSnap()) {
-            foo = QDir(getenv("SNAP_USER_COMMON"));
-        } else {
-            foo = QDir(FS::PathCombine(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation), ".."));
+    } else if (BuildConfig.LAUNCHER_APP_BINARY_NAME == "chroma") {
+        QString error;
+        const auto selected = ChromaProfile::loadSelectedProfile(m_profileHome, &error);
+        if (!selected.isEmpty()) {
+            const auto profile = ChromaProfile::inspect(selected);
+            error = profile.error;
+            if (error.isEmpty()) {
+                dataPath = profile.root;
+                adjustedBy = "Selected Prism profile";
+            }
         }
-
-        dataPath = foo.absolutePath();
-        adjustedBy = "Persistent data path";
-
-#ifndef Q_OS_MACOS
-        if (auto portableUserData = FS::PathCombine(m_rootPath, "UserData"); QDir(portableUserData).exists()) {
-            dataPath = portableUserData;
-            adjustedBy = "Portable user data path";
-            m_portable = true;
-        } else if (QFile::exists(FS::PathCombine(m_rootPath, "portable.txt"))) {
-            dataPath = m_rootPath;
-            adjustedBy = "Portable data path";
-            m_portable = true;
+        if (!error.isEmpty()) {
+            showFatalErrorMessage(tr("Prism folder unavailable"),
+                                  error + tr("\n\nReconnect the folder, or start Chroma with --dir pointing to another data folder."));
+            return;
         }
-#endif
     }
 
     if (!FS::ensureFolderPathExists(dataPath)) {
@@ -450,14 +469,31 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
                                   .arg(dataPath));
         return;
     }
-    m_dataPath = dataPath;
+    m_dataPath = QDir::currentPath();
+    // Qt's test mode uses synthetic profiles and should not depend on unrelated
+    // desktop processes. The normal profile-specific peer locks still apply.
+    if (BuildConfig.LAUNCHER_APP_BINARY_NAME == "chroma" && !QStandardPaths::isTestModeEnabled() &&
+        !ChromaProfile::sameProfilePath(m_dataPath, m_profileHome)) {
+        const auto runningError = ChromaProfile::runningPrismError();
+        if (!runningError.isEmpty()) {
+            showFatalErrorMessage(tr("Close Prism first"), runningError);
+            return;
+        }
+    }
 
     /*
      * Establish the mechanism for communication with an already running PrismLauncher that uses the same data path.
      * If there is one, tell it what the user actually wanted to do and exit.
      * We want to initialize this before logging to avoid messing with the log of a potential already running copy.
      */
-    auto appID = ApplicationId::fromPathAndVersion(QDir::currentPath(), BuildConfig.printableVersionString());
+    auto canonicalRoot = QFileInfo(QDir::currentPath()).canonicalFilePath();
+#ifdef Q_OS_WIN
+    canonicalRoot = canonicalRoot.toCaseFolded();
+#endif
+    // A stable canonical identity also excludes other Chroma versions and path aliases.
+    auto appID = ApplicationId::fromPathAndVersion(
+        BuildConfig.LAUNCHER_APP_BINARY_NAME == "chroma" ? canonicalRoot : QDir::currentPath(),
+        BuildConfig.LAUNCHER_APP_BINARY_NAME == "chroma" ? QStringLiteral("chroma-profile") : BuildConfig.printableVersionString());
     {
         // FIXME: you can run the same binaries with multiple data dirs and they won't clash. This could cause issues for updates.
         m_peerInstance = new LocalPeer(this, appID);
@@ -507,6 +543,17 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
                 ::exit(1);
             }
         }
+    }
+
+    if (BuildConfig.LAUNCHER_APP_BINARY_NAME == "chroma") {
+        // Keep Prism's legacy same-version lock too. Other upstream versions do
+        // not share a lock ID, so the UI requires one launcher at a time.
+        auto* prismPeer = new LocalPeer(this, ApplicationId::fromPathAndVersion(QDir::currentPath(), BuildConfig.printableVersionString()));
+        if (prismPeer->isClient()) {
+            showFatalErrorMessage(tr("Profile in use"), tr("Close the other launcher before opening this folder in Chroma."));
+            return;
+        }
+        connect(prismPeer, &LocalPeer::messageReceived, this, &Application::messageReceived);
     }
 
     // init the logger
@@ -649,11 +696,15 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     // Initialize application settings
     {
         // Provide a fallback for migration from PolyMC
-        m_settings.reset(new INISettingsObject({ BuildConfig.LAUNCHER_CONFIGFILE, "polymc.cfg", "multimc.cfg" }, this));
+        if (BuildConfig.LAUNCHER_APP_BINARY_NAME == "chroma")
+            m_settings.reset(new ChromaSettingsObject(BuildConfig.LAUNCHER_CONFIGFILE, this));
+        else
+            m_settings.reset(new INISettingsObject({ BuildConfig.LAUNCHER_CONFIGFILE, "polymc.cfg", "multimc.cfg" }, this));
 
         // Theming
-        m_settings->registerSetting("IconTheme", QString());
-        m_settings->registerSetting("ApplicationTheme", QString());
+        m_settings->registerSetting("IconTheme", QString("breeze_dark"));
+        m_settings->registerSetting("ApplicationTheme", QString("chroma"));
+        m_settings->registerSetting("AccentColor", QString("#b7a5f5"));
         m_settings->registerSetting("BackgroundCat", QString("kitteh"));
 
         // Remembered state
@@ -810,6 +861,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
         // Instance
         m_settings->registerSetting("InstSortMode", "Name");
+        m_settings->registerSetting("ChromaPinnedInstances", QStringList());
         m_settings->registerSetting("InstRenamingMode", "AskEverytime");
         m_settings->registerSetting("SelectedInstance", QString());
 
@@ -1281,6 +1333,7 @@ bool Application::createSetupWizard()
             m_setupWizard->addPage(new LoginWizardPage(m_setupWizard));
         }
         connect(m_setupWizard, &QDialog::finished, this, &Application::setupWizardFinished);
+        showMainWindow();
         m_setupWizard->show();
     }
 
@@ -1599,6 +1652,12 @@ bool Application::kill(InstancePtr instance)
 
 void Application::closeCurrentWindow()
 {
+    if (m_mainWindow) {
+        if (auto* page = m_mainWindow->inlineWorkspace()->currentPage()) {
+            page->close();
+            return;
+        }
+    }
     if (focusWindow())
         focusWindow()->close();
 }
@@ -1631,6 +1690,44 @@ bool Application::shouldExitNow() const
 bool Application::updatesAreAllowed()
 {
     return m_runningInstances == 0;
+}
+
+bool Application::usePrismProfile(const QString& path, QString* error)
+{
+    const auto fail = [error](const QString& message) {
+        if (error)
+            *error = message;
+        return false;
+    };
+    if (m_runningInstances || m_updateRunning || m_openWindows > 1)
+        return fail(tr("Close running games and other open pages before changing folders."));
+    const auto profile = ChromaProfile::inspect(path);
+    if (!profile.error.isEmpty())
+        return fail(profile.error);
+    if (ChromaProfile::sameProfilePath(profile.root, m_dataPath))
+        return fail(tr("Chroma is already using this folder."));
+    const auto runningError = ChromaProfile::runningPrismError();
+    if (!runningError.isEmpty())
+        return fail(runningError);
+
+    QString selectionError;
+    const auto previous = ChromaProfile::loadSelectedProfile(m_profileHome, &selectionError);
+    // A valid explicit choice also repairs a corrupt pointer after --dir recovery.
+    const auto selection = ChromaProfile::sameProfilePath(profile.root, m_profileHome) ? QString() : profile.root;
+    if (!ChromaProfile::saveSelectedProfile(m_profileHome, selection, &selectionError))
+        return fail(selectionError);
+
+    // Restart the whole application: accounts, metadata, Java, and instance paths
+    // all resolve relative to its data root. Changing InstanceDir alone is insufficient.
+    if (!QProcess::startDetached(applicationFilePath(), { "--dir", profile.root }, applicationDirPath())) {
+        QString rollbackError;
+        ChromaProfile::saveSelectedProfile(m_profileHome, previous, &rollbackError);
+        return fail(tr("Chroma could not restart. Your current folder is still open.") +
+                    (rollbackError.isEmpty() ? QString() : "\n" + rollbackError));
+    }
+    closeAllWindows();
+    quit();
+    return true;
 }
 
 void Application::updateIsRunning(bool running)
@@ -1685,18 +1782,41 @@ void Application::controllerFailed(const QString& error)
     }
 }
 
-void Application::ShowGlobalSettings(class QWidget* parent, QString open_page)
+void Application::ShowGlobalSettings(class QWidget* parent, QString open_page, bool waitForClose)
 {
     if (!m_globalSettingsProvider) {
         return;
     }
-    emit globalSettingsAboutToOpen();
-    {
-        SettingsObject::Lock lock(APPLICATION->settings());
-        PageDialog dlg(m_globalSettingsProvider.get(), open_page, parent);
-        connect(&dlg, &PageDialog::applied, this, &Application::globalSettingsApplied);
-        dlg.exec();
+    auto* main = showMainWindow();
+    auto* workspace = main->inlineWorkspace();
+    if (auto* existing = qobject_cast<PageDialog*>(workspace->activePage("pageDialog"))) {
+        // Keep one live settings form/lock. Finish its nested picker first.
+        if (workspace->currentPage() == existing)
+            existing->selectPage(open_page);
+        if (waitForClose) {
+            QEventLoop loop;
+            connect(existing, &QDialog::finished, &loop, &QEventLoop::quit);
+            connect(existing, &QObject::destroyed, &loop, &QEventLoop::quit);
+            loop.exec();
+        }
+        return;
     }
+    auto* current = workspace->currentPage();
+    const bool nested = current && parent && (current == parent || current->isAncestorOf(parent));
+    if (!nested && !main->prepareInlineNavigation())
+        return;
+    emit globalSettingsAboutToOpen();
+    auto lock = std::make_shared<SettingsObject::Lock>(settings());
+    auto* dialog = new PageDialog(m_globalSettingsProvider.get(), open_page, main);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    connect(dialog, &PageDialog::applied, this, &Application::globalSettingsApplied);
+    connect(dialog, &QDialog::finished, dialog, [lock = std::move(lock)](int) mutable { lock.reset(); });
+    // Launch's account setup must finish before it selects an account. Normal
+    // sidebar navigation stays asynchronous; both routes use the inline host.
+    if (waitForClose)
+        dialog->exec();
+    else
+        dialog->open();
 }
 
 MainWindow* Application::showMainWindow(bool minimized)
@@ -1709,6 +1829,7 @@ MainWindow* Application::showMainWindow(bool minimized)
         m_mainWindow = new MainWindow();
         m_mainWindow->restoreState(QByteArray::fromBase64(APPLICATION->settings()->get("MainWindowState").toString().toUtf8()));
         m_mainWindow->restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get("MainWindowGeometry").toString().toUtf8()));
+        m_mainWindow->applyHomeLayout();
 
         if (minimized) {
             m_mainWindow->showMinimized();
@@ -1726,15 +1847,15 @@ MainWindow* Application::showMainWindow(bool minimized)
 
 ViewLogWindow* Application::showLogWindow()
 {
-    if (m_viewLogWindow) {
-        m_viewLogWindow->setWindowState(m_viewLogWindow->windowState() & ~Qt::WindowMinimized);
-        m_viewLogWindow->raise();
-        m_viewLogWindow->activateWindow();
-    } else {
+    auto* main = showMainWindow();
+    if (!main->prepareInlineNavigation())
+        return m_viewLogWindow;
+    if (!m_viewLogWindow) {
         m_viewLogWindow = new ViewLogWindow();
         connect(m_viewLogWindow, &ViewLogWindow::isClosing, this, &Application::on_windowClose);
         m_openWindows++;
     }
+    main->openInlinePage(m_viewLogWindow, tr("Launcher logs"));
     return m_viewLogWindow;
 }
 
@@ -1742,26 +1863,13 @@ InstanceWindow* Application::showInstanceWindow(InstancePtr instance, QString pa
 {
     if (!instance)
         return nullptr;
+    auto* main = showMainWindow();
     auto id = instance->id();
     QMutexLocker locker(&m_instanceExtrasMutex);
     auto& extras = m_instanceExtras[id];
     auto& window = extras.window;
 
-    if (window) {
-// If the window is minimized on macOS or Windows, activate and bring it up
-#ifdef Q_OS_MACOS
-        if (window->isMinimized()) {
-            window->setWindowState(window->windowState() & ~Qt::WindowMinimized);
-        }
-#elif defined(Q_OS_WIN)
-        if (window->isMinimized()) {
-            window->showNormal();
-        }
-#endif
-
-        window->raise();
-        window->activateWindow();
-    } else {
+    if (!window) {
         window = new InstanceWindow(instance);
         m_openWindows++;
         connect(window, &InstanceWindow::isClosing, this, &Application::on_windowClose);
@@ -1773,6 +1881,7 @@ InstanceWindow* Application::showInstanceWindow(InstancePtr instance, QString pa
     if (extras.controller) {
         extras.controller->setParentWidget(window);
     }
+    main->openInlinePage(window, instance->name());
     return window;
 }
 

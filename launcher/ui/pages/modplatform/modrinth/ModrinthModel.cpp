@@ -42,6 +42,7 @@
 #include "modplatform/ModIndex.h"
 #include "modplatform/modrinth/ModrinthAPI.h"
 #include "net/NetJob.h"
+#include "ui/widgets/ModpackCardDelegate.h"
 #include "ui/widgets/ProjectItem.h"
 
 #include "net/ApiDownload.h"
@@ -105,8 +106,20 @@ auto ModpackListModel::data(const QModelIndex& index, int role) const -> QVarian
         case Qt::SizeHintRole:
             return QSize(0, 58);
         // Custom data
+        case Qt::DisplayRole:
+        case Qt::AccessibleTextRole:
         case UserDataTypes::TITLE:
             return pack->name;
+        case ModpackCardRoles::AuthorRole: {
+            QStringList authors;
+            for (const auto& author : pack->authors) {
+                if (!author.name.isEmpty())
+                    authors.append(author.name);
+            }
+            return authors.join(", ");
+        }
+        case Qt::AccessibleDescriptionRole:
+        case ModpackCardRoles::SummaryRole:
         case UserDataTypes::DESCRIPTION:
             return pack->description;
         case UserDataTypes::INSTALLED:

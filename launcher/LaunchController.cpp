@@ -99,7 +99,7 @@ void LaunchController::decideAccount()
 
         if (reply == QMessageBox::Yes) {
             // Open the account manager.
-            APPLICATION->ShowGlobalSettings(m_parentWidget, "accounts");
+            APPLICATION->ShowGlobalSettings(m_parentWidget, "accounts", true);
         } else if (reply == QMessageBox::No) {
             // Do not open "profile select" dialog.
             return;

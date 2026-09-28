@@ -1,38 +1,44 @@
-name: Suggestion
-description: Make a suggestion
+name: Feature suggestion
+description: Suggest a feature or improvement for Chroma
 labels: [enhancement]
 body:
 - type: markdown
   attributes:
     value: |
-      ### Use this form to suggest a feature for Prism Launcher.
+      Suggest an improvement for Chroma. Search the [existing issues](https://github.com/nikitasokolov01/chroma/issues) first; use the RFC form for larger architectural changes.
 - type: input
+  id: use-case
   attributes:
-    label: Role
-    description: In what way do you use Prism Launcher that needs this feature?
-    placeholder: I play modded Minecraft.
+    label: Use case
+    description: How do you use Chroma, and what are you trying to do?
+    placeholder: I switch between several modpacks every day.
   validations:
     required: true
-- type: input
+- type: textarea
+  id: suggestion
   attributes:
-    label: Suggestion
-    description: What do you want Prism Launcher to do?
-    placeholder: I want the cat button to meow.
+    label: Suggested change
+    description: Describe the behavior you want.
+    placeholder: Let me reorder pinned instances by dragging their sidebar icons.
   validations:
     required: true
-- type: input
+- type: textarea
+  id: benefit
   attributes:
     label: Benefit
-    description: Why do you need Prism Launcher to do this?
-    placeholder: so that I can always hear a cat when I need to.
+    description: How would this improve your workflow?
+    placeholder: I could keep my current modpacks at the top of the sidebar.
   validations:
     required: true
 - type: checkboxes
+  id: duplicate-check
   attributes:
-    label: This suggestion is unique
+    label: Existing suggestions
     options:
-    - label: I have searched the issue tracker and did not find an issue describing my suggestion, especially not one that has been rejected.
+    - label: I searched the Chroma issue tracker and did not find an existing suggestion covering this change.
       required: true
 - type: textarea
+  id: context
   attributes:
-    label: You may use the editor below to elaborate further.
+    label: Additional context
+    description: Add examples, sketches, or related discussions if helpful.

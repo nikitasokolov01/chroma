@@ -4,6 +4,7 @@
 #include "modplatform/ModIndex.h"
 #include "modplatform/ResourceAPI.h"
 #include "modplatform/flame/FlameAPI.h"
+#include "ui/widgets/ModpackCardDelegate.h"
 #include "ui/widgets/ProjectItem.h"
 
 #include "net/ApiDownload.h"
@@ -62,8 +63,20 @@ QVariant ListModel::data(const QModelIndex& index, int role) const
         }
         case Qt::SizeHintRole:
             return QSize(0, 58);
+        case Qt::DisplayRole:
+        case Qt::AccessibleTextRole:
         case UserDataTypes::TITLE:
             return pack->name;
+        case ModpackCardRoles::AuthorRole: {
+            QStringList authors;
+            for (const auto& author : pack->authors) {
+                if (!author.name.isEmpty())
+                    authors.append(author.name);
+            }
+            return authors.join(", ");
+        }
+        case Qt::AccessibleDescriptionRole:
+        case ModpackCardRoles::SummaryRole:
         case UserDataTypes::DESCRIPTION:
             return pack->description;
         case UserDataTypes::INSTALLED:

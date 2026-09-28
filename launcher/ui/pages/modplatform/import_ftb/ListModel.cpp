@@ -28,6 +28,7 @@
 #include "Json.h"
 #include "StringUtils.h"
 #include "modplatform/import_ftb/PackHelpers.h"
+#include "ui/widgets/ModpackCardDelegate.h"
 #include "ui/widgets/ProjectItem.h"
 
 namespace FTBImportAPP {
@@ -116,12 +117,15 @@ QVariant ListModel::data(const QModelIndex& index, int role) const
             return v;
         }
         case Qt::DisplayRole:
+        case Qt::AccessibleTextRole:
             return pack.name;
         case Qt::SizeHintRole:
             return QSize(0, 58);
         // Custom data
         case UserDataTypes::TITLE:
             return pack.name;
+        case Qt::AccessibleDescriptionRole:
+        case ModpackCardRoles::SummaryRole:
         case UserDataTypes::DESCRIPTION:
             return tr("Minecraft %1").arg(pack.mcVersion);
         case UserDataTypes::INSTALLED:

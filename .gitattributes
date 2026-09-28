@@ -1,2 +1,5 @@
 *.pem -crlf
 **/testdata/** -text -diff
+
+# Preserve upstream legal texts byte for byte, including their original whitespace.
+docs/licenses/** -text -whitespace

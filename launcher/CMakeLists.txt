@@ -416,6 +416,8 @@ set(SETTINGS_SOURCES
     settings/INIFile.h
     settings/INISettingsObject.cpp
     settings/INISettingsObject.h
+    settings/ChromaSettingsObject.cpp
+    settings/ChromaSettingsObject.h
     settings/OverrideSetting.cpp
     settings/OverrideSetting.h
     settings/PassthroughSetting.cpp
@@ -792,6 +794,8 @@ SET(LAUNCHER_SOURCES
     Application.cpp
     DataMigrationTask.h
     DataMigrationTask.cpp
+    ChromaProfile.h
+    ChromaProfile.cpp
     ApplicationMessage.h
     ApplicationMessage.cpp
     SysInfo.h
@@ -844,6 +848,15 @@ SET(LAUNCHER_SOURCES
     ui/GuiUtil.cpp
     ui/MainWindow.h
     ui/MainWindow.cpp
+    ui/widgets/LauncherHome.cpp
+    ui/widgets/LauncherHome.h
+    ui/widgets/InlineWorkspace.cpp
+    ui/widgets/InlineWorkspace.h
+    ui/dialogs/PrismProfileDialog.cpp
+    ui/dialogs/PrismProfileDialog.h
+    ui/themes/AccentColor.h
+    ui/themes/ChromaTheme.cpp
+    ui/themes/ChromaTheme.h
     ui/InstanceWindow.h
     ui/InstanceWindow.cpp
     ui/ViewLogWindow.h
@@ -1144,6 +1157,10 @@ SET(LAUNCHER_SOURCES
     ui/widgets/VariableSizedImageObject.cpp
     ui/widgets/ProjectItem.h
     ui/widgets/ProjectItem.cpp
+    ui/widgets/ModpackCardDelegate.h
+    ui/widgets/ModpackCardDelegate.cpp
+    ui/widgets/ModpackBrowser.h
+    ui/widgets/ModpackBrowser.cpp
     ui/widgets/SubTaskProgressBar.h
     ui/widgets/SubTaskProgressBar.cpp
     ui/widgets/VersionListView.cpp

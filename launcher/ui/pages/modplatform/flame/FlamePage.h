@@ -48,6 +48,7 @@ class FlamePage;
 }
 
 class NewInstanceDialog;
+class ModpackBrowser;
 
 namespace Flame {
 class ListModel;
@@ -101,5 +102,8 @@ class FlamePage : public QWidget, public ModpackProviderBasePage {
 
     std::unique_ptr<ModFilterWidget> m_filterWidget;
     Task::Ptr m_categoriesTask;
+    bool m_categoriesStarted = false;
+    ModpackBrowser* m_browser = nullptr;
+    quint64 m_selectionGeneration = 0;
     Task::Ptr m_job;
 };

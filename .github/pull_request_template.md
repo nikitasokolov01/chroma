@@ -1,9 +1,19 @@
 <!--
-Hey there! Thanks for your contribution.
+Chroma contribution guide:
+https://github.com/nikitasokolov01/chroma/blob/main/CONTRIBUTING.md
 
-Please make sure that your commits are signed off first.
-If you don't know how that works, check out our contribution guidelines: https://github.com/PrismLauncher/PrismLauncher/blob/develop/CONTRIBUTING.md#signing-your-work
-If you already created your commits, you can run `git rebase --signoff develop` to retroactively sign-off all your commits and `git push --force` to override what you have pushed already.
-
-Note that signing and signing-off are two different things!
+Sign off each commit with git commit -s. A DCO sign-off is different from a cryptographic commit signature.
+Keep existing license and attribution notices. This preview has no active CI workflow; include local validation results.
 -->
+
+## Change
+
+Describe the problem and what the change makes possible. Link related Chroma issues.
+
+## Validation
+
+List the build or test commands you ran and their results. Explain any checks you could not run.
+
+## Screenshots
+
+For UI changes, include normal and compact layouts using synthetic data. Remove this section for changes without a visible effect.

@@ -38,6 +38,7 @@
 #include <QCache>
 #include <QLineEdit>
 #include <QListView>
+#include <QPointer>
 #include <QScrollBar>
 #include <functional>
 #include "VisualGroup.h"
@@ -46,6 +47,9 @@
 struct InstanceViewRoles {
     enum { GroupRole = Qt::UserRole, ProgressValueRole, ProgressMaximumRole };
 };
+
+class QScrollArea;
+class QTimer;
 
 class InstanceView : public QAbstractItemView {
     Q_OBJECT
@@ -79,6 +83,8 @@ class InstanceView : public QAbstractItemView {
 
     int spacing() const { return m_spacing; };
     void setPaintCat(bool visible);
+    // Expand the grouped library to its full height inside a scrolling Home page.
+    void setOuterScrollArea(QScrollArea* area);
 
    public slots:
     virtual void updateGeometries() override;
@@ -103,6 +109,7 @@ class InstanceView : public QAbstractItemView {
     void mouseDoubleClickEvent(QMouseEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dragMoveEvent(QDragMoveEvent* event) override;
@@ -124,12 +131,14 @@ class InstanceView : public QAbstractItemView {
     int m_rightMargin = 5;
     int m_bottomMargin = 5;
     int m_categoryMargin = 5;
-    int m_spacing = 5;
-    int m_itemWidth = 100;
+    int m_spacing = 12;
+    int m_itemWidth = 164;
     int m_currentItemsPerRow = -1;
     int m_currentCursorColumn = -1;
     mutable QCache<int, QRect> m_geometryCache;
     CatPainter* m_cat = nullptr;
+    QPointer<QScrollArea> m_outerScrollArea;
+    QTimer* m_outerDragScrollTimer = nullptr;
 
     // point where the currently active mouse action started in geometry coordinates
     QPoint m_pressedPosition;

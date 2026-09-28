@@ -62,3 +62,10 @@ flatbuild
 
 # Snap
 *.snap
+# Local portable build tools and UI verification output.
+.tools/
+.chroma-test/
+dist/
+aqtinstall.log
+build-chroma/
+install-chroma/

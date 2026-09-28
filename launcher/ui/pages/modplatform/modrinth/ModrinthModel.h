@@ -43,6 +43,7 @@
 
 class ModPage;
 class Version;
+class LauncherHomeTest;
 
 namespace Modrinth {
 
@@ -51,6 +52,7 @@ using LogoCallback = std::function<void(QString)>;
 
 class ModpackListModel : public QAbstractListModel {
     Q_OBJECT
+    friend class ::LauncherHomeTest;
 
    public:
     ModpackListModel(ModrinthPage* parent);

@@ -18,6 +18,7 @@
 #include <QDialogButtonBox>
 #include <QKeyEvent>
 #include <QPushButton>
+#include <QScreen>
 #include <QVBoxLayout>
 
 #include "Application.h"
@@ -26,6 +27,8 @@
 
 PageDialog::PageDialog(BasePageProvider* pageProvider, QString defaultId, QWidget* parent) : QDialog(parent)
 {
+    setObjectName("pageDialog");
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     setWindowTitle(pageProvider->dialogTitle());
     m_container = new PageContainer(pageProvider, std::move(defaultId), this);
 
@@ -43,17 +46,25 @@ PageDialog::PageDialog(BasePageProvider* pageProvider, QString defaultId, QWidge
     setLayout(mainLayout);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Help | QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    buttons->button(QDialogButtonBox::Ok)->setText(tr("&OK"));
+    buttons->setObjectName("pageDialogButtons");
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("&Save"));
+    buttons->button(QDialogButtonBox::Ok)->setObjectName("savePageButton");
+    buttons->button(QDialogButtonBox::Ok)->setProperty("role", "primary");
     buttons->button(QDialogButtonBox::Cancel)->setText(tr("&Cancel"));
     buttons->button(QDialogButtonBox::Help)->setText(tr("Help"));
-    buttons->setContentsMargins(0, 0, 6, 6);
+    buttons->setContentsMargins(0, 0, 0, 0);
     m_container->addButtons(buttons);
 
     connect(buttons->button(QDialogButtonBox::Ok), &QPushButton::clicked, this, &PageDialog::accept);
     connect(buttons->button(QDialogButtonBox::Cancel), &QPushButton::clicked, this, &PageDialog::reject);
     connect(buttons->button(QDialogButtonBox::Help), &QPushButton::clicked, m_container, &PageContainer::help);
 
-    restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get("PagedGeometry").toString().toUtf8()));
+    if (!restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get("PagedGeometry").toString().toUtf8()))) {
+        if (auto activeScreen = parent ? parent->screen() : QApplication::primaryScreen()) {
+            const auto available = activeScreen->availableSize();
+            resize(qMin(960, available.width() - 60), qMin(740, available.height() - 70));
+        }
+    }
 }
 
 void PageDialog::accept()
@@ -62,10 +73,17 @@ void PageDialog::accept()
         QDialog::accept();
 }
 
+bool PageDialog::selectPage(const QString& id)
+{
+    return m_container->selectPage(id);
+}
+
 void PageDialog::closeEvent(QCloseEvent* event)
 {
     if (handleClose())
         QDialog::closeEvent(event);
+    else
+        event->ignore();
 }
 
 bool PageDialog::handleClose()

@@ -19,8 +19,8 @@
 #pragma once
 
 #include <QDialog>
+#include <QListView>
 #include <QTextBrowser>
-#include <QTreeView>
 #include <QWidget>
 
 #include "modplatform/import_ftb/PackHelpers.h"

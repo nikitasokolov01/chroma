@@ -1,65 +1,79 @@
-name: Bug Report
-description: File a bug report
+name: Bug report
+description: Report a problem with Chroma
 labels: [bug]
 body:
 - type: markdown
   attributes:
     value: |
-      If you need help with running Minecraft, please visit us on our Discord before making a bug report.
+      This tracker is for Chroma, including the v0.1.0 preview. Chroma is maintained independently of Prism Launcher.
 
-      Before submitting a bug report, please make sure you have read this *entire* form, and that:
-      * You have read the [Prism Launcher wiki](https://prismlauncher.org/wiki/) and it has not answered your question.
-      * Your bug is not caused by Minecraft or any mods you have installed.
-      * Your issue has not been reported before, [make sure to use the search function!](https://github.com/PrismLauncher/PrismLauncher/issues)
-
-      **Do not forget to give your issue a descriptive title.** "Bug in the instance screen" makes it hard to distinguish issues at a glance.
+      Check the [Chroma guide](https://github.com/nikitasokolov01/chroma/blob/main/docs/CHROMA.md) and [existing issues](https://github.com/nikitasokolov01/chroma/issues) before reporting a problem. Give the issue a descriptive title.
 - type: dropdown
+  id: operating-system
   attributes:
-    label: Operating System
-    description: If you know this bug occurs on multiple operating systems, select all you have tested.
+    label: Operating system
+    description: Release packages currently target Windows x64. Include other systems if you built Chroma yourself.
     multiple: true
     options:
     - Windows
     - macOS
     - Linux
     - Other
-- type: textarea
+  validations:
+    required: true
+- type: input
+  id: version
   attributes:
-    label: Version of Prism Launcher
-    description: The version of Prism Launcher used in the bug report.
-    placeholder: Prism Launcher 5.0
+    label: Chroma version
+    description: Give the release tag, installer filename, or source commit. The underlying Prism version may be shown separately.
+    placeholder: v0.1.0 preview
+  validations:
+    required: true
+- type: dropdown
+  id: installation
+  attributes:
+    label: Installation type
+    options:
+    - Windows installer
+    - Portable ZIP
+    - Built from source
+    - Other
+  validations:
+    required: true
+- type: input
+  id: qt-version
+  attributes:
+    label: Qt version
+    description: Optional. Include this if available in the launcher's About dialog.
+    placeholder: Qt 6.5.3
+- type: textarea
+  id: behavior
+  attributes:
+    label: Expected and actual behavior
+    description: What did you expect, and what happened instead?
+    placeholder: The selected instance should remain visible after resizing the window, but its card is clipped.
   validations:
     required: true
 - type: textarea
-  attributes:
-    label: Version of Qt
-    description: The version of Qt used in the bug report. You can find it in Help -> About Prism Launcher -> About Qt.
-    placeholder: Qt 6.3.0
-  validations:
-    required: true
-- type: textarea
-  attributes:
-    label: Description of bug
-    description: What did you expect to happen, what happened, and why is it incorrect?
-    placeholder: The cat button should show a cat, but it showed a dog instead!
-  validations:
-    required: true
-- type: textarea
+  id: reproduction
   attributes:
     label: Steps to reproduce
-    description: A bulleted list, or an exported instance if relevant.
-    placeholder: "* Press the cat button"
+    description: Include the relevant window size, provider, or instance settings. If this is a game-launch problem, mention the Minecraft version and mod loader.
+    placeholder: |
+      1. Open the library.
+      2. Select an instance.
+      3. Resize the window to 680 x 640.
   validations:
     required: true
 - type: textarea
+  id: context
   attributes:
-    label: Suspected cause
-    description: If you know what could be causing this bug, describe it here.
-  validations:
-    required: false
+    label: Screenshots, logs, and other context
+    description: Attach relevant screenshots or sanitized logs. Do not attach accounts.json, access tokens, or Microsoft sign-in codes. If you tested the same behavior in Prism, include that result.
 - type: checkboxes
+  id: duplicate-check
   attributes:
-    label: This issue is unique
+    label: Existing reports
     options:
-    - label: I have searched the issue tracker and did not find an issue describing my bug.
+    - label: I searched the Chroma issue tracker and did not find an existing report of this problem.
       required: true

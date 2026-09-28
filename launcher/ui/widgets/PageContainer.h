@@ -52,6 +52,9 @@ class QListView;
 class QLineEdit;
 class QStackedLayout;
 class QGridLayout;
+class QComboBox;
+class QResizeEvent;
+class QVBoxLayout;
 
 class PageContainer : public QWidget, public BasePageContainer {
     Q_OBJECT
@@ -90,11 +93,16 @@ class PageContainer : public QWidget, public BasePageContainer {
 
     void changeEvent(QEvent*) override;
 
-    void hidePageList() { m_pageList->hide(); }
+    void hidePageList();
+    void setHeaderVisible(bool visible);
+
+   protected:
+    void resizeEvent(QResizeEvent* event) override;
 
    private:
     void createUI();
     void retranslate();
+    void updateNavigation();
 
    public slots:
     void help();
@@ -114,6 +122,9 @@ class PageContainer : public QWidget, public BasePageContainer {
     PageModel* m_model;
     QStackedLayout* m_pageStack;
     QListView* m_pageList;
+    QComboBox* m_pageSelector;
     QLabel* m_header;
     QGridLayout* m_layout;
+    QVBoxLayout* m_buttonLayout;
+    bool m_navigationHidden = false;
 };

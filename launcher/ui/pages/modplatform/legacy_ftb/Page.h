@@ -35,8 +35,8 @@
 
 #pragma once
 
+#include <QListView>
 #include <QTextBrowser>
-#include <QTreeView>
 #include <QWidget>
 
 #include "QObjectPtr.h"
@@ -45,6 +45,7 @@
 #include "ui/pages/modplatform/ModpackProviderBasePage.h"
 
 class NewInstanceDialog;
+class ModpackBrowser;
 
 namespace LegacyFTB {
 
@@ -103,7 +104,7 @@ class Page : public QWidget, public ModpackProviderBasePage {
 
    private:
     FilterModel* currentModel = nullptr;
-    QTreeView* currentList = nullptr;
+    QListView* currentList = nullptr;
     QTextBrowser* currentModpackInfo = nullptr;
 
     bool initialized = false;
@@ -125,6 +126,7 @@ class Page : public QWidget, public ModpackProviderBasePage {
     NewInstanceDialog* dialog = nullptr;
 
     Ui::Page* ui = nullptr;
+    ModpackBrowser* m_browser = nullptr;
 };
 
 }  // namespace LegacyFTB

@@ -44,6 +44,7 @@
 #include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTabBar>
+#include <QTimer>
 #include <QValidator>
 #include <QVariant>
 
@@ -92,6 +93,16 @@ APIPage::APIPage(QWidget* parent) : QWidget(parent), ui(new Ui::APIPage)
 APIPage::~APIPage()
 {
     delete ui;
+}
+
+void APIPage::focusMicrosoftClientId()
+{
+    // The page container has to finish showing this page before its scroll area can reveal the field.
+    QTimer::singleShot(0, this, [this] {
+        ui->scrollArea->ensureWidgetVisible(ui->msaClientID);
+        ui->msaClientID->setFocus(Qt::OtherFocusReason);
+        ui->msaClientID->selectAll();
+    });
 }
 
 void APIPage::resetBaseURLNote()

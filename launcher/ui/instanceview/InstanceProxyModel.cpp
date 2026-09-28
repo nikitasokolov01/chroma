@@ -18,9 +18,18 @@
 #include <BaseInstance.h>
 #include <icons/IconList.h>
 #include "Application.h"
+#include "InstanceList.h"
 #include "InstanceView.h"
+#include "minecraft/Component.h"
 
-#include <QDebug>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QSet>
+#include <QTimer>
 
 InstanceProxyModel::InstanceProxyModel(QObject* parent) : QSortFilterProxyModel(parent)
 {
@@ -28,10 +37,141 @@ InstanceProxyModel::InstanceProxyModel(QObject* parent) : QSortFilterProxyModel(
     m_naturalSort.setCaseSensitivity(Qt::CaseSensitivity::CaseInsensitive);
     // FIXME: use loaded translation as source of locale instead, hook this up to translation changes
     m_naturalSort.setLocale(QLocale::system());
+    m_summaryTimer = new QTimer(this);
+    m_summaryTimer->setSingleShot(true);
+    connect(m_summaryTimer, &QTimer::timeout, this, &InstanceProxyModel::refreshSummaries);
+}
+
+void InstanceProxyModel::setSourceModel(QAbstractItemModel* model)
+{
+    for (const auto& connection : m_sourceConnections)
+        disconnect(connection);
+    m_sourceConnections.clear();
+    m_summaryTimer->stop();
+    m_summaries.clear();
+    QSortFilterProxyModel::setSourceModel(model);
+    if (!model)
+        return;
+
+    const auto schedule = [this] { m_summaryTimer->start(0); };
+    m_sourceConnections.append(connect(model, &QAbstractItemModel::dataChanged, this, schedule));
+    m_sourceConnections.append(connect(model, &QAbstractItemModel::rowsInserted, this, schedule));
+    m_sourceConnections.append(connect(model, &QAbstractItemModel::rowsRemoved, this, schedule));
+    m_sourceConnections.append(connect(model, &QAbstractItemModel::modelReset, this, [this, schedule] {
+        m_summaries.clear();
+        schedule();
+    }));
+    refreshSummaries();
+}
+
+QString InstanceProxyModel::formatSummary(const QString& version, ModPlatform::ModLoaderTypes loaders)
+{
+    QStringList names;
+    for (auto type : ModPlatform::modLoaderTypesToList(loaders)) {
+        QString name = ModPlatform::getModLoaderAsString(type);
+        switch (type) {
+            case ModPlatform::NeoForge:
+                name = "NeoForge";
+                break;
+            case ModPlatform::LiteLoader:
+                name = "LiteLoader";
+                break;
+            case ModPlatform::LegacyFabric:
+                name = "Legacy Fabric";
+                break;
+            case ModPlatform::BTA:
+                name = "BTA";
+                break;
+            default:
+                if (!name.isEmpty())
+                    name[0] = name[0].toUpper();
+                break;
+        }
+        if (!name.isEmpty())
+            names.append(name);
+    }
+    return tr("%1 %2").arg(names.isEmpty() ? tr("Vanilla") : names.join(" + "), version);
+}
+
+void InstanceProxyModel::refreshSummaries()
+{
+    QHash<QString, SummaryCacheEntry> summaries;
+    bool changed = false;
+    if (auto* model = sourceModel()) {
+        for (int row = 0; row < model->rowCount(); ++row) {
+            const auto sourceIndex = model->index(row, 0);
+            const auto id = sourceIndex.data(InstanceList::InstanceIDRole).toString();
+            auto* instance = static_cast<BaseInstance*>(sourceIndex.data(InstanceList::InstancePointerRole).value<void*>());
+            if (!instance)
+                continue;
+
+            SummaryCacheEntry entry;
+            entry.path = QDir(instance->instanceRoot()).filePath("mmc-pack.json");
+            const QFileInfo fileInfo(entry.path);
+            entry.modified = fileInfo.lastModified();
+            entry.size = fileInfo.exists() ? fileInfo.size() : -1;
+            entry.customMinecraft = QFileInfo::exists(QDir(instance->instanceRoot()).filePath("patches/net.minecraft.json"));
+            const auto previous = m_summaries.constFind(id);
+            if (previous != m_summaries.cend() && previous->path == entry.path && previous->modified == entry.modified &&
+                previous->size == entry.size && previous->customMinecraft == entry.customMinecraft) {
+                summaries.insert(id, *previous);
+                continue;
+            }
+
+            // Only this refresh path reads files. data() and the card painter remain memory-only.
+            QFile file(entry.path);
+            if (file.open(QIODevice::ReadOnly)) {
+                const auto document = QJsonDocument::fromJson(file.readAll());
+                const auto root = document.object();
+                if (root.value("formatVersion").toInt() == 1 && root.value("components").isArray()) {
+                    QSet<QString> componentIds;
+                    for (const auto& value : root.value("components").toArray()) {
+                        const auto component = value.toObject();
+                        if (!value.isObject() || !component.value("uid").isString()) {
+                            entry.version.clear();
+                            entry.loaders = {};
+                            break;
+                        }
+                        const auto uid = component.value("uid").toString();
+                        if (componentIds.contains(uid))
+                            continue;
+                        componentIds.insert(uid);
+                        // Important and dependency-only components cannot be disabled in Component::isEnabled().
+                        if (component.value("disabled").toBool() && !component.value("important").toBool() &&
+                            !component.value("dependencyOnly").toBool())
+                            continue;
+                        if (uid == "net.minecraft") {
+                            // A custom patch's display version differs from the version it would revert to.
+                            // Otherwise the requested version wins over cache data left behind by an unloaded edit.
+                            entry.version = component.value(entry.customMinecraft ? "cachedVersion" : "version").toString();
+                            if (entry.version.isEmpty())
+                                entry.version = component.value(entry.customMinecraft ? "version" : "cachedVersion").toString();
+                        }
+                        const auto loader = Component::KNOWN_MODLOADERS.constFind(uid);
+                        if (loader != Component::KNOWN_MODLOADERS.cend())
+                            entry.loaders |= loader->type;
+                    }
+                }
+            }
+            changed |= previous == m_summaries.cend() || previous->version != entry.version || previous->loaders != entry.loaders;
+            summaries.insert(id, entry);
+        }
+    }
+    changed |= summaries.size() != m_summaries.size();
+    m_summaries = std::move(summaries);
+    if (changed && rowCount() > 0)
+        emit dataChanged(index(0, 0), index(rowCount() - 1, 0), { InstanceSummaryRole });
 }
 
 QVariant InstanceProxyModel::data(const QModelIndex& index, int role) const
 {
+    if (role == InstanceSummaryRole) {
+        const auto id = QSortFilterProxyModel::data(index, InstanceList::InstanceIDRole).toString();
+        const auto summary = m_summaries.constFind(id);
+        if (summary == m_summaries.cend() || summary->version.isEmpty())
+            return {};
+        return formatSummary(summary->version, summary->loaders);
+    }
     QVariant data = QSortFilterProxyModel::data(index, role);
     if (role == Qt::DecorationRole) {
         return QVariant(APPLICATION->icons()->getIcon(data.toString()));

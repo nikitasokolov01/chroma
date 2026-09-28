@@ -36,10 +36,11 @@
 
 #include "Page.h"
 #include "StringUtils.h"
-#include "ui/widgets/ProjectItem.h"
+#include "ui/widgets/ModpackBrowser.h"
 #include "ui_Page.h"
 
 #include <QInputDialog>
+#include <QPersistentModelIndex>
 
 #include "Application.h"
 
@@ -66,9 +67,7 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
         publicFilterModel->setSourceModel(publicListModel);
 
         ui->publicPackList->setModel(publicFilterModel);
-        ui->publicPackList->setSortingEnabled(true);
-        ui->publicPackList->header()->hide();
-        ui->publicPackList->setIndentation(0);
+        publicFilterModel->sort(0, Qt::DescendingOrder);
         ui->publicPackList->setIconSize(QSize(42, 42));
 
         for (int i = 0; i < publicFilterModel->getAvailableSortings().size(); i++) {
@@ -84,9 +83,7 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
         thirdPartyFilterModel->setSourceModel(thirdPartyModel);
 
         ui->thirdPartyPackList->setModel(thirdPartyFilterModel);
-        ui->thirdPartyPackList->setSortingEnabled(true);
-        ui->thirdPartyPackList->header()->hide();
-        ui->thirdPartyPackList->setIndentation(0);
+        thirdPartyFilterModel->sort(0, Qt::DescendingOrder);
         ui->thirdPartyPackList->setIconSize(QSize(42, 42));
 
         thirdPartyFilterModel->setSorting(publicFilterModel->getCurrentSorting());
@@ -98,9 +95,7 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
         privateFilterModel->setSourceModel(privateListModel);
 
         ui->privatePackList->setModel(privateFilterModel);
-        ui->privatePackList->setSortingEnabled(true);
-        ui->privatePackList->header()->hide();
-        ui->privatePackList->setIndentation(0);
+        privateFilterModel->sort(0, Qt::DescendingOrder);
         ui->privatePackList->setIconSize(QSize(42, 42));
 
         privateFilterModel->setSorting(publicFilterModel->getCurrentSorting());
@@ -117,6 +112,12 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
     connect(ui->publicPackList->selectionModel(), &QItemSelectionModel::currentChanged, this, &Page::onPublicPackSelectionChanged);
     connect(ui->thirdPartyPackList->selectionModel(), &QItemSelectionModel::currentChanged, this, &Page::onThirdPartyPackSelectionChanged);
     connect(ui->privatePackList->selectionModel(), &QItemSelectionModel::currentChanged, this, &Page::onPrivatePackSelectionChanged);
+    for (auto* model : { publicFilterModel, thirdPartyFilterModel, privateFilterModel }) {
+        connect(model, &QAbstractItemModel::modelReset, this, [this, model] {
+            if (currentModel == model)
+                onPackSelectionChanged();
+        });
+    }
 
     connect(ui->addPackBtn, &QPushButton::clicked, this, &Page::onAddPackClicked);
     connect(ui->removePackBtn, &QPushButton::clicked, this, &Page::onRemovePackClicked);
@@ -129,9 +130,13 @@ Page::Page(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog
     ui->thirdPartyPackList->selectionModel()->reset();
     ui->privatePackList->selectionModel()->reset();
 
-    ui->publicPackList->setItemDelegate(new ProjectItemDelegate(this));
-    ui->thirdPartyPackList->setItemDelegate(new ProjectItemDelegate(this));
-    ui->privatePackList->setItemDelegate(new ProjectItemDelegate(this));
+    m_browser = new ModpackBrowser(ui->searchEdit, ui->sortByBox, ui->tabWidget, ui->versionSelectionBox, this);
+    m_browser->addView(ui->publicPackList, ui->publicPackDescription);
+    m_browser->addView(ui->thirdPartyPackList, ui->thirdPartyPackDescription);
+    m_browser->addView(ui->privatePackList, ui->privatePackDescription);
+    for (auto* tab : { ui->tab, ui->tab_2, ui->tab_3 })
+        tab->layout()->setContentsMargins(0, 8, 0, 0);
+    ModpackBrowser::install(this, m_browser);
     onTabChanged(ui->tabWidget->currentIndex());
 }
 
@@ -147,6 +152,7 @@ bool Page::shouldDisplay() const
 
 void Page::openedImpl()
 {
+    m_browser->showResults();
     if (!initialized) {
         connect(ftbFetchTask.get(), &PackFetchTask::finished, this, &Page::ftbPackDataDownloadSuccessfully);
         connect(ftbFetchTask.get(), &PackFetchTask::failed, this, &Page::ftbPackDataDownloadFailed);
@@ -174,7 +180,7 @@ void Page::suggestCurrent()
         return;
     }
 
-    if (selected.broken || selectedVersion.isEmpty()) {
+    if (selected.broken || selectedVersion.isEmpty() || !currentList || !currentList->currentIndex().isValid()) {
         dialog->setSuggestedPack();
         return;
     }
@@ -185,15 +191,16 @@ void Page::suggestCurrent()
         editedLogoName = "ftb_" + editedLogoName;
     }
 
+    auto applyLogo = [this, editedLogoName, packName = selected.name](QString logo) {
+        if (isOpened && !selectedVersion.isEmpty() && selected.name == packName)
+            dialog->setSuggestedIconFromFile(logo, editedLogoName);
+    };
     if (selected.type == PackType::Public) {
-        publicListModel->getLogo(selected.logo,
-                                 [this, editedLogoName](QString logo) { dialog->setSuggestedIconFromFile(logo, editedLogoName); });
+        publicListModel->getLogo(selected.logo, applyLogo);
     } else if (selected.type == PackType::ThirdParty) {
-        thirdPartyModel->getLogo(selected.logo,
-                                 [this, editedLogoName](QString logo) { dialog->setSuggestedIconFromFile(logo, editedLogoName); });
+        thirdPartyModel->getLogo(selected.logo, applyLogo);
     } else if (selected.type == PackType::Private) {
-        privateListModel->getLogo(selected.logo,
-                                  [this, editedLogoName](QString logo) { dialog->setSuggestedIconFromFile(logo, editedLogoName); });
+        privateListModel->getLogo(selected.logo, applyLogo);
     }
 }
 
@@ -265,8 +272,12 @@ void Page::onPrivatePackSelectionChanged(QModelIndex now, [[maybe_unused]] QMode
 
 void Page::onPackSelectionChanged(Modpack* pack)
 {
+    if (isOpened)
+        dialog->setSuggestedPack();
+    selectedVersion.clear();
     ui->versionSelectionBox->clear();
     if (pack) {
+        selected = *pack;
         currentModpackInfo->setHtml(StringUtils::htmlListPatch("Pack by <b>" + pack->author + "</b>" + "<br>Minecraft " + pack->mcVersion +
                                                                "<br>" + "<br>" + pack->description + "<ul><li>" +
                                                                pack->mods.replace(";", "</li><li>") + "</li></ul>"));
@@ -282,7 +293,6 @@ void Page::onPackSelectionChanged(Modpack* pack)
         if (!currentAdded) {
             ui->versionSelectionBox->addItem(pack->currentVersion);
         }
-        selected = *pack;
     } else {
         currentModpackInfo->setHtml("");
         ui->versionSelectionBox->clear();
@@ -298,6 +308,8 @@ void Page::onVersionSelectionItemChanged(QString version)
 {
     if (version.isNull() || version.isEmpty()) {
         selectedVersion = "";
+        if (isOpened)
+            dialog->setSuggestedPack();
         return;
     }
 
@@ -315,6 +327,8 @@ void Page::onSortingSelectionChanged(QString sort)
 
 void Page::onTabChanged(int tab)
 {
+    if (m_browser)
+        m_browser->showResults();
     if (tab == 1) {
         currentModel = thirdPartyFilterModel;
         currentList = ui->thirdPartyPackList;
@@ -359,21 +373,25 @@ void Page::onRemovePackClicked()
     if (!index.isValid()) {
         return;
     }
-    auto row = index.row();
-    Modpack pack = privateListModel->at(row);
+    const QPersistentModelIndex sourceIndex = privateFilterModel->mapToSource(index);
+    if (!sourceIndex.isValid())
+        return;
+    Modpack pack = privateListModel->at(sourceIndex.row());
     auto answer = QMessageBox::question(this, tr("Remove pack"), tr("Are you sure you want to remove pack %1?").arg(pack.name),
                                         QMessageBox::Yes | QMessageBox::No);
-    if (answer != QMessageBox::Yes) {
+    if (answer != QMessageBox::Yes || !sourceIndex.isValid()) {
         return;
     }
 
     ftbPrivatePacks->remove(pack.packCode);
-    privateListModel->remove(row);
+    privateListModel->remove(sourceIndex.row());
     onPackSelectionChanged();
 }
 
 void Page::triggerSearch()
 {
+    if (m_browser)
+        m_browser->showResults();
     currentModel->setSearchTerm(ui->searchEdit->text());
 }
 

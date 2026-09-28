@@ -51,6 +51,8 @@ namespace Ui {
 class ModrinthPage;
 }
 
+class ModpackBrowser;
+
 namespace Modrinth {
 class ModpackListModel;
 }
@@ -105,6 +107,9 @@ class ModrinthPage : public QWidget, public ModpackProviderBasePage {
 
     std::unique_ptr<ModFilterWidget> m_filterWidget;
     Task::Ptr m_categoriesTask;
+    bool m_categoriesStarted = false;
+    ModpackBrowser* m_browser = nullptr;
+    quint64 m_selectionGeneration = 0;
 
     ModrinthAPI m_api;
     Task::Ptr m_job;

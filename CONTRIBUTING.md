@@ -1,4 +1,18 @@
-# Contributions Guidelines
+# Contributing to Chroma
+
+Chroma is an independent Prism Launcher UI fork. Report bugs, propose changes, and open pull requests in [nikitasokolov01/chroma](https://github.com/nikitasokolov01/chroma). The current release is **v0.1.0 preview**, with Windows x64 packages.
+
+Start with the [build and test guide](docs/CHROMA.md#build-from-source). For larger changes, open a Chroma issue first so the intended behavior and scope can be discussed. Keep changes focused and preserve Prism's instance, account, installation, and settings behavior when updating the interface.
+
+## Before opening a pull request
+
+- Explain the user-facing problem and the resulting behavior. Link related Chroma issues.
+- Build the changed code and run the relevant tests. Include the commands and results in the pull request.
+- For interface changes, check a normal window and the 680×640 compact layout. Include screenshots; use synthetic profiles rather than personal account data.
+- Keep existing license and attribution notices. Third-party components retain their own licenses; see [LICENSE](LICENSE) and [COPYING.md](COPYING.md).
+- Sign off every commit as described below.
+
+There is no active GitHub Actions validation workflow for this preview. Local test results are part of the review; do not assume that opening a pull request runs the build automatically.
 
 ## Code style
 
@@ -104,15 +118,13 @@ By making a contribution to this project, I certify that:
     this project or the open source license(s) involved.
 ```
 
-These terms will be enforced once you create a pull request, and you will be informed automatically if any of your commits aren't signed-off by you.
+Every contributed commit must carry the sign-off. Maintainers review sign-offs as part of the pull request; this preview does not promise an automated DCO check.
 
 As a bonus, you can also [cryptographically sign your commits][gh-signing-commits] and enable [vigilant mode][gh-vigilant-mode] on GitHub.
 
 [gh-signing-commits]: https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits
 [gh-vigilant-mode]: https://docs.github.com/en/authentication/managing-commit-signature-verification/displaying-verification-statuses-for-all-of-your-commits
 
-## Backporting to Release Branches
+## Release changes
 
-We use [automated backports](https://github.com/PrismLauncher/PrismLauncher/blob/develop/.github/workflows/backport.yml) to merge specific contributions from develop into `release` branches.
-
-This is done when pull requests are merged and have labels such as `backport release-7.x` - which should be added along with the milestone for the release.
+Target the repository's default branch unless a maintainer requests another branch. Mention any migration, packaging, or external service configuration changes in the pull request. Chroma currently publishes preview releases manually; there is no automated backport workflow.

@@ -54,6 +54,8 @@ class NewsChecker;
 class QToolButton;
 class InstanceProxyModel;
 class LabeledToolButton;
+class LauncherHome;
+class InlineWorkspace;
 class QLabel;
 class MinecraftLauncher;
 class BaseProfilerFactory;
@@ -81,6 +83,10 @@ class MainWindow : public QMainWindow {
     void updatesAllowedChanged(bool allowed);
 
     void processURLs(QList<QUrl> urls);
+    void applyHomeLayout();
+    void openInlinePage(QWidget* page, const QString& title = {});
+    InlineWorkspace* inlineWorkspace() const { return m_workspace; }
+    bool prepareInlineNavigation();
    signals:
     void isClosing();
 
@@ -219,7 +225,7 @@ class MainWindow : public QMainWindow {
    private:
     void retranslateUi();
 
-    void addInstance(const QString& url = QString(), const QMap<QString, QString>& extra_info = {});
+    void addInstance(const QString& url = QString(), const QMap<QString, QString>& extra_info = {}, bool waitForClose = false);
     void activateInstance(InstancePtr instance);
     void setCatBackground(bool enabled);
     void updateInstanceToolIcon(QString new_icon);
@@ -234,6 +240,11 @@ class MainWindow : public QMainWindow {
     Ui::MainWindow* ui;
     // these are managed by Qt's memory management model!
     InstanceView* view = nullptr;
+    LauncherHome* m_home = nullptr;
+    InlineWorkspace* m_workspace = nullptr;
+    QAction* m_pinInstance = nullptr;
+    QAction* m_usePrismFolder = nullptr;
+    QList<QAction*> m_accountShortcutActions;
     InstanceProxyModel* proxymodel = nullptr;
     QToolButton* newsLabel = nullptr;
     QLabel* m_statusLeft = nullptr;

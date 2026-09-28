@@ -265,6 +265,14 @@ void ProgressDialog::changeProgress(qint64 current, qint64 total)
 
 void ProgressDialog::keyPressEvent(QKeyEvent* e)
 {
+    if (e->key() == Qt::Key_Escape && m_task && m_task->isRunning()) {
+        // An inline page has no modal window shielding it. Escape must follow
+        // the task's supported cancellation path, not destroy an active task.
+        if (ui->skipButton->isVisible() && ui->skipButton->isEnabled())
+            on_skipButton_clicked(true);
+        e->accept();
+        return;
+    }
     if (ui->skipButton->isVisible()) {
         if (e->key() == Qt::Key_Escape) {
             on_skipButton_clicked(true);

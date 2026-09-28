@@ -50,6 +50,8 @@ class AppearanceWidget : public QWidget {
    private:
     void applyIconTheme(int index);
     void applyWidgetTheme(int index);
+    void applyAccentColor(const QColor& color);
+    void updateAccentControls();
     void applyCatTheme(int index);
     void loadThemeSettings();
 

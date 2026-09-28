@@ -42,7 +42,7 @@
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QTreeView" name="packView">
+      <widget class="QListView" name="packView">
        <property name="alternatingRowColors">
         <bool>true</bool>
        </property>

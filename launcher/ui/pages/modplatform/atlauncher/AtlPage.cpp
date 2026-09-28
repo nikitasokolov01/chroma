@@ -35,7 +35,7 @@
  */
 
 #include "AtlPage.h"
-#include "ui/widgets/ProjectItem.h"
+#include "ui/widgets/ModpackBrowser.h"
 #include "ui_AtlPage.h"
 
 #include "BuildConfig.h"
@@ -55,10 +55,7 @@ AtlPage::AtlPage(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), 
     listModel = new Atl::ListModel(this);
     filterModel->setSourceModel(listModel);
     ui->packView->setModel(filterModel);
-    ui->packView->setSortingEnabled(true);
-
-    ui->packView->header()->hide();
-    ui->packView->setIndentation(0);
+    filterModel->sort(0, Qt::DescendingOrder);
 
     ui->versionSelectionBox->view()->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     ui->versionSelectionBox->view()->parentWidget()->setMaximumHeight(300);
@@ -71,9 +68,13 @@ AtlPage::AtlPage(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), 
     connect(ui->searchEdit, &QLineEdit::textChanged, this, &AtlPage::triggerSearch);
     connect(ui->sortByBox, &QComboBox::currentTextChanged, this, &AtlPage::onSortingSelectionChanged);
     connect(ui->packView->selectionModel(), &QItemSelectionModel::currentChanged, this, &AtlPage::onSelectionChanged);
+    connect(filterModel, &QAbstractItemModel::modelReset, this, [this] { onSelectionChanged({}, {}); });
     connect(ui->versionSelectionBox, &QComboBox::currentTextChanged, this, &AtlPage::onVersionSelectionChanged);
 
-    ui->packView->setItemDelegate(new ProjectItemDelegate(this));
+    m_browser = new ModpackBrowser(ui->searchEdit, ui->sortByBox, ui->packView, ui->versionSelectionBox, this);
+    m_browser->addView(ui->packView, ui->packDescription);
+    m_browser->setNotice(ui->label_2->text());
+    ModpackBrowser::install(this, m_browser);
 }
 
 AtlPage::~AtlPage()
@@ -93,6 +94,7 @@ void AtlPage::retranslate()
 
 void AtlPage::openedImpl()
 {
+    m_browser->showResults();
     if (!initialized) {
         listModel->request();
         initialized = true;
@@ -107,7 +109,7 @@ void AtlPage::suggestCurrent()
         return;
     }
 
-    if (selectedVersion.isEmpty()) {
+    if (selectedVersion.isEmpty() || !ui->packView->currentIndex().isValid()) {
         dialog->setSuggestedPack();
         return;
     }
@@ -117,12 +119,16 @@ void AtlPage::suggestCurrent()
 
     auto editedLogoName = "atl_" + selected.safeName;
     auto url = QString(BuildConfig.ATL_DOWNLOAD_SERVER_URL + "launcher/images/%1").arg(selected.safeName);
-    listModel->getLogo(selected.safeName, url,
-                       [this, editedLogoName](QString logo) { dialog->setSuggestedIconFromFile(logo, editedLogoName); });
+    listModel->getLogo(selected.safeName, url, [this, editedLogoName](QString logo) {
+        if (isOpened && !selectedVersion.isEmpty() && editedLogoName == "atl_" + selected.safeName)
+            dialog->setSuggestedIconFromFile(logo, editedLogoName);
+    });
 }
 
 void AtlPage::triggerSearch()
 {
+    if (m_browser)
+        m_browser->showResults();
     filterModel->setSearchTerm(ui->searchEdit->text());
 }
 
@@ -134,6 +140,10 @@ void AtlPage::onSortingSelectionChanged(QString sort)
 
 void AtlPage::onSelectionChanged(QModelIndex first, [[maybe_unused]] QModelIndex second)
 {
+    if (isOpened)
+        dialog->setSuggestedPack();
+    selectedVersion.clear();
+    ui->packDescription->clear();
     ui->versionSelectionBox->clear();
 
     if (!first.isValid()) {
@@ -160,6 +170,8 @@ void AtlPage::onVersionSelectionChanged(QString version)
 {
     if (version.isNull() || version.isEmpty()) {
         selectedVersion = "";
+        if (isOpened)
+            dialog->setSuggestedPack();
         return;
     }
 

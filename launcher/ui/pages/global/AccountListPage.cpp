@@ -47,15 +47,14 @@
 #include "ui/dialogs/ChooseOfflineNameDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/MSALoginDialog.h"
+#include "ui/pages/BasePageContainer.h"
+#include "ui/pages/global/APIPage.h"
 
 #include "Application.h"
 
 AccountListPage::AccountListPage(QWidget* parent) : QMainWindow(parent), ui(new Ui::AccountListPage)
 {
     ui->setupUi(this);
-    ui->listView->setEmptyString(
-        tr("Welcome!\n"
-           "If you're new here, you can select the \"Add Microsoft\" button to link your Microsoft account."));
     ui->listView->setEmptyMode(VersionListView::String);
     ui->listView->setContextMenuPolicy(Qt::CustomContextMenu);
 
@@ -81,14 +80,13 @@ AccountListPage::AccountListPage(QWidget* parent) : QMainWindow(parent), ui(new 
     connect(m_accounts.get(), &AccountList::listChanged, this, &AccountListPage::listChanged);
     connect(m_accounts.get(), &AccountList::listActivityChanged, this, &AccountListPage::listChanged);
     connect(m_accounts.get(), &AccountList::defaultAccountChanged, this, &AccountListPage::listChanged);
+    connect(ui->configureMicrosoftSignInButton, &QPushButton::clicked, this, &AccountListPage::configureMicrosoftSignIn);
+
+    ui->microsoftSignInNotice->setStyleSheet(
+        "QFrame#microsoftSignInNotice { background: palette(alternate-base); border: 1px solid palette(highlight); border-radius: 8px; }"
+        "QLabel#microsoftSignInTitle { font-weight: 600; }");
 
     updateButtonStates();
-
-    // Xbox authentication won't work without a client identifier, so disable the button if it is missing
-    if (~APPLICATION->capabilities() & Application::SupportsMSA) {
-        ui->actionAddMicrosoft->setVisible(false);
-        ui->actionAddMicrosoft->setToolTip(tr("No Microsoft Authentication client ID was set."));
-    }
 }
 
 AccountListPage::~AccountListPage()
@@ -99,6 +97,33 @@ AccountListPage::~AccountListPage()
 void AccountListPage::retranslate()
 {
     ui->retranslateUi(this);
+    updateMicrosoftSignInState();
+}
+
+void AccountListPage::openedImpl()
+{
+    updateMicrosoftSignInState();
+}
+
+void AccountListPage::updateMicrosoftSignInState()
+{
+    const bool available = !APPLICATION->getMSAClientID().trimmed().isEmpty();
+    ui->actionAddMicrosoft->setVisible(true);
+    ui->actionAddMicrosoft->setEnabled(available);
+    ui->actionAddMicrosoft->setToolTip(available ? tr("Add a Microsoft account")
+                                                 : tr("Configure a Microsoft Authentication client ID in Services to enable sign-in."));
+    ui->microsoftSignInNotice->setVisible(!available);
+    ui->listView->setEmptyString(available ? tr("Welcome!\nSelect \"Add Microsoft\" to link your Microsoft account.")
+                                           : tr("No accounts yet.\nConfigure Microsoft sign-in to add your account."));
+}
+
+void AccountListPage::configureMicrosoftSignIn()
+{
+    if (!m_container)
+        return;
+    auto* page = dynamic_cast<APIPage*>(m_container->getPage("apis"));
+    if (page && m_container->selectPage("apis"))
+        page->focusMicrosoftClientId();
 }
 
 void AccountListPage::ShowContextMenu(const QPoint& pos)
@@ -111,7 +136,7 @@ void AccountListPage::ShowContextMenu(const QPoint& pos)
 void AccountListPage::changeEvent(QEvent* event)
 {
     if (event->type() == QEvent::LanguageChange) {
-        ui->retranslateUi(this);
+        retranslate();
     }
     QMainWindow::changeEvent(event);
 }
@@ -130,6 +155,10 @@ void AccountListPage::listChanged()
 
 void AccountListPage::on_actionAddMicrosoft_triggered()
 {
+    if (APPLICATION->getMSAClientID().trimmed().isEmpty()) {
+        updateMicrosoftSignInState();
+        return;
+    }
     auto account = MSALoginDialog::newAccount(this);
     if (account) {
         m_accounts->addAccount(account);
@@ -205,6 +234,7 @@ void AccountListPage::on_actionNoDefault_triggered()
 
 void AccountListPage::updateButtonStates()
 {
+    updateMicrosoftSignInState();
     // If there is no selection, disable buttons that require something selected.
     QModelIndexList selection = ui->listView->selectionModel()->selectedIndexes();
     bool hasSelection = !selection.empty();

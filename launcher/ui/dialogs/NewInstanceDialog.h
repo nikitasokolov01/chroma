@@ -48,6 +48,10 @@ class PageContainer;
 class QDialogButtonBox;
 class ImportPage;
 class FlamePage;
+class QResizeEvent;
+class QComboBox;
+class QLabel;
+class QPushButton;
 
 class NewInstanceDialog : public QDialog, public BasePageProvider {
     Q_OBJECT
@@ -78,6 +82,11 @@ class NewInstanceDialog : public QDialog, public BasePageProvider {
    public slots:
     void accept() override;
     void reject() override;
+    void selectProvider(const QString& id);
+    void showProviderHub();
+
+   protected:
+    void resizeEvent(QResizeEvent* event) override;
 
    private slots:
     void on_iconButton_clicked();
@@ -100,6 +109,16 @@ class NewInstanceDialog : public QDialog, public BasePageProvider {
     QString importVersion;
 
     QString m_searchTerm;
+    bool m_compactHeader = false;
+    QString m_providerId = "providers";
+    QWidget* m_providerBar = nullptr;
+    QComboBox* m_providerSelector = nullptr;
+    QWidget* m_instanceOptions = nullptr;
+    QWidget* m_selectionSummary = nullptr;
+    QLabel* m_selectedPackLabel = nullptr;
+    QPushButton* m_optionsButton = nullptr;
 
     void importIconNow();
+    void updateHeaderLayout();
+    void updateBrowseState();
 };

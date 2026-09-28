@@ -41,6 +41,7 @@
 
 #include <Version.h>
 #include "StringUtils.h"
+#include "ui/widgets/ModpackCardDelegate.h"
 #include "ui/widgets/ProjectItem.h"
 
 #include <QLabel>
@@ -191,14 +192,20 @@ QVariant ListModel::data(const QModelIndex& index, int role) const
                 // bugged pack, currently only indicates bugged xml
                 return QColor(244, 229, 66);
             }
+            return {};
         }
         case Qt::DisplayRole:
+        case Qt::AccessibleTextRole:
             return pack.name;
+        case ModpackCardRoles::AuthorRole:
+            return pack.author;
         case Qt::SizeHintRole:
             return QSize(0, 58);
         // Custom data
         case UserDataTypes::TITLE:
             return pack.name;
+        case Qt::AccessibleDescriptionRole:
+        case ModpackCardRoles::SummaryRole:
         case UserDataTypes::DESCRIPTION:
             return pack.description;
         case UserDataTypes::INSTALLED:

@@ -92,7 +92,7 @@ class ProgressDialog : public QDialog {
    private:
     Ui::ProgressDialog* ui;
 
-    Task* m_task;
+    Task* m_task = nullptr;
 
     QList<QMetaObject::Connection> m_taskConnections;
 

@@ -35,7 +35,6 @@
  */
 
 #include "VersionListView.h"
-#include <QApplication>
 #include <QDrag>
 #include <QHeaderView>
 #include <QMouseEvent>
@@ -134,17 +133,20 @@ void VersionListView::paintInfoLabel(QPaintEvent* event) const
     // calculate the rect for the overlay
     QPainter painter(viewport());
     painter.setRenderHint(QPainter::Antialiasing, true);
-    QFont font("sans", 20);
-    font.setBold(true);
+    QFont font = viewport()->font();
+    if (font.pointSizeF() > 0)
+        font.setPointSizeF(font.pointSizeF() + 2);
+    else if (font.pixelSize() > 0)
+        font.setPixelSize(font.pixelSize() + 2);
+    font.setWeight(QFont::DemiBold);
 
-    QRect bounds = viewport()->geometry();
-    bounds.moveTop(0);
+    const QRect bounds = viewport()->rect();
     auto innerBounds = bounds;
     innerBounds.adjust(10, 10, -10, -10);
 
-    QColor background = QApplication::palette().color(QPalette::WindowText);
-    QColor foreground = QApplication::palette().color(QPalette::Base);
-    foreground.setAlpha(190);
+    const auto colors = viewport()->palette();
+    const QColor background = colors.color(QPalette::AlternateBase);
+    const QColor foreground = colors.color(QPalette::Text);
     painter.setFont(font);
     auto fontMetrics = painter.fontMetrics();
     auto textRect = fontMetrics.boundingRect(innerBounds, Qt::AlignHCenter | Qt::TextWordWrap, emptyString);
@@ -159,8 +161,8 @@ void VersionListView::paintInfoLabel(QPaintEvent* event) const
     }
 
     painter.setBrush(QBrush(background));
-    painter.setPen(foreground);
-    painter.drawRoundedRect(wrapRect, 5.0, 5.0);
+    painter.setPen(colors.color(QPalette::Mid));
+    painter.drawRoundedRect(wrapRect, 8.0, 8.0);
 
     painter.setPen(foreground);
     painter.setFont(font);

@@ -49,7 +49,7 @@
 #include "Markdown.h"
 #include "StringUtils.h"
 
-#include "ui/widgets/ProjectItem.h"
+#include "ui/widgets/ModpackBrowser.h"
 
 #include "net/ApiDownload.h"
 
@@ -74,6 +74,7 @@ ModrinthPage::ModrinthPage(NewInstanceDialog* dialog, QWidget* parent)
     m_search_timer.setSingleShot(true);
 
     connect(&m_search_timer, &QTimer::timeout, this, &ModrinthPage::triggerSearch);
+    connect(m_ui->searchEdit, &QLineEdit::textEdited, this, [this] { m_search_timer.start(350); });
 
     m_fetch_progress.hideIfInactive(true);
     m_fetch_progress.setFixedHeight(24);
@@ -89,10 +90,15 @@ ModrinthPage::ModrinthPage(NewInstanceDialog* dialog, QWidget* parent)
 
     connect(m_ui->sortByBox, &QComboBox::currentIndexChanged, this, &ModrinthPage::triggerSearch);
     connect(m_ui->packView->selectionModel(), &QItemSelectionModel::currentChanged, this, &ModrinthPage::onSelectionChanged);
+    connect(m_model, &QAbstractItemModel::modelReset, this, [this] { onSelectionChanged({}, {}); });
     connect(m_ui->versionSelectionBox, &QComboBox::currentIndexChanged, this, &ModrinthPage::onVersionSelectionChanged);
 
-    m_ui->packView->setItemDelegate(new ProjectItemDelegate(this));
     m_ui->packDescription->setMetaEntry(metaEntryBase());
+    m_browser = new ModpackBrowser(m_ui->searchEdit, m_ui->sortByBox, m_ui->packView, m_ui->versionSelectionBox, this);
+    m_browser->addView(m_ui->packView, m_ui->packDescription);
+    m_browser->setFilterWidget(m_filterWidget.get(), m_ui->filterButton);
+    m_browser->addStatusWidget(&m_fetch_progress);
+    ModpackBrowser::install(this, m_browser);
 }
 
 ModrinthPage::~ModrinthPage()
@@ -108,7 +114,10 @@ void ModrinthPage::retranslate()
 void ModrinthPage::openedImpl()
 {
     BasePage::openedImpl();
-    suggestCurrent();
+    if (!m_categoriesStarted) {
+        m_categoriesStarted = true;
+        m_categoriesTask->start();
+    }
     triggerSearch();
 }
 
@@ -117,14 +126,10 @@ bool ModrinthPage::eventFilter(QObject* watched, QEvent* event)
     if (watched == m_ui->searchEdit && event->type() == QEvent::KeyPress) {
         auto* keyEvent = reinterpret_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Return) {
+            m_search_timer.stop();
             this->triggerSearch();
             keyEvent->accept();
             return true;
-        } else {
-            if (m_search_timer.isActive())
-                m_search_timer.stop();
-
-            m_search_timer.start(350);
         }
     }
     return QObject::eventFilter(watched, event);
@@ -132,9 +137,15 @@ bool ModrinthPage::eventFilter(QObject* watched, QEvent* event)
 
 void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelIndex prev)
 {
+    const auto generation = ++m_selectionGeneration;
+    if (isOpened)
+        m_dialog->setSuggestedPack();
+    m_selectedVersion.clear();
+    m_ui->packDescription->clear();
     m_ui->versionSelectionBox->clear();
 
     if (!curr.isValid()) {
+        m_current.reset();
         if (isOpened) {
             m_dialog->setSuggestedPack();
         }
@@ -149,11 +160,14 @@ void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelI
         ResourceAPI::Callback<ModPlatform::IndexedPack::Ptr> callbacks;
 
         auto id = m_current->addonId;
-        callbacks.on_fail = [this](QString reason, int) {
+        callbacks.on_fail = [this, generation](QString reason, int) {
+            if (!isOpened || generation != m_selectionGeneration)
+                return;
+            m_dialog->setSuggestedPack();
             CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
         };
-        callbacks.on_succeed = [this, id, curr](auto& pack) {
-            if (id != m_current->addonId) {
+        callbacks.on_succeed = [this, id, curr, generation](auto& pack) {
+            if (!isOpened || generation != m_selectionGeneration || !m_current || id != m_current->addonId) {
                 return;  // wrong request?
             }
 
@@ -181,8 +195,8 @@ void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelI
 
         auto addonId = m_current->addonId;
         // Use default if no callbacks are set
-        callbacks.on_succeed = [this, curr, addonId](auto& doc) {
-            if (addonId != m_current->addonId) {
+        callbacks.on_succeed = [this, curr, addonId, generation](auto& doc) {
+            if (!isOpened || generation != m_selectionGeneration || !m_current || addonId != m_current->addonId) {
                 return;  // wrong request
             }
 
@@ -214,7 +228,10 @@ void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelI
 
             suggestCurrent();
         };
-        callbacks.on_fail = [this](QString reason, int) {
+        callbacks.on_fail = [this, generation](QString reason, int) {
+            if (!isOpened || generation != m_selectionGeneration)
+                return;
+            m_dialog->setSuggestedPack();
             CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
         };
 
@@ -306,7 +323,7 @@ void ModrinthPage::suggestCurrent()
         return;
     }
 
-    if (m_selectedVersion.isEmpty()) {
+    if (!m_current || m_selectedVersion.isEmpty() || !m_ui->packView->currentIndex().isValid()) {
         m_dialog->setSuggestedPack();
         return;
     }
@@ -320,7 +337,10 @@ void ModrinthPage::suggestCurrent()
             m_dialog->setSuggestedPack(m_current->name, ver.version, new InstanceImportTask(ver.downloadUrl, this, std::move(extra_info)));
             QString editedLogoName = "modrinth_" + m_current->logoName;
             m_model->getLogo(m_current->logoName, m_current->logoUrl,
-                             [this, editedLogoName](QString logo) { m_dialog->setSuggestedIconFromFile(logo, editedLogoName); });
+                             [this, editedLogoName, generation = m_selectionGeneration](QString logo) {
+                                 if (isOpened && generation == m_selectionGeneration && m_current)
+                                     m_dialog->setSuggestedIconFromFile(logo, editedLogoName);
+                             });
 
             break;
         }
@@ -329,6 +349,11 @@ void ModrinthPage::suggestCurrent()
 
 void ModrinthPage::triggerSearch()
 {
+    if (!isOpened)
+        return;
+    m_dialog->setSuggestedPack();
+    if (m_browser)
+        m_browser->showResults();
     m_ui->packView->selectionModel()->setCurrentIndex({}, QItemSelectionModel::SelectionFlag::ClearAndSelect);
     m_ui->packView->clearSelection();
     m_ui->packDescription->clear();
@@ -342,6 +367,8 @@ void ModrinthPage::onVersionSelectionChanged(int index)
 {
     if (index == -1) {
         m_selectedVersion = "";
+        if (isOpened)
+            m_dialog->setSuggestedPack();
         return;
     }
     m_selectedVersion = m_ui->versionSelectionBox->itemData(index).toString();
@@ -362,14 +389,6 @@ void ModrinthPage::createFilterWidget()
 {
     auto widget = ModFilterWidget::create(nullptr, true);
     m_filterWidget.swap(widget);
-    auto old = m_ui->splitter->replaceWidget(0, m_filterWidget.get());
-    // because we replaced the widget we also need to delete it
-    if (old) {
-        delete old;
-    }
-
-    connect(m_ui->filterButton, &QPushButton::clicked, this, [this] { m_filterWidget->setHidden(!m_filterWidget->isHidden()); });
-
     connect(m_filterWidget.get(), &ModFilterWidget::filterChanged, this, &ModrinthPage::triggerSearch);
     auto response = std::make_shared<QByteArray>();
     m_categoriesTask = ModrinthAPI::getModCategories(response);
@@ -377,5 +396,4 @@ void ModrinthPage::createFilterWidget()
         auto categories = ModrinthAPI::loadCategories(response, "modpack");
         m_filterWidget->setCategories(categories);
     });
-    m_categoriesTask->start();
 }

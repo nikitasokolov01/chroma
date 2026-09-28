@@ -24,6 +24,7 @@ class PageDialog : public QDialog {
    public:
     explicit PageDialog(BasePageProvider* pageProvider, QString defaultId = QString(), QWidget* parent = 0);
     virtual ~PageDialog() {}
+    bool selectPage(const QString& id);
 
    signals:
     void applied();

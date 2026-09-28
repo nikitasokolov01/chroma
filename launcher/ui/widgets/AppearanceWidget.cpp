@@ -38,8 +38,12 @@
 #include "ui_AppearanceWidget.h"
 
 #include <DesktopServices.h>
+#include <QColorDialog>
 #include <QGraphicsOpacityEffect>
+#include <QPixmap>
+#include <QSignalBlocker>
 #include "BuildConfig.h"
+#include "ui/themes/AccentColor.h"
 #include "ui/themes/ITheme.h"
 #include "ui/themes/ThemeManager.h"
 
@@ -83,6 +87,18 @@ AppearanceWidget::AppearanceWidget(bool themesOnly, QWidget* parent)
     connect(m_ui->catPackFolder, &QPushButton::clicked, this,
             [] { DesktopServices::openPath(APPLICATION->themeManager()->getCatPacksFolder().path()); });
     connect(m_ui->reloadThemesButton, &QPushButton::pressed, this, &AppearanceWidget::loadThemeSettings);
+
+    connect(m_ui->accentComboBox, &QComboBox::currentIndexChanged, this, [this](int index) {
+        const QString value = m_ui->accentComboBox->itemData(index).toString();
+        if (!value.isEmpty())
+            applyAccentColor(AccentColor::fromSetting(value));
+    });
+    connect(m_ui->customAccentButton, &QPushButton::clicked, this, [this] {
+        const QColor current = AccentColor::fromSetting(APPLICATION->settings()->get("AccentColor").toString());
+        const QColor selected = QColorDialog::getColor(current, this, tr("Choose Accent Color"));
+        if (selected.isValid())
+            applyAccentColor(selected);
+    });
 }
 
 AppearanceWidget::~AppearanceWidget()
@@ -124,6 +140,7 @@ void AppearanceWidget::loadSettings()
 void AppearanceWidget::retranslateUi()
 {
     m_ui->retranslateUi(this);
+    updateAccentControls();
 }
 
 void AppearanceWidget::applyIconTheme(int index)
@@ -148,6 +165,43 @@ void AppearanceWidget::applyWidgetTheme(int index)
     }
 
     updateConsolePreview();
+    updateAccentControls();
+}
+
+void AppearanceWidget::applyAccentColor(const QColor& color)
+{
+    APPLICATION->settings()->set("AccentColor", color.name(QColor::HexRgb));
+    APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+    updateAccentControls();
+    updateConsolePreview();
+}
+
+void AppearanceWidget::updateAccentControls()
+{
+    const QSignalBlocker blocker(m_ui->accentComboBox);
+    const QColor current = AccentColor::fromSetting(APPLICATION->settings()->get("AccentColor").toString());
+    m_ui->accentComboBox->clear();
+    const auto addPreset = [this](const QString& label, const QString& hex) {
+        QPixmap swatch(16, 16);
+        swatch.fill(QColor(hex));
+        m_ui->accentComboBox->addItem(QIcon(swatch), label, hex);
+    };
+    addPreset(tr("Lavender (Default)"), "#b7a5f5");
+    addPreset(tr("Sky Blue"), "#8ecbff");
+    addPreset(tr("Mint"), "#8cdbbc");
+    addPreset(tr("Rose"), "#f4a9c2");
+    addPreset(tr("Amber"), "#eac17c");
+    int index = m_ui->accentComboBox->findData(current.name(QColor::HexRgb));
+    if (index < 0) {
+        addPreset(tr("Custom (%1)").arg(current.name(QColor::HexRgb)), current.name(QColor::HexRgb));
+        index = m_ui->accentComboBox->count() - 1;
+    }
+    m_ui->accentComboBox->setCurrentIndex(index);
+
+    const bool chromaTheme = APPLICATION->settings()->get("ApplicationTheme").toString() == "chroma";
+    m_ui->accentLabel->setEnabled(chromaTheme);
+    m_ui->accentComboBox->setEnabled(chromaTheme);
+    m_ui->customAccentButton->setEnabled(chromaTheme);
 }
 
 void AppearanceWidget::applyCatTheme(int index)
@@ -221,6 +275,7 @@ void AppearanceWidget::loadThemeSettings()
     m_ui->iconsComboBox->blockSignals(false);
     m_ui->widgetStyleComboBox->blockSignals(false);
     m_ui->catPackComboBox->blockSignals(false);
+    updateAccentControls();
 }
 
 void AppearanceWidget::updateConsolePreview()

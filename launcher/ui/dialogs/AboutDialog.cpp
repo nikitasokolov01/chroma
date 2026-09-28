@@ -115,7 +115,13 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent), ui(new Ui::AboutDia
         ui->channelLabel->setVisible(false);
 
     QString urlText("<html><head/><body><p><a href=\"%1\">%1</a></p></body></html>");
-    ui->urlLabel->setText(urlText.arg(BuildConfig.LAUNCHER_GIT));
+    if (BuildConfig.LAUNCHER_APP_BINARY_NAME == QStringLiteral("chroma")) {
+        urlText = QStringLiteral("<html><head/><body><p><a href=\"%1\">%1</a><br/>"
+                                 "<a href=\"%1/blob/main/PRIVACY.md\">%2</a></p></body></html>");
+        ui->urlLabel->setText(urlText.arg(BuildConfig.LAUNCHER_GIT.toHtmlEscaped(), tr("Privacy information").toHtmlEscaped()));
+    } else {
+        ui->urlLabel->setText(urlText.arg(BuildConfig.LAUNCHER_GIT.toHtmlEscaped()));
+    }
 
     ui->copyLabel->setText(BuildConfig.LAUNCHER_COPYRIGHT);
 

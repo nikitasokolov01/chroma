@@ -39,6 +39,7 @@
 #include "Json.h"
 
 #include "net/ApiDownload.h"
+#include "ui/widgets/ModpackCardDelegate.h"
 #include "ui/widgets/ProjectItem.h"
 
 #include <QFileInfo>
@@ -81,12 +82,17 @@ QVariant Technic::ListModel::data(const QModelIndex& index, int role) const
             return v;
         }
         case Qt::DisplayRole:
+        case Qt::AccessibleTextRole:
             return pack.name;
+        case ModpackCardRoles::AuthorRole:
+            return pack.author;
         case Qt::SizeHintRole:
             return QSize(0, 58);
         // Custom data
         case UserDataTypes::TITLE:
             return pack.name;
+        case Qt::AccessibleDescriptionRole:
+        case ModpackCardRoles::SummaryRole:
         case UserDataTypes::DESCRIPTION:
             return pack.description;
         case UserDataTypes::INSTALLED:
@@ -170,8 +176,7 @@ void Technic::ListModel::searchRequestFinished()
     QJsonParseError parse_error;
     QJsonDocument doc = QJsonDocument::fromJson(*response, &parse_error);
     if (parse_error.error != QJsonParseError::NoError) {
-        qWarning() << "Error while parsing JSON response from Technic at" << parse_error.offset
-                   << "reason:" << parse_error.errorString();
+        qWarning() << "Error while parsing JSON response from Technic at" << parse_error.offset << "reason:" << parse_error.errorString();
         qWarning() << *response;
         return;
     }

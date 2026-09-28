@@ -38,6 +38,7 @@
 #include <QAccessible>
 #include <QApplication>
 #include <QCache>
+#include <QCursor>
 #include <QDrag>
 #include <QFont>
 #include <QListView>
@@ -45,8 +46,12 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPersistentModelIndex>
+#include <QScrollArea>
 #include <QScrollBar>
+#include <QTimer>
+#include <QWheelEvent>
 #include <QtMath>
+#include <limits>
 
 #include "VisualGroup.h"
 #include "ui/themes/CatPainter.h"
@@ -72,6 +77,8 @@ InstanceView::InstanceView(QWidget* parent) : QAbstractItemView(parent)
     setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     setAcceptDrops(true);
     setAutoScroll(true);
+    setMouseTracking(true);
+    viewport()->setAttribute(Qt::WA_Hover);
     setPaintCat(APPLICATION->settings()->get("TheCat").toBool());
     connect(verticalScrollBar(), &QScrollBar::valueChanged, viewport(), QOverload<>::of(&QWidget::update));
     connect(horizontalScrollBar(), &QScrollBar::valueChanged, viewport(), QOverload<>::of(&QWidget::update));
@@ -91,6 +98,38 @@ void InstanceView::setModel(QAbstractItemModel* model)
     QAbstractItemView::setModel(model);
     connect(model, &QAbstractItemModel::modelReset, this, &InstanceView::modelReset);
     connect(model, &QAbstractItemModel::rowsRemoved, this, &InstanceView::rowsRemoved);
+}
+
+void InstanceView::setOuterScrollArea(QScrollArea* area)
+{
+    m_outerScrollArea = area;
+    setVerticalScrollBarPolicy(area ? Qt::ScrollBarAlwaysOff : Qt::ScrollBarAsNeeded);
+    setSizePolicy(QSizePolicy::Expanding, area ? QSizePolicy::Fixed : QSizePolicy::Expanding);
+    if (!area) {
+        setMinimumHeight(0);
+        setMaximumHeight(QWIDGETSIZE_MAX);
+    }
+    if (!m_outerDragScrollTimer) {
+        m_outerDragScrollTimer = new QTimer(this);
+        m_outerDragScrollTimer->setInterval(30);
+        connect(m_outerDragScrollTimer, &QTimer::timeout, this, [this] {
+            if (!m_outerScrollArea)
+                return;
+            const auto point = m_outerScrollArea->viewport()->mapFromGlobal(QCursor::pos());
+            const auto bounds = m_outerScrollArea->viewport()->rect();
+            if (point.x() < 0 || point.x() > bounds.right())
+                return;
+            int step = 0;
+            if (point.y() < bounds.top() + 32)
+                step = -18;
+            else if (point.y() > bounds.bottom() - 32)
+                step = 18;
+            auto* scrollbar = m_outerScrollArea->verticalScrollBar();
+            scrollbar->setValue(scrollbar->value() + step);
+            m_lastDragPosition = viewport()->mapFromGlobal(QCursor::pos()) + offset();
+        });
+    }
+    updateGeometries();
 }
 
 void InstanceView::dataChanged([[maybe_unused]] const QModelIndex& topLeft,
@@ -147,38 +186,42 @@ inline bool operator<(const LocaleString& lhs, const LocaleString& rhs)
 void InstanceView::updateScrollbar()
 {
     int previousScroll = verticalScrollBar()->value();
-    if (m_groups.isEmpty()) {
-        verticalScrollBar()->setRange(0, 0);
-    } else {
-        int totalHeight = 0;
+    int totalHeight = 0;
+    int itemScroll = 0;
+    if (!m_groups.isEmpty()) {
         // top margin
         totalHeight += m_categoryMargin;
-        int itemScroll = 0;
         for (auto category : m_groups) {
             category->m_verticalPosition = totalHeight;
             totalHeight += category->totalHeight() + m_categoryMargin;
-            if (!itemScroll && category->totalHeight() != 0) {
+            if (!itemScroll && category->numRows() > 0 && category->contentHeight() > 0) {
                 itemScroll = category->contentHeight() / category->numRows();
             }
         }
-        // do not divide by zero
-        if (itemScroll == 0)
-            itemScroll = 64;
-
         totalHeight += m_bottomMargin;
-        verticalScrollBar()->setSingleStep(itemScroll);
-        const int rowsPerPage = qMax(viewport()->height() / itemScroll, 1);
-        verticalScrollBar()->setPageStep(rowsPerPage * itemScroll);
-
-        verticalScrollBar()->setRange(0, totalHeight - height());
     }
-
+    if (m_outerScrollArea) {
+        verticalScrollBar()->setRange(0, 0);
+        const int expandedHeight = totalHeight + 2 * frameWidth();
+        if (minimumHeight() != expandedHeight || maximumHeight() != expandedHeight)
+            setFixedHeight(expandedHeight);
+        return;
+    }
+    if (itemScroll == 0)
+        itemScroll = 64;
+    verticalScrollBar()->setSingleStep(itemScroll);
+    const int rowsPerPage = qMax(viewport()->height() / itemScroll, 1);
+    verticalScrollBar()->setPageStep(rowsPerPage * itemScroll);
+    verticalScrollBar()->setRange(0, qMax(0, totalHeight - viewport()->height()));
     verticalScrollBar()->setValue(qMin(previousScroll, verticalScrollBar()->maximum()));
 }
 
 void InstanceView::updateGeometries()
 {
+    if (!model())
+        return;
     m_geometryCache.clear();
+    m_currentItemsPerRow = calculateItemsPerRow();
 
     QMap<LocaleString, VisualGroup*> cats;
 
@@ -258,12 +301,12 @@ QString InstanceView::groupNameAt(const QPoint& point)
 
 int InstanceView::calculateItemsPerRow() const
 {
-    return qFloor((qreal)(contentWidth()) / (qreal)(itemWidth() + m_spacing));
+    return qMax(1, qFloor((qreal)(contentWidth()) / (qreal)(itemWidth() + m_spacing)));
 }
 
 int InstanceView::contentWidth() const
 {
-    return width() - m_leftMargin - m_rightMargin;
+    return viewport()->width() - m_leftMargin - m_rightMargin;
 }
 
 int InstanceView::itemWidth() const
@@ -468,6 +511,8 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
     option.widget = this;
 
     if (model()->rowCount() == 0) {
+        if (property("homeEmptyState").toBool())
+            return;
         painter.save();
         QString emptyString = tr("Welcome!") + "\n" + tr("Click \"Add Instance\" to get started.");
 
@@ -521,7 +566,8 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
         option.rect.setHeight(height);
         option.rect.setLeft(m_leftMargin);
         option.rect.setRight(wpWidth - m_rightMargin);
-        category->drawHeader(&painter, option);
+        if (event->rect().intersects(option.rect))
+            category->drawHeader(&painter, option);
         y += category->totalHeight() + m_categoryMargin;
         option.rect = backup;
     }
@@ -533,13 +579,20 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
         }
         Qt::ItemFlags flags = index.flags();
         option.rect = visualRect(index);
+        if (!event->rect().intersects(option.rect))
+            continue;
         option.features |= QStyleOptionViewItem::WrapText;
         if (flags & Qt::ItemIsSelectable && selectionModel()->isSelected(index)) {
             option.state |= selectionModel()->isSelected(index) ? QStyle::State_Selected : QStyle::State_None;
         } else {
             option.state &= ~QStyle::State_Selected;
         }
-        option.state |= (index == currentIndex()) ? QStyle::State_HasFocus : QStyle::State_None;
+        option.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver);
+        if (index == currentIndex() && hasFocus())
+            option.state |= QStyle::State_HasFocus;
+        if (viewport()->underMouse() && option.rect.contains(viewport()->mapFromGlobal(QCursor::pos())))
+            option.state |= QStyle::State_MouseOver;
+        option.state |= QStyle::State_Enabled;
         if (!(flags & Qt::ItemIsEnabled)) {
             option.state &= ~QStyle::State_Enabled;
         }
@@ -590,6 +643,19 @@ void InstanceView::resizeEvent([[maybe_unused]] QResizeEvent* event)
     }
 }
 
+void InstanceView::wheelEvent(QWheelEvent* event)
+{
+    if (!m_outerScrollArea) {
+        QAbstractItemView::wheelEvent(event);
+        return;
+    }
+    const auto position = m_outerScrollArea->viewport()->mapFromGlobal(event->globalPosition().toPoint());
+    QWheelEvent forwarded(position, event->globalPosition(), event->pixelDelta(), event->angleDelta(), event->buttons(), event->modifiers(),
+                          event->phase(), event->inverted(), event->source(), event->pointingDevice());
+    QApplication::sendEvent(m_outerScrollArea->viewport(), &forwarded);
+    event->setAccepted(forwarded.isAccepted());
+}
+
 void InstanceView::dragEnterEvent(QDragEnterEvent* event)
 {
     executeDelayedItemsLayout();
@@ -598,6 +664,8 @@ void InstanceView::dragEnterEvent(QDragEnterEvent* event)
         return;
     }
     m_lastDragPosition = event->position().toPoint() + offset();
+    if (m_outerScrollArea)
+        m_outerDragScrollTimer->start();
     viewport()->update();
     event->accept();
 }
@@ -619,6 +687,8 @@ void InstanceView::dragLeaveEvent([[maybe_unused]] QDragLeaveEvent* event)
     executeDelayedItemsLayout();
 
     m_lastDragPosition = QPoint();
+    if (m_outerDragScrollTimer)
+        m_outerDragScrollTimer->stop();
     viewport()->update();
 }
 
@@ -627,6 +697,9 @@ void InstanceView::dropEvent(QDropEvent* event)
     executeDelayedItemsLayout();
 
     m_lastDragPosition = QPoint();
+
+    if (m_outerDragScrollTimer)
+        m_outerDragScrollTimer->stop();
 
     stopAutoScroll();
     setState(NoState);
@@ -692,6 +765,8 @@ void InstanceView::startDrag(Qt::DropActions supportedActions)
     }
     /*auto action = */
     drag->exec(supportedActions, defaultDropAction);
+    if (m_outerDragScrollTimer)
+        m_outerDragScrollTimer->stop();
 }
 
 QRect InstanceView::visualRect(const QModelIndex& index) const
@@ -832,6 +907,28 @@ QModelIndex InstanceView::moveCursor(QAbstractItemView::CursorAction cursorActio
     auto current = currentIndex();
     if (!current.isValid()) {
         return current;
+    }
+    if (m_outerScrollArea && (cursorAction == MovePageUp || cursorAction == MovePageDown)) {
+        const auto currentRect = geometryRect(current);
+        const int direction = cursorAction == MovePageDown ? 1 : -1;
+        const int targetY = currentRect.center().y() + direction * m_outerScrollArea->viewport()->height();
+        QModelIndex nearest = current;
+        qint64 bestDistance = std::numeric_limits<qint64>::max();
+        for (int row = 0; row < model()->rowCount(); ++row) {
+            const auto candidate = model()->index(row, 0);
+            if (isIndexHidden(candidate))
+                continue;
+            const auto candidateRect = geometryRect(candidate);
+            if ((candidateRect.center().y() - currentRect.center().y()) * direction <= 0)
+                continue;
+            const qint64 distance = qint64(qAbs(candidateRect.center().y() - targetY)) * qMax(1, viewport()->width()) +
+                                    qAbs(candidateRect.center().x() - currentRect.center().x());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                nearest = candidate;
+            }
+        }
+        return nearest;
     }
     auto cat = category(current);
     int group_index = m_groups.indexOf(cat);
@@ -986,6 +1083,21 @@ void InstanceView::scrollTo(const QModelIndex& index, ScrollHint hint)
         return;
 
     const QRect rect = visualRect(index);
+    if (m_outerScrollArea) {
+        const QRect visibleRect(viewport()->mapTo(m_outerScrollArea->viewport(), rect.topLeft()), rect.size());
+        const QRect area = m_outerScrollArea->viewport()->rect();
+        int delta = 0;
+        if (hint == PositionAtTop || (hint == EnsureVisible && visibleRect.top() < area.top()))
+            delta = visibleRect.top() - spacing();
+        else if (hint == PositionAtBottom || (hint == EnsureVisible && visibleRect.bottom() > area.bottom()))
+            delta = qMin(visibleRect.top(), visibleRect.bottom() - area.height() + 1) + spacing();
+        else if (hint == PositionAtCenter)
+            delta = visibleRect.center().y() - area.center().y();
+        auto* scrollbar = m_outerScrollArea->verticalScrollBar();
+        scrollbar->setValue(scrollbar->value() + delta);
+        viewport()->update(rect);
+        return;
+    }
     if (hint == EnsureVisible && viewport()->rect().contains(rect)) {
         viewport()->update(rect);
         return;

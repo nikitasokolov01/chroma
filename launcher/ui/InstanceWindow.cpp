@@ -138,8 +138,6 @@ InstanceWindow::InstanceWindow(InstancePtr instance, QWidget* parent) : QMainWin
     {
         static_cast<ManagedPackPage*>(m_container->getPage("managed_pack"))->setInstanceWindow(this);
     }
-
-    show();
 }
 
 void InstanceWindow::on_instanceStatusChanged(BaseInstance::Status, BaseInstance::Status newStatus)
@@ -186,6 +184,7 @@ void InstanceWindow::closeEvent(QCloseEvent* event)
     }
 
     if (!proceed) {
+        event->ignore();
         return;
     }
 

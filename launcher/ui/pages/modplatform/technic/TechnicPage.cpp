@@ -35,7 +35,7 @@
 
 #include "TechnicPage.h"
 #include "ui/dialogs/CustomMessageBox.h"
-#include "ui/widgets/ProjectItem.h"
+#include "ui/widgets/ModpackBrowser.h"
 #include "ui_TechnicPage.h"
 
 #include <QKeyEvent>
@@ -66,6 +66,7 @@ TechnicPage::TechnicPage(NewInstanceDialog* dialog, QWidget* parent)
     m_search_timer.setSingleShot(true);
 
     connect(&m_search_timer, &QTimer::timeout, this, &TechnicPage::triggerSearch);
+    connect(ui->searchEdit, &QLineEdit::textEdited, this, [this] { m_search_timer.start(350); });
 
     m_fetch_progress.hideIfInactive(true);
     m_fetch_progress.setFixedHeight(24);
@@ -74,9 +75,13 @@ TechnicPage::TechnicPage(NewInstanceDialog* dialog, QWidget* parent)
     ui->verticalLayout->insertWidget(1, &m_fetch_progress);
 
     connect(ui->packView->selectionModel(), &QItemSelectionModel::currentChanged, this, &TechnicPage::onSelectionChanged);
+    connect(model, &QAbstractItemModel::modelReset, this, [this] { onSelectionChanged({}, {}); });
     connect(ui->versionSelectionBox, &QComboBox::currentTextChanged, this, &TechnicPage::onVersionSelectionChanged);
 
-    ui->packView->setItemDelegate(new ProjectItemDelegate(this));
+    m_browser = new ModpackBrowser(ui->searchEdit, nullptr, ui->packView, ui->versionSelectionBox, this);
+    m_browser->addView(ui->packView, ui->packDescription);
+    m_browser->addStatusWidget(&m_fetch_progress);
+    ModpackBrowser::install(this, m_browser);
 }
 
 bool TechnicPage::eventFilter(QObject* watched, QEvent* event)
@@ -84,14 +89,10 @@ bool TechnicPage::eventFilter(QObject* watched, QEvent* event)
     if (watched == ui->searchEdit && event->type() == QEvent::KeyPress) {
         QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Return) {
+            m_search_timer.stop();
             triggerSearch();
             keyEvent->accept();
             return true;
-        } else {
-            if (m_search_timer.isActive())
-                m_search_timer.stop();
-
-            m_search_timer.start(350);
         }
     }
     return QWidget::eventFilter(watched, event);
@@ -114,21 +115,35 @@ void TechnicPage::retranslate()
 
 void TechnicPage::openedImpl()
 {
-    suggestCurrent();
     triggerSearch();
 }
 
 void TechnicPage::triggerSearch()
 {
+    if (!isOpened)
+        return;
+    dialog->setSuggestedPack();
+    if (m_browser)
+        m_browser->showResults();
+    ui->packView->selectionModel()->setCurrentIndex({}, QItemSelectionModel::ClearAndSelect);
+    ui->packDescription->clear();
+    ui->versionSelectionBox->clear();
+    current = {};
     model->searchWithTerm(ui->searchEdit->text());
     m_fetch_progress.watch(model->activeSearchJob().get());
 }
 
 void TechnicPage::onSelectionChanged(QModelIndex first, [[maybe_unused]] QModelIndex second)
 {
+    ++m_selectionGeneration;
+    if (isOpened)
+        dialog->setSuggestedPack();
+    selectedVersion.clear();
+    ui->packDescription->clear();
     ui->versionSelectionBox->clear();
 
     if (!first.isValid()) {
+        current = {};
         if (isOpened) {
             dialog->setSuggestedPack();
         }
@@ -146,14 +161,16 @@ void TechnicPage::suggestCurrent()
     if (!isOpened) {
         return;
     }
-    if (current.broken) {
+    if (current.broken || !ui->packView->currentIndex().isValid()) {
         dialog->setSuggestedPack();
         return;
     }
 
     QString editedLogoName = "technic_" + current.logoName;
-    model->getLogo(current.logoName, current.logoUrl,
-                   [this, editedLogoName](QString logo) { dialog->setSuggestedIconFromFile(logo, editedLogoName); });
+    model->getLogo(current.logoName, current.logoUrl, [this, editedLogoName, generation = m_selectionGeneration](QString logo) {
+        if (isOpened && generation == m_selectionGeneration && !current.broken)
+            dialog->setSuggestedIconFromFile(logo, editedLogoName);
+    });
 
     if (current.metadataLoaded) {
         metadataLoaded();
@@ -162,14 +179,15 @@ void TechnicPage::suggestCurrent()
 
     auto netJob = makeShared<NetJob>(QString("Technic::PackMeta(%1)").arg(current.name), APPLICATION->network());
     QString slug = current.slug;
+    const auto generation = m_selectionGeneration;
+    auto response = std::make_shared<QByteArray>();
     netJob->addNetAction(Net::ApiDownload::makeByteArray(
         QString("%1modpack/%2?build=%3").arg(BuildConfig.TECHNIC_API_BASE_URL, slug, BuildConfig.TECHNIC_API_BUILD), response));
-    connect(netJob.get(), &NetJob::succeeded, this, [this, slug] {
-        jobPtr.reset();
-
-        if (current.slug != slug) {
+    connect(netJob.get(), &NetJob::succeeded, this, [this, slug, generation, response] {
+        if (!isOpened || generation != m_selectionGeneration || current.slug != slug) {
             return;
         }
+        jobPtr.reset();
 
         QJsonParseError parse_error{};
         QJsonDocument doc = QJsonDocument::fromJson(*response, &parse_error);
@@ -211,8 +229,12 @@ void TechnicPage::suggestCurrent()
 
         metadataLoaded();
     });
-    connect(jobPtr.get(), &NetJob::failed,
-            [this](QString reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec(); });
+    connect(netJob.get(), &NetJob::failed, this, [this, generation](QString reason) {
+        if (!isOpened || generation != m_selectionGeneration)
+            return;
+        dialog->setSuggestedPack();
+        CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
+    });
 
     jobPtr = netJob;
     jobPtr->start();
@@ -260,11 +282,22 @@ void TechnicPage::metadataLoaded()
 
         auto netJob = makeShared<NetJob>(QString("Technic::SolderMeta(%1)").arg(current.name), APPLICATION->network());
         auto url = QString("%1/modpack/%2").arg(current.url, current.slug);
+        const auto generation = m_selectionGeneration;
+        auto response = std::make_shared<QByteArray>();
         netJob->addNetAction(Net::ApiDownload::makeByteArray(QUrl(url), response));
 
-        connect(netJob.get(), &NetJob::succeeded, this, &TechnicPage::onSolderLoaded);
-        connect(jobPtr.get(), &NetJob::failed,
-                [this](QString reason) { CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec(); });
+        connect(netJob.get(), &NetJob::succeeded, this, [this, generation, response] {
+            if (isOpened && generation == m_selectionGeneration) {
+                this->response = response;
+                onSolderLoaded();
+            }
+        });
+        connect(netJob.get(), &NetJob::failed, this, [this, generation](QString reason) {
+            if (!isOpened || generation != m_selectionGeneration)
+                return;
+            dialog->setSuggestedPack();
+            CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
+        });
 
         jobPtr = netJob;
         jobPtr->start();
@@ -278,7 +311,7 @@ void TechnicPage::selectVersion()
     if (!isOpened) {
         return;
     }
-    if (current.broken) {
+    if (current.broken || selectedVersion.isEmpty() || !ui->packView->currentIndex().isValid()) {
         dialog->setSuggestedPack();
         return;
     }
@@ -338,6 +371,8 @@ void TechnicPage::onVersionSelectionChanged(QString version)
 {
     if (version.isNull() || version.isEmpty()) {
         selectedVersion = "";
+        if (isOpened)
+            dialog->setSuggestedPack();
         return;
     }
 

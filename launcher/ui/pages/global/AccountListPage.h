@@ -67,6 +67,7 @@ class AccountListPage : public QMainWindow, public BasePage {
     QString id() const override { return "accounts"; }
     QString helpPage() const override { return "getting-started/adding-an-account"; }
     void retranslate() override;
+    void openedImpl() override;
 
    public slots:
     void on_actionAddMicrosoft_triggered();
@@ -86,6 +87,8 @@ class AccountListPage : public QMainWindow, public BasePage {
     void ShowContextMenu(const QPoint& pos);
 
    private:
+    void updateMicrosoftSignInState();
+    void configureMicrosoftSignIn();
     void changeEvent(QEvent* event) override;
     QMenu* createPopupMenu() override;
     shared_qobject_ptr<AccountList> m_accounts;

@@ -17,7 +17,7 @@
  */
 
 #include "ImportFTBPage.h"
-#include "ui/widgets/ProjectItem.h"
+#include "ui/widgets/ModpackCardDelegate.h"
 #include "ui_ImportFTBPage.h"
 
 #include <QFileDialog>
@@ -34,6 +34,21 @@ namespace FTBImportAPP {
 ImportFTBPage::ImportFTBPage(NewInstanceDialog* dialog, QWidget* parent) : QWidget(parent), dialog(dialog), ui(new Ui::ImportFTBPage)
 {
     ui->setupUi(this);
+    setProperty("chromaCatalog", true);
+    setMinimumSize(0, 0);
+    setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    ui->verticalLayout->setContentsMargins(0, 0, 0, 0);
+    ui->verticalLayout->setSpacing(12);
+    ui->verticalLayout->setStretch(2, 1);
+    ui->sortByBox->setMinimumWidth(0);
+    ui->sortByBox->setMaximumWidth(220);
+    ui->sortByBox->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    ui->sortByBox->setMinimumContentsLength(8);
+    ui->horizontalLayout_2->removeWidget(ui->sortByBox);
+    ui->horizontalLayout->insertWidget(1, ui->sortByBox);
+    ui->searchEdit->setAccessibleName(tr("Search installed FTB modpacks"));
+    ui->sortByBox->setAccessibleName(tr("Sort installed FTB modpacks"));
+    ui->browseButton->setAccessibleName(tr("Choose FTB App instances folder"));
 
     {
         currentModel = new FilterModel(this);
@@ -41,10 +56,8 @@ ImportFTBPage::ImportFTBPage(NewInstanceDialog* dialog, QWidget* parent) : QWidg
         currentModel->setSourceModel(listModel);
 
         ui->modpackList->setModel(currentModel);
-        ui->modpackList->setSortingEnabled(true);
-        ui->modpackList->header()->hide();
-        ui->modpackList->setIndentation(0);
-        ui->modpackList->setIconSize(QSize(42, 42));
+        currentModel->sort(0, Qt::DescendingOrder);
+        ModpackCardDelegate::configureView(ui->modpackList);
 
         for (int i = 0; i < currentModel->getAvailableSortings().size(); i++) {
             ui->sortByBox->addItem(currentModel->getAvailableSortings().keys().at(i));
@@ -66,7 +79,7 @@ ImportFTBPage::ImportFTBPage(NewInstanceDialog* dialog, QWidget* parent) : QWidg
             listModel->setPath(dir);
     });
 
-    ui->modpackList->setItemDelegate(new ProjectItemDelegate(this));
+    connect(listModel, &QAbstractItemModel::modelReset, this, [this] { onPackSelectionChanged(); });
     ui->modpackList->selectionModel()->reset();
 }
 
@@ -122,7 +135,7 @@ void ImportFTBPage::suggestCurrent()
     if (!isOpened)
         return;
 
-    if (selected.path.isEmpty()) {
+    if (selected.path.isEmpty() || !ui->modpackList->currentIndex().isValid()) {
         dialog->setSuggestedPack();
         return;
     }
@@ -159,6 +172,7 @@ void ImportFTBPage::onPackSelectionChanged(Modpack* pack)
         suggestCurrent();
         return;
     }
+    selected = {};
     if (isOpened)
         dialog->setSuggestedPack();
 }

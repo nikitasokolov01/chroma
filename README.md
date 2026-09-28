@@ -1,114 +1,78 @@
-<p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="/program_info/org.prismlauncher.PrismLauncher.logo-darkmode.svg">
-  <source media="(prefers-color-scheme: light)" srcset="/program_info/org.prismlauncher.PrismLauncher.logo.svg">
-  <img alt="Prism Launcher" src="/program_info/org.prismlauncher.PrismLauncher.logo.svg" width="40%">
-</picture>
-</p>
+<h1 align="center">Chroma</h1>
+
+<p align="center"><strong>A fresh interface for your Minecraft library.</strong><br>
+Native C++ and Qt. Built on Prism Launcher. Charcoal, lavender, and room for your own colors.</p>
 
 <p align="center">
-  Prism Launcher is a custom launcher for Minecraft that allows you to easily manage multiple installations of Minecraft at once.<br />
-  <br />This is a <b>fork</b> of the MultiMC Launcher and is <b>not</b> endorsed by it.
+  <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0">Download for Windows</a> ·
+  <a href="docs/CHROMA.md">Guide</a> ·
+  <a href="docs/CHROMA-MIGRATION.md">Use your Prism library</a> ·
+  <a href="https://github.com/nikitasokolov01/chroma/issues">Report an issue</a>
 </p>
 
-## Installation
+![Chroma home: recently played instances, a searchable library, and instance controls in a charcoal and lavender interface](docs/screenshots/home.png)
 
-<a href="https://repology.org/project/prismlauncher/versions">
-    <img src="https://repology.org/badge/vertical-allrepos/prismlauncher.svg" alt="Packaging status" align="right">
-</a>
+Chroma rebuilds Prism Launcher's default interface around a card library, a persistent sidebar, and screens that open inside the main window. It keeps Prism's instance management and installation workflows underneath, with a visual direction inspired by Modrinth.
 
-- All downloads and instructions for Prism Launcher can be found on our [Website](https://prismlauncher.org/download).
-- Last build status can be found in the [GitHub Actions](https://github.com/PrismLauncher/PrismLauncher/actions) tab (this also includes the pull requests status).
+**Independent project:** Chroma is based on Prism Launcher 10.0.5. It is not affiliated with or endorsed by Prism Launcher, Modrinth, Mojang, or Microsoft.
 
-### Development Builds
+## Download
 
-Please understand that these builds are not intended for most users. There may be bugs, and other instabilities. You have been warned.
+**v0.1.0 preview · Windows x64**
 
-There are development builds available through:
+| Package | Use it when… |
+| --- | --- |
+| [Windows installer](https://github.com/nikitasokolov01/chroma/releases/download/v0.1.0/Chroma-0.1.0-Windows-x64-Setup.exe) | You want a normal installation for your Windows account. |
+| [Portable ZIP](https://github.com/nikitasokolov01/chroma/releases/download/v0.1.0/Chroma-0.1.0-Windows-x64.zip) | You want to extract a folder and run `chroma.exe` from it. Keep its files together. |
 
-- [GitHub Actions](https://github.com/PrismLauncher/PrismLauncher/actions) (includes builds from pull requests opened by contributors)
-- [nightly.link](https://prismlauncher.org/nightly) (this will always point only to the latest version of develop)
+Read the [release notes](https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0) for this preview's requirements and known limitations. Updates are downloaded from Releases; the upstream binary updater is disabled.
 
-These have debug information in the binaries, so their file sizes are relatively larger.
+## Your library, in one place
 
-Prebuilt Development builds are provided for **Linux**, **Windows** and **macOS**.
+- **Jump back in.** Recently played instances sit above a searchable, grouped card library.
+- **Pin your favorites.** Keep instance shortcuts in the sidebar and open their settings with one click.
+- **Browse by service.** Choose Modrinth, CurseForge, ATLauncher, Technic, or FTB Legacy, then browse covers, filters, and versions. Available services depend on the build's API configuration.
+- **Stay in the workspace.** Instance editing, launcher settings, accounts, and installation flows open inside the main window.
+- **Choose your accent.** Lavender is the default. Pick a preset or a custom color over the charcoal palette.
+- **Keep your Prism library.** Open an existing profile directly, including custom instance locations, without copying your modpacks.
 
-On Linux, we also offer our own [Flatpak nightly repository](https://github.com/PrismLauncher/flatpak). Most software centers are able to install it by opening [this link](https://flatpak.prismlauncher.org/prismlauncher-nightly.flatpakref).
+### Browse, choose, install
 
-## Community & Support
+| Choose a service | Explore a pack |
+| --- | --- |
+| [![Modpack provider gallery](docs/screenshots/provider-gallery.png)](docs/screenshots/provider-gallery.png) | [![Cover grid and selected modpack's version and details](docs/screenshots/modpack-details.png)](docs/screenshots/modpack-details.png) |
 
-Feel free to create a GitHub issue if you find a bug or want to suggest a new feature. We have multiple community spaces where other community members can help you:
+### Familiar controls, inside the new interface
 
-- **Our Discord server:**
+| Launcher settings | Compact layout |
+| --- | --- |
+| [![Settings open inside Chroma's main window](docs/screenshots/inline-settings.png)](docs/screenshots/inline-settings.png) | [![Modpack cards in a narrow Chroma window](docs/screenshots/modpack-catalog-compact.png)](docs/screenshots/modpack-catalog-compact.png) |
 
-[![Prism Launcher Discord server](https://discordapp.com/api/guilds/1031648380885147709/widget.png?style=banner3)](https://prismlauncher.org/discord)
+These screenshots show the running native application with synthetic example instances and catalog entries.
 
-- **Our Matrix space:**
+## Already use Prism?
 
-[![Prism Launcher Space](https://img.shields.io/matrix/prismlauncher:matrix.org?style=for-the-badge&label=Matrix%20Space&logo=matrix&color=purple)](https://prismlauncher.org/matrix)
+1. Close Prism and any games using its profile.
+2. In Chroma, choose **Launcher menu (•••) → Use Prism folder…**.
+3. Select the data folder containing `prismlauncher.cfg`, inspect it, and choose **Use this folder**.
 
-- **Our Subreddit:**
+Chroma restarts once and remembers that folder. Instances, worlds, accounts, and launch settings are shared directly; changes affect the same files. Keep one launcher open at a time. Chroma's appearance preferences are stored separately in `chroma-ui.cfg`.
 
-[![r/PrismLauncher](https://img.shields.io/reddit/subreddit-subscribers/prismlauncher?style=for-the-badge&logo=reddit)](https://prismlauncher.org/reddit)
+See the [existing-profile guide](docs/CHROMA-MIGRATION.md) for portable profiles, custom folders, and `--dir` overrides.
 
-## Translations
+## Documentation and development
 
-The translation effort for Prism Launcher is hosted on [Weblate](https://hosted.weblate.org/projects/prismlauncher/launcher/) and information about translating Prism Launcher is available at <https://github.com/PrismLauncher/Translations>.
+- [Getting started, accounts, building, and testing](docs/CHROMA.md)
+- [Appearance and accent colors](docs/appearance.md)
+- [Using an existing Prism folder](docs/CHROMA-MIGRATION.md)
+- [Privacy and local account data](PRIVACY.md)
 
-## Building
+The interface is implemented in C++ and Qt Widgets and compiled into the launcher. Development builds use the scripts in [`scripts/`](scripts/); prerequisites and native UI tests are covered in the [build guide](docs/CHROMA.md#build-from-source).
 
-If you want to build Prism Launcher yourself, check the [build instructions](https://prismlauncher.org/wiki/development/build-instructions).
+Found a problem? [Open an issue](https://github.com/nikitasokolov01/chroma/issues) with the Chroma version, steps to reproduce, and a screenshot when helpful. Review logs before sharing them and remove account information or access tokens.
 
-## Sponsors & Partners
+## Credits and license
 
-We thank all the wonderful backers over at Open Collective! Support Prism Launcher by [becoming a backer](https://opencollective.com/prismlauncher).
+Chroma builds on the work of the [Prism Launcher](https://github.com/PrismLauncher/PrismLauncher), PolyMC, and MultiMC contributors. Prism's original project information is preserved in the [upstream README](docs/UPSTREAM_README.md).
 
-[![OpenCollective Backers](https://opencollective.com/prismlauncher/backers.svg?width=890&limit=1000)](https://opencollective.com/prismlauncher#backers)
-
-Thanks to JetBrains for providing us a few licenses for all their products, as part of their [Open Source program](https://www.jetbrains.com/opensource/).
-
-<a href="https://jb.gg/OpenSource">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://www.jetbrains.com/company/brand/img/logo_jb_dos_4.svg">
-  <source media="(prefers-color-scheme: light)" srcset="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg">
-  <img alt="JetBrains logo" src="https://resources.jetbrains.com/storage/products/company/brand/logos/jetbrains.svg" width="40%">
-</picture>
-</a>
-
-Thanks to Weblate for hosting our translation efforts.
-
-<a href="https://hosted.weblate.org/engage/prismlauncher/">
-<img src="https://hosted.weblate.org/widgets/prismlauncher/-/open-graph.png" alt="Translation status" width="300" />
-</a>
-
-Thanks to Netlify for providing us their excellent web services, as part of their [Open Source program](https://www.netlify.com/open-source/).
-
-<a href="https://www.netlify.com"> <img src="https://www.netlify.com/v3/img/components/netlify-color-accent.svg" alt="Deploys by Netlify" /> </a>
-
-Thanks to the awesome people over at [MacStadium](https://www.macstadium.com/), for providing M1-Macs for development purposes!
-
-<a href="https://www.macstadium.com"><img src="https://uploads-ssl.webflow.com/5ac3c046c82724970fc60918/5c019d917bba312af7553b49_MacStadium-developerlogo.png" alt="Powered by MacStadium" width="300"></a>
-
-## Forking/Redistributing/Custom builds policy
-
-You are free to fork, redistribute and provide custom builds as long as you follow the terms of the [license](LICENSE) (this is a legal responsibility), and if you made code changes rather than just packaging a custom build, please do the following as a basic courtesy:
-
-- Make it clear that your fork is not Prism Launcher and is not endorsed by or affiliated with the Prism Launcher project (<https://prismlauncher.org>).
-- Go through [CMakeLists.txt](CMakeLists.txt) and change Prism Launcher's API keys to your own or set them to empty strings (`""`) to disable them (this way the program will still compile but the functionality requiring those keys will be disabled).
-
-If you have any questions or want any clarification on the above conditions please make an issue and ask us.
-
-If you are just building Prism Launcher for your distribution, please make sure to set the `Launcher_BUILD_PLATFORM` to a slug representing your distribution. Examples are `archlinux`, `fedora` and `nixpkgs`.
-
-Note that if you build this software without removing the provided API keys in [CMakeLists.txt](CMakeLists.txt) you are accepting the following terms and conditions:
-
-- [Microsoft Identity Platform Terms of Use](https://docs.microsoft.com/en-us/legal/microsoft-identity-platform/terms-of-use)
-- [CurseForge 3rd Party API Terms and Conditions](https://support.curseforge.com/en/support/solutions/articles/9000207405-curse-forge-3rd-party-api-terms-and-conditions)
-
-If you do not agree with these terms and conditions, then remove the associated API keys from the [CMakeLists.txt](CMakeLists.txt) file by setting them to an empty string (`""`).
-
-## License [![https://github.com/PrismLauncher/PrismLauncher/blob/develop/LICENSE](https://img.shields.io/github/license/PrismLauncher/PrismLauncher?label=License&logo=gnu&color=C4282D)](LICENSE)
-
-All launcher code is available under the GPL-3.0-only license.
-
-The logo and related assets are under the CC BY-SA 4.0 license.
+Launcher code is licensed under **GPL-3.0-only**; see [LICENSE](LICENSE). Third-party components retain their own licenses and notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [COPYING.md](COPYING.md), and their source directories. Upstream logos and branding retain their [CC BY-SA 4.0 license](program_info/LICENSE). See the [release licensing notes](docs/RELEASE-LICENSING.md) for distribution and corresponding source information.

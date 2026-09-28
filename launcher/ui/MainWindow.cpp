@@ -103,13 +103,16 @@
 #include "ui/dialogs/ImportResourceDialog.h"
 #include "ui/dialogs/NewInstanceDialog.h"
 #include "ui/dialogs/NewsDialog.h"
+#include "ui/dialogs/PrismProfileDialog.h"
 #include "ui/dialogs/ProgressDialog.h"
 #include "ui/instanceview/InstanceDelegate.h"
 #include "ui/instanceview/InstanceProxyModel.h"
 #include "ui/instanceview/InstanceView.h"
 #include "ui/themes/ITheme.h"
 #include "ui/themes/ThemeManager.h"
+#include "ui/widgets/InlineWorkspace.h"
 #include "ui/widgets/LabeledToolButton.h"
+#include "ui/widgets/LauncherHome.h"
 
 #include "minecraft/PackProfile.h"
 #include "minecraft/VersionFile.h"
@@ -262,9 +265,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->actionCloseWindow->setShortcut(QKeySequence::Close);
         connect(ui->actionCloseWindow, &QAction::triggered, APPLICATION, &Application::closeCurrentWindow);
 
-        // FIXME: This is kinda weird. and bad. We need some kind of managed shutdown.
         auto q = new QShortcut(QKeySequence::Quit, this);
-        connect(q, &QShortcut::activated, APPLICATION, &Application::quit);
+        connect(q, &QShortcut::activated, this, &QWidget::close);
     }
 
     // Konami Code
@@ -431,6 +433,111 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     view->setFocus();
 
     retranslateUi();
+
+    m_usePrismFolder = new QAction(QIcon::fromTheme("viewfolder"), tr("Use Prism folder…"), this);
+    m_usePrismFolder->setObjectName("actionUsePrismFolder");
+    connect(m_usePrismFolder, &QAction::triggered, this, [this] {
+        if (!prepareInlineNavigation())
+            return;
+        PrismProfileDialog dialog(this);
+        if (dialog.exec() == QDialog::Accepted) {
+            QString error;
+            if (!APPLICATION->usePrismProfile(dialog.selectedProfilePath(), &error))
+                CustomMessageBox::selectable(this, tr("Could not open Prism folder"), error, QMessageBox::Warning)->exec();
+        }
+    });
+    ui->fileMenu->insertAction(ui->actionAddInstance, m_usePrismFolder);
+    auto* launcherMenu = new QMenu(this);
+    launcherMenu->addAction(m_usePrismFolder);
+    launcherMenu->addSeparator();
+    launcherMenu->addMenu(ui->fileMenu);
+    launcherMenu->addMenu(ui->editMenu);
+    launcherMenu->addMenu(ui->foldersMenu);
+    launcherMenu->addMenu(ui->accountsMenu);
+    auto* homeViewMenu = launcherMenu->addMenu(tr("View"));
+    homeViewMenu->addAction(ui->actionChangeTheme);
+    homeViewMenu->addAction(ui->actionCAT);
+    homeViewMenu->addAction(ui->actionToggleStatusBar);
+    launcherMenu->addMenu(ui->helpMenu);
+    auto* instanceMenu = new QMenu(this);
+    m_pinInstance = new QAction(tr("Pin to sidebar"), this);
+    m_pinInstance->setObjectName("actionPinInstance");
+    instanceMenu->addAction(m_pinInstance);
+    instanceMenu->addSeparator();
+    instanceMenu->addAction(ui->actionRenameInstance);
+    instanceMenu->addAction(ui->actionChangeInstIcon);
+    instanceMenu->addSeparator();
+    instanceMenu->addActions(ui->fileMenu->actions());
+    LauncherHome::Actions homeActions{
+        ui->actionAddInstance,     m_usePrismFolder,       ui->actionSettings,     ui->actionAccountsButton,
+        ui->actionLaunchInstance,  ui->actionKillInstance, ui->actionEditInstance, ui->actionViewSelectedInstFolder,
+        ui->actionChangeInstGroup, ui->actionMoreNews,     instanceMenu,           launcherMenu
+    };
+    ui->horizontalLayout->removeWidget(view);
+    m_home = new LauncherHome(view, proxymodel, homeActions, ui->centralWidget);
+    ui->horizontalLayout->addWidget(m_home);
+    m_home->setSelectedInstance(m_selectedInstance ? m_selectedInstance->id() : QString());
+    m_workspace = new InlineWorkspace(this, m_home->pageHost());
+    connect(m_workspace, &InlineWorkspace::pagePresented, this, [this](const QString& title) { m_home->showPage(m_workspace, title); });
+    connect(m_workspace, &InlineWorkspace::emptied, this, [this] { m_home->showHomePage(); });
+    connect(m_workspace, &InlineWorkspace::navigationLockChanged, this, [this](bool locked) {
+        m_home->findChild<QWidget*>("homeRail")->setEnabled(!locked);
+        ui->menuBar->setEnabled(!locked);
+    });
+    connect(m_home, &LauncherHome::homeRequested, this, [this](bool libraryOnly) {
+        if (m_workspace->closeAllPages())
+            m_home->showHomePage(libraryOnly);
+    });
+    connect(m_home, &LauncherHome::instanceOpenRequested, this, [this](const QString& id) {
+        if (!m_workspace->closeAllPages())
+            return;
+        m_home->clearSearch();
+        setSelectedInstanceById(id);
+        if (auto instance = APPLICATION->instances()->getInstanceById(id))
+            APPLICATION->showInstanceWindow(instance);
+    });
+    connect(m_pinInstance, &QAction::triggered, m_home, &LauncherHome::toggleSelectedPin);
+    auto updatePinAction = [this] {
+        m_pinInstance->setEnabled(bool(m_selectedInstance));
+        m_pinInstance->setText(m_home->selectedInstancePinned() ? tr("Unpin from sidebar") : tr("Pin to sidebar"));
+    };
+    connect(m_home, &LauncherHome::pinsChanged, this, updatePinAction);
+    connect(view->selectionModel(), &QItemSelectionModel::currentChanged, this, [updatePinAction] { updatePinAction(); });
+    updatePinAction();
+    connect(m_home, &LauncherHome::launchRequested, this, [this](const QString& id) {
+        m_home->clearSearch();
+        setSelectedInstanceById(id);
+        auto instance = APPLICATION->instances()->getInstanceById(id);
+        if (instance && instance->canLaunch() && !instance->isRunning())
+            activateInstance(instance);
+    });
+    // Keep every existing shortcut active after the old toolbar surfaces are hidden.
+    for (auto* menu : { ui->fileMenu, ui->editMenu, ui->foldersMenu, ui->helpMenu, ui->viewMenu })
+        addActions(menu->actions());
+    addActions(ui->mainToolBar->actions());
+    addActions(ui->instanceToolBar->actions());
+    applyHomeLayout();
+    resize(1280, 820);
+}
+
+void MainWindow::applyHomeLayout()
+{
+    ui->mainToolBar->hide();
+    ui->instanceToolBar->hide();
+    ui->newsToolBar->hide();
+    if (!ui->menuBar->isNativeMenuBar())
+        ui->menuBar->hide();
+    setMinimumSize(680, 640);
+}
+
+void MainWindow::openInlinePage(QWidget* page, const QString& title)
+{
+    m_workspace->present(page, title);
+}
+
+bool MainWindow::prepareInlineNavigation()
+{
+    return !m_workspace || m_workspace->closeAllPages();
 }
 
 // macOS always has a native menu bar, so these fixes are not applicable
@@ -454,6 +561,15 @@ void MainWindow::retranslateUi()
     }
 
     ui->retranslateUi(this);
+    ui->actionAddInstance->setText(tr("New instance"));
+    ui->actionLaunchInstance->setText(tr("Play"));
+    ui->actionKillInstance->setText(tr("Stop"));
+    ui->actionEditInstance->setText(tr("Edit instance"));
+    ui->actionViewSelectedInstFolder->setText(tr("Open folder"));
+    ui->actionChangeInstGroup->setText(tr("Change group"));
+    ui->actionMoreNews->setText(tr("Launcher news"));
+    if (m_usePrismFolder)
+        m_usePrismFolder->setText(tr("Use Prism folder…"));
 
     MinecraftAccountPtr defaultAccount = APPLICATION->accounts()->defaultAccount();
     if (defaultAccount) {
@@ -543,6 +659,7 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
 
         actions.prepend(ui->actionChangeInstIcon);
         actions.prepend(ui->actionRenameInstance);
+        actions.prepend(m_pinInstance);
 
         // add header
         actions.prepend(actionSep);
@@ -589,6 +706,10 @@ void MainWindow::showInstanceContextMenu(const QPoint& pos)
 
 void MainWindow::updateMainToolBar()
 {
+    if (m_home) {
+        applyHomeLayout();
+        return;
+    }
     ui->menuBar->setVisible(APPLICATION->settings()->get("MenuBarInsteadOfToolBar").toBool());
     ui->mainToolBar->setVisible(ui->menuBar->isNativeMenuBar() || !APPLICATION->settings()->get("MenuBarInsteadOfToolBar").toBool());
 }
@@ -639,6 +760,12 @@ void MainWindow::updateThemeMenu()
 
 void MainWindow::repopulateAccountsMenu()
 {
+    for (auto* action : m_accountShortcutActions) {
+        removeAction(action);
+        action->setEnabled(false);
+        action->deleteLater();
+    }
+    m_accountShortcutActions.clear();
     ui->accountsMenu->clear();
 
     // NOTE: this is done so the accounts button text is not set to the accounts menu title
@@ -693,6 +820,8 @@ void MainWindow::repopulateAccountsMenu()
             }
 
             ui->accountsMenu->addAction(action);
+            addAction(action);
+            m_accountShortcutActions.append(action);
             connect(action, &QAction::triggered, this, &MainWindow::changeActiveAccount);
         }
     }
@@ -874,6 +1003,8 @@ void MainWindow::instanceFromInstanceTask(InstanceTask* rawTask)
 
 void MainWindow::on_actionCopyInstance_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (!m_selectedInstance)
         return;
 
@@ -889,8 +1020,10 @@ void MainWindow::on_actionCopyInstance_triggered()
     runModalTask(task.get());
 }
 
-void MainWindow::addInstance(const QString& url, const QMap<QString, QString>& extra_info)
+void MainWindow::addInstance(const QString& url, const QMap<QString, QString>& extra_info, bool waitForClose)
 {
+    if (!prepareInlineNavigation())
+        return;
     QString groupName;
     do {
         QObject* obj = sender();
@@ -909,16 +1042,21 @@ void MainWindow::addInstance(const QString& url, const QMap<QString, QString>& e
         groupName = APPLICATION->settings()->get("LastUsedGroupForNewInstance").toString();
     }
 
-    NewInstanceDialog newInstDlg(groupName, url, extra_info, this);
-    if (!newInstDlg.exec())
-        return;
-
-    APPLICATION->settings()->set("LastUsedGroupForNewInstance", newInstDlg.instGroup());
-
-    InstanceTask* creationTask = newInstDlg.extractTask();
-    if (creationTask) {
-        instanceFromInstanceTask(creationTask);
-    }
+    auto* dialog = new NewInstanceDialog(groupName, url, extra_info, this);
+    connect(dialog, &QDialog::finished, this, [this, dialog](int result) {
+        if (result == QDialog::Accepted) {
+            APPLICATION->settings()->set("LastUsedGroupForNewInstance", dialog->instGroup());
+            // Provider tasks may still use their creation page for prompts.
+            // Keep it alive until the task and its nested event loops finish.
+            if (auto* task = dialog->extractTask())
+                instanceFromInstanceTask(task);
+        }
+        dialog->deleteLater();
+    });
+    if (waitForClose)
+        dialog->exec();
+    else
+        dialog->open();
 }
 
 void MainWindow::on_actionAddInstance_triggered()
@@ -1042,7 +1180,8 @@ void MainWindow::processURLs(QList<QUrl> urls)
         auto type = ResourceUtils::identify(localFileInfo);
 
         if (ModPlatform::ResourceTypeUtils::VALID_RESOURCES.count(type) == 0) {  // probably instance/modpack
-            addInstance(localFileName, extra_info);
+            // Finish each dropped pack before offering the next one.
+            addInstance(localFileName, extra_info, true);
             continue;
         }
 
@@ -1108,6 +1247,8 @@ void MainWindow::on_actionMATRIX_triggered()
 
 void MainWindow::on_actionChangeInstIcon_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (!m_selectedInstance)
         return;
 
@@ -1144,6 +1285,8 @@ void MainWindow::setSelectedInstanceById(const QString& id)
         return;
     const QModelIndex index = APPLICATION->instances()->getInstanceIndexById(id);
     if (index.isValid()) {
+        if (m_home && !proxymodel->mapFromSource(index).isValid())
+            m_home->clearSearch();
         QModelIndex selectionIndex = proxymodel->mapFromSource(index);
         view->selectionModel()->setCurrentIndex(selectionIndex, QItemSelectionModel::ClearAndSelect);
         updateStatusCenter();
@@ -1152,6 +1295,8 @@ void MainWindow::setSelectedInstanceById(const QString& id)
 
 void MainWindow::on_actionChangeInstGroup_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (!m_selectedInstance)
         return;
 
@@ -1297,6 +1442,8 @@ void MainWindow::globalSettingsClosed()
 
 void MainWindow::on_actionEditInstance_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (!m_selectedInstance)
         return;
 
@@ -1364,6 +1511,8 @@ void MainWindow::on_actionOpenWiki_triggered()
 
 void MainWindow::on_actionMoreNews_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     auto entries = m_newsChecker->getNewsEntries();
     NewsDialog news_dialog(entries, this);
     news_dialog.exec();
@@ -1371,6 +1520,8 @@ void MainWindow::on_actionMoreNews_triggered()
 
 void MainWindow::newsButtonClicked()
 {
+    if (!prepareInlineNavigation())
+        return;
     auto entries = m_newsChecker->getNewsEntries();
     NewsDialog news_dialog(entries, this);
     news_dialog.toggleArticleList();
@@ -1384,12 +1535,16 @@ void MainWindow::onCatChanged(int)
 
 void MainWindow::on_actionAbout_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     AboutDialog dialog(this);
     dialog.exec();
 }
 
 void MainWindow::on_actionDeleteInstance_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (!m_selectedInstance) {
         return;
     }
@@ -1433,6 +1588,8 @@ void MainWindow::on_actionDeleteInstance_triggered()
 
 void MainWindow::on_actionExportInstanceZip_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (m_selectedInstance) {
         ExportInstanceDialog dlg(m_selectedInstance, this);
         dlg.exec();
@@ -1441,6 +1598,8 @@ void MainWindow::on_actionExportInstanceZip_triggered()
 
 void MainWindow::on_actionExportInstanceMrPack_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (m_selectedInstance) {
         auto instance = std::dynamic_pointer_cast<MinecraftInstance>(m_selectedInstance);
         if (instance != nullptr) {
@@ -1452,6 +1611,8 @@ void MainWindow::on_actionExportInstanceMrPack_triggered()
 
 void MainWindow::on_actionExportInstanceFlamePack_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (m_selectedInstance) {
         auto instance = std::dynamic_pointer_cast<MinecraftInstance>(m_selectedInstance);
         if (instance) {
@@ -1470,6 +1631,8 @@ void MainWindow::on_actionExportInstanceFlamePack_triggered()
 
 void MainWindow::on_actionRenameInstance_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (m_selectedInstance) {
         view->edit(view->currentIndex());
     }
@@ -1485,6 +1648,10 @@ void MainWindow::on_actionViewSelectedInstFolder_triggered()
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    if (m_workspace && !m_workspace->closeAllPages()) {
+        event->ignore();
+        return;
+    }
     // Save the window state and geometry.
     APPLICATION->settings()->set("MainWindowState", QString::fromUtf8(saveState().toBase64()));
     APPLICATION->settings()->set("MainWindowGeometry", QString::fromUtf8(saveGeometry().toBase64()));
@@ -1534,6 +1701,8 @@ void MainWindow::on_actionKillInstance_triggered()
 
 void MainWindow::on_actionCreateInstanceShortcut_triggered()
 {
+    if (!prepareInlineNavigation())
+        return;
     if (!m_selectedInstance)
         return;
 
@@ -1590,6 +1759,8 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
 
         connect(m_selectedInstance.get(), &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
         connect(m_selectedInstance.get(), &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
+        if (m_home)
+            m_home->setSelectedInstance(m_selectedInstance->id());
     } else {
         APPLICATION->settings()->set("SelectedInstance", QString());
         selectionBad();
@@ -1615,9 +1786,13 @@ void MainWindow::selectionBad()
 {
     // start by reseting everything...
     m_selectedInstance = nullptr;
+    if (m_home)
+        m_home->setSelectedInstance(QString());
     m_statusLeft->setText(tr("No instance selected"));
 
     statusBar()->clearMessage();
+    ui->actionLaunchInstance->setEnabled(false);
+    ui->actionKillInstance->setEnabled(false);
     ui->instanceToolBar->setEnabled(false);
     setInstanceActionsEnabled(false);
     updateLaunchButton();

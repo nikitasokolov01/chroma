@@ -48,6 +48,7 @@ class AtlPage;
 }
 
 class NewInstanceDialog;
+class ModpackBrowser;
 
 class AtlPage : public QWidget, public ModpackProviderBasePage {
     Q_OBJECT
@@ -90,4 +91,5 @@ class AtlPage : public QWidget, public ModpackProviderBasePage {
     QString selectedVersion;
 
     bool initialized = false;
+    ModpackBrowser* m_browser = nullptr;
 };
