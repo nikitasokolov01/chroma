@@ -116,6 +116,9 @@ class ResourceAPI {
     virtual Task::Ptr getProjects(QStringList addonIds, std::shared_ptr<QByteArray> response) const = 0;
 
     virtual Task::Ptr getProjectInfo(ProjectInfoArgs&&, Callback<ModPlatform::IndexedPack::Ptr>&&) const;
+    // Public catalog metadata only. Cache keys include the complete provider URL.
+    static Task::Ptr cachedRequest(const QUrl& url, std::shared_ptr<QByteArray> response);
+    virtual std::optional<QString> getDescriptionURL(const QString&) const { return {}; }
     Task::Ptr getProjectVersions(VersionSearchArgs&& args, Callback<QVector<ModPlatform::IndexedVersion>>&& callbacks) const;
     virtual Task::Ptr getDependencyVersion(DependencySearchArgs&&, Callback<ModPlatform::IndexedVersion>&&) const;
 

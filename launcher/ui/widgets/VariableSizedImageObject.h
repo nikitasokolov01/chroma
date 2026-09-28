@@ -37,8 +37,9 @@ class VariableSizedImageObject final : public QObject, public QTextObjectInterfa
         int posInDocument;
         QUrl url;
         QImage image;
-        int width;
-        int height;
+        int width = 0;
+        int height = 0;
+        quint64 generation = 0;
     };
 
    public:
@@ -70,4 +71,5 @@ class VariableSizedImageObject final : public QObject, public QTextObjectInterfa
     QString m_meta_entry;
 
     QSet<QUrl> m_fetching_images;
+    quint64 m_generation = 0;
 };

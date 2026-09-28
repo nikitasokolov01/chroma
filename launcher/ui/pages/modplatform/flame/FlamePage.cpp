@@ -91,6 +91,10 @@ FlamePage::FlamePage(NewInstanceDialog* dialog, QWidget* parent)
     connect(m_ui->versionSelectionBox, &QComboBox::currentIndexChanged, this, &FlamePage::onVersionSelectionChanged);
 
     m_ui->packDescription->setMetaEntry("FlamePacks");
+    m_ui->packDescription->setOpenExternalLinks(false);
+    m_ui->packDescription->setOpenLinks(false);
+    connect(m_ui->packDescription, &ProjectDescriptionPage::projectVersionSelected, m_ui->versionSelectionBox, &QComboBox::setCurrentIndex);
+    connect(m_ui->versionSelectionBox, &QComboBox::currentIndexChanged, m_ui->packDescription, &ProjectDescriptionPage::setSelectedVersion);
     createFilterWidget();
     m_browser = new ModpackBrowser(m_ui->searchEdit, m_ui->sortByBox, m_ui->packView, m_ui->versionSelectionBox, this);
     m_browser->addView(m_ui->packView, m_ui->packDescription);
@@ -102,6 +106,14 @@ FlamePage::FlamePage(NewInstanceDialog* dialog, QWidget* parent)
 
 FlamePage::~FlamePage()
 {
+    isOpened = false;
+    ++m_selectionGeneration;
+    if (m_job && m_job->isRunning())
+        m_job->abort();
+    if (m_infoJob && m_infoJob->isRunning())
+        m_infoJob->abort();
+    if (m_categoriesTask && m_categoriesTask->isRunning())
+        m_categoriesTask->abort();
     delete m_ui;
 }
 
@@ -147,7 +159,7 @@ void FlamePage::triggerSearch()
         m_browser->showResults();
     m_ui->packView->selectionModel()->setCurrentIndex({}, QItemSelectionModel::SelectionFlag::ClearAndSelect);
     m_ui->packView->clearSelection();
-    m_ui->packDescription->clear();
+    m_ui->packDescription->setProject({});
     m_ui->versionSelectionBox->clear();
     bool filterChanged = m_filterWidget->changed();
     m_listModel->searchWithTerm(m_ui->searchEdit->text(), m_ui->sortByBox->currentIndex(), m_filterWidget->getFilter(), filterChanged);
@@ -157,10 +169,14 @@ void FlamePage::triggerSearch()
 void FlamePage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelIndex prev)
 {
     const auto generation = ++m_selectionGeneration;
+    if (m_job && m_job->isRunning())
+        m_job->abort();
+    if (m_infoJob && m_infoJob->isRunning())
+        m_infoJob->abort();
     if (isOpened)
         m_dialog->setSuggestedPack();
     m_selected_version_index = -1;
-    m_ui->packDescription->clear();
+    m_ui->packDescription->setProject({});
     m_ui->versionSelectionBox->clear();
 
     if (!curr.isValid()) {
@@ -172,6 +188,23 @@ void FlamePage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelInde
     }
 
     m_current = m_listModel->data(curr, Qt::UserRole).value<ModPlatform::IndexedPack::Ptr>();
+    updateUi();
+    if (!m_current->extraDataLoaded) {
+        ResourceAPI::Callback<ModPlatform::IndexedPack::Ptr> callbacks;
+        const QPointer<FlamePage> guard(this);
+        callbacks.on_succeed = [guard, generation](auto&) {
+            if (guard && guard->isOpened && generation == guard->m_selectionGeneration)
+                guard->updateUi();
+        };
+        callbacks.on_fail = [guard, generation](const QString&, int) {
+            if (guard && guard->isOpened && generation == guard->m_selectionGeneration)
+                guard->m_ui->packDescription->setProjectNotice(
+                    tr("Additional information could not be loaded. You can still use available releases."));
+        };
+        m_infoJob = api.getProjectInfo({ m_current }, std::move(callbacks));
+        if (m_infoJob)
+            m_infoJob->start();
+    }
 
     if (!m_current->versionsLoaded || m_filterWidget->changed()) {
         qDebug() << "Loading flame modpack versions";
@@ -216,12 +249,14 @@ void FlamePage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelInde
                 m_ui->versionSelectionBox->addItem(tr("No version is available!"), -1);
             }
             suggestCurrent();
+            updateUi();
         };
         callbacks.on_fail = [this, generation](QString reason, int) {
             if (!isOpened || generation != m_selectionGeneration)
                 return;
             m_dialog->setSuggestedPack();
-            CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
+            m_ui->packDescription->setProjectNotice(tr("Releases could not be loaded. Reopen this project to try again."));
+            updateUi();
         };
 
         auto netJob = api.getProjectVersions({ m_current, {}, {}, ModPlatform::ResourceType::Modpack }, std::move(callbacks));
@@ -291,54 +326,7 @@ void FlamePage::onVersionSelectionChanged(int index)
 
 void FlamePage::updateUi()
 {
-    const auto pack = m_current;
-    if (!pack)
-        return;
-    const auto generation = m_selectionGeneration;
-    const QPointer<FlamePage> guard(this);
-    QString text = "";
-    QString name = m_current->name;
-
-    if (m_current->websiteUrl.isEmpty())
-        text = name;
-    else
-        text = "<a href=\"" + m_current->websiteUrl + "\">" + name + "</a>";
-    if (!m_current->authors.empty()) {
-        auto authorToStr = [](ModPlatform::ModpackAuthor& author) {
-            if (author.url.isEmpty()) {
-                return author.name;
-            }
-            return QString("<a href=\"%1\">%2</a>").arg(author.url, author.name);
-        };
-        QStringList authorStrs;
-        for (auto& author : m_current->authors) {
-            authorStrs.push_back(authorToStr(author));
-        }
-        text += "<br>" + tr(" by ") + authorStrs.join(", ");
-    }
-
-    if (m_current->extraDataLoaded) {
-        if (!m_current->extraData.issuesUrl.isEmpty() || !m_current->extraData.sourceUrl.isEmpty() ||
-            !m_current->extraData.wikiUrl.isEmpty()) {
-            text += "<br><br>" + tr("External links:") + "<br>";
-        }
-
-        if (!m_current->extraData.issuesUrl.isEmpty())
-            text += "- " + tr("Issues: <a href=%1>%1</a>").arg(m_current->extraData.issuesUrl) + "<br>";
-        if (!m_current->extraData.wikiUrl.isEmpty())
-            text += "- " + tr("Wiki: <a href=%1>%1</a>").arg(m_current->extraData.wikiUrl) + "<br>";
-        if (!m_current->extraData.sourceUrl.isEmpty())
-            text += "- " + tr("Source code: <a href=%1>%1</a>").arg(m_current->extraData.sourceUrl) + "<br>";
-    }
-
-    text += "<hr>";
-    const auto description = api.getModDescription(pack->addonId.toInt()).toUtf8();
-    if (!guard || !guard->isOpened || generation != guard->m_selectionGeneration || guard->m_current != pack)
-        return;
-    text += description;
-
-    m_ui->packDescription->setHtml(StringUtils::htmlListPatch(text + pack->description));
-    m_ui->packDescription->flush();
+    m_ui->packDescription->setProject(m_current, m_selected_version_index);
 }
 QString FlamePage::getSerachTerm() const
 {

@@ -49,7 +49,7 @@ class ManagedPackPage : public QWidget, public BasePage {
 
     /** Gets the necessary information about the managed pack, such as
      *  available versions*/
-    virtual void parseManagedPack() {};
+    virtual void parseManagedPack(){};
 
     /** URL of the managed pack.
      *  Not the version-specific one.
@@ -63,8 +63,8 @@ class ManagedPackPage : public QWidget, public BasePage {
      */
     virtual void suggestVersion();
 
-    virtual void update() {};
-    virtual void updateFromFile() {};
+    virtual void update(){};
+    virtual void updateFromFile(){};
 
    protected slots:
     /** Does the necessary UI changes for when something failed.
@@ -93,6 +93,10 @@ class ManagedPackPage : public QWidget, public BasePage {
     BaseInstance* m_inst;
 
     bool m_loaded = false;
+    ModPlatform::IndexedPack::Ptr m_project;
+    Task::Ptr m_projectJob;
+    void loadProjectInformation();
+    void showProjectVersions(const ModPlatform::IndexedPack& pack, int selectedVersion);
 
     void onUpdateTaskCompleted(bool did_succeed) const;
 };
@@ -116,7 +120,11 @@ class ModrinthManagedPackPage final : public ManagedPackPage {
 
    public:
     ModrinthManagedPackPage(BaseInstance* inst, InstanceWindow* instance_window, QWidget* parent = nullptr);
-    ~ModrinthManagedPackPage() override = default;
+    ~ModrinthManagedPackPage() override
+    {
+        if (m_fetch_job && m_fetch_job->isRunning())
+            m_fetch_job->abort();
+    }
 
     void parseManagedPack() override;
     QString url() const override;
@@ -140,7 +148,11 @@ class FlameManagedPackPage final : public ManagedPackPage {
 
    public:
     FlameManagedPackPage(BaseInstance* inst, InstanceWindow* instance_window, QWidget* parent = nullptr);
-    ~FlameManagedPackPage() override = default;
+    ~FlameManagedPackPage() override
+    {
+        if (m_fetch_job && m_fetch_job->isRunning())
+            m_fetch_job->abort();
+    }
 
     void parseManagedPack() override;
     QString url() const override;

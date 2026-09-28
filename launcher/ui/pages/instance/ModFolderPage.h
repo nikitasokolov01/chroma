@@ -72,6 +72,7 @@ class ModFolderPage : public ExternalResourcesPage {
     void deleteModMetadata();
     void exportModMetadata();
     void changeModVersion();
+    void showProjectDetails();
 
    protected:
     std::shared_ptr<ModFolderModel> m_model;

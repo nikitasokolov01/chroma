@@ -8,8 +8,10 @@ ecm_add_test(AccentColor_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_M
 
 ecm_add_test(WindowChrome_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME WindowChrome)
+ecm_add_test(ProjectMetadata_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ProjectMetadata)
 if(UNIX AND NOT APPLE)
-    set_tests_properties(WindowChrome PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(WindowChrome ProjectMetadata PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 # Opt-in native UI verification and screenshots; deliberately excluded from the

@@ -1,3 +1,4 @@
+#include <QPointer>
 // SPDX-License-Identifier: GPL-3.0-only
 /*
  *  Prism Launcher - Minecraft Launcher
@@ -53,6 +54,13 @@
 namespace Modrinth {
 
 ModpackListModel::ModpackListModel(ModrinthPage* parent) : QAbstractListModel(parent), m_parent(parent) {}
+
+ModpackListModel::~ModpackListModel()
+{
+    m_destroying = true;
+    if (m_jobPtr && m_jobPtr->isRunning())
+        m_jobPtr->abort();
+}
 
 auto ModpackListModel::debugName() const -> QString
 {
@@ -144,8 +152,10 @@ bool ModpackListModel::setData(const QModelIndex& index, const QVariant& value, 
 
 void ModpackListModel::performPaginatedSearch()
 {
-    if (hasActiveSearchJob())
+    if (m_destroying || hasActiveSearchJob())
         return;
+    setProperty("catalogLoading", true);
+    setProperty("catalogError", QString());
     static const ModrinthAPI api;
 
     if (m_currentSearchTerm.startsWith("#")) {
@@ -153,11 +163,17 @@ void ModpackListModel::performPaginatedSearch()
         if (!projectId.isEmpty()) {
             ResourceAPI::Callback<ModPlatform::IndexedPack::Ptr> callbacks;
 
-            callbacks.on_fail = [this](QString reason, int) { searchRequestFailed(reason); };
-            callbacks.on_succeed = [this](auto& pack) { searchRequestForOneSucceeded(pack); };
-            callbacks.on_abort = [this] {
-                qCritical() << "Search task aborted by an unknown reason!";
-                searchRequestFailed("Aborted");
+            callbacks.on_fail = [guard = QPointer<ModpackListModel>(this)](QString reason, int) {
+                if (guard && !guard->m_destroying)
+                    guard->searchRequestFailed(reason);
+            };
+            callbacks.on_succeed = [guard = QPointer<ModpackListModel>(this)](auto& pack) {
+                if (guard && !guard->m_destroying)
+                    guard->searchRequestForOneSucceeded(pack);
+            };
+            callbacks.on_abort = [guard = QPointer<ModpackListModel>(this)] {
+                if (guard && !guard->m_destroying)
+                    guard->searchRequestFailed(QString());
             };
             auto project = std::make_shared<ModPlatform::IndexedPack>();
             project->addonId = projectId;
@@ -173,11 +189,17 @@ void ModpackListModel::performPaginatedSearch()
 
     ResourceAPI::Callback<QList<ModPlatform::IndexedPack::Ptr>> callbacks{};
 
-    callbacks.on_succeed = [this](auto& doc) { searchRequestFinished(doc); };
-    callbacks.on_fail = [this](QString reason, int) { searchRequestFailed(reason); };
-    callbacks.on_abort = [this] {
-        qCritical() << "Search task aborted by an unknown reason!";
-        searchRequestFailed("Aborted");
+    callbacks.on_succeed = [guard = QPointer<ModpackListModel>(this)](auto& doc) {
+        if (guard && !guard->m_destroying)
+            guard->searchRequestFinished(doc);
+    };
+    callbacks.on_fail = [guard = QPointer<ModpackListModel>(this)](QString reason, int) {
+        if (guard && !guard->m_destroying)
+            guard->searchRequestFailed(reason);
+    };
+    callbacks.on_abort = [guard = QPointer<ModpackListModel>(this)] {
+        if (guard && !guard->m_destroying)
+            guard->searchRequestFailed(QString());
     };
 
     auto netJob = api.searchProjects({ ModPlatform::ResourceType::Modpack, m_nextSearchOffset, m_currentSearchTerm, sort, m_filter->loaders,
@@ -191,8 +213,8 @@ void ModpackListModel::performPaginatedSearch()
 void ModpackListModel::refresh()
 {
     if (hasActiveSearchJob()) {
-        m_jobPtr->abort();
         m_searchState = ResetRequested;
+        m_jobPtr->abort();
         return;
     }
 
@@ -232,7 +254,8 @@ void ModpackListModel::searchWithTerm(const QString& term,
 
     auto sort_str = sortFromIndex(sort);
 
-    if (m_currentSearchTerm == term && m_currentSearchTerm.isNull() == term.isNull() && m_currentSort == sort_str && !filterChanged) {
+    if (m_currentSearchTerm == term && m_currentSearchTerm.isNull() == term.isNull() && m_currentSort == sort_str && !filterChanged &&
+        property("catalogError").toString().isEmpty()) {
         return;
     }
 
@@ -302,6 +325,8 @@ void ModpackListModel::logoFailed(QString logo)
 
 void ModpackListModel::searchRequestFinished(QList<ModPlatform::IndexedPack::Ptr>& newList)
 {
+    setProperty("catalogLoading", false);
+    setProperty("catalogError", QString());
     m_jobPtr.reset();
 
     if (newList.size() < m_modpacks_per_page) {
@@ -322,27 +347,20 @@ void ModpackListModel::searchRequestFinished(QList<ModPlatform::IndexedPack::Ptr
 
 void ModpackListModel::searchRequestForOneSucceeded(ModPlatform::IndexedPack::Ptr pack)
 {
+    m_searchState = Finished;
+    setProperty("catalogLoading", false);
+    setProperty("catalogError", QString());
     m_jobPtr.reset();
 
-    beginInsertRows(QModelIndex(), m_modpacks.size(), m_modpacks.size() + 1);
+    beginInsertRows(QModelIndex(), m_modpacks.size(), m_modpacks.size());
     m_modpacks.append(pack);
     endInsertRows();
 }
 
-void ModpackListModel::searchRequestFailed(QString)
+void ModpackListModel::searchRequestFailed(QString reason)
 {
-    auto failed_action = dynamic_cast<NetJob*>(m_jobPtr.get())->getFailedActions().at(0);
-    if (failed_action->replyStatusCode() == -1) {
-        // Network error
-        QMessageBox::critical(nullptr, tr("Error"), tr("A network error occurred. Could not load modpacks."));
-    } else if (failed_action->replyStatusCode() == 409) {
-        // 409 Gone, notify user to update
-        QMessageBox::critical(nullptr, tr("Error"),
-                              //: %1 refers to the launcher itself
-                              QString("%1 %2")
-                                  .arg(m_parent->displayName())
-                                  .arg(tr("API version too old!\nPlease update %1!").arg(BuildConfig.LAUNCHER_DISPLAYNAME)));
-    }
+    setProperty("catalogLoading", false);
+    setProperty("catalogError", reason.isEmpty() ? QString() : tr("Could not load this catalog. Check your connection and search again."));
     m_jobPtr.reset();
 
     if (m_searchState == ResetRequested) {
@@ -351,6 +369,7 @@ void ModpackListModel::searchRequestFailed(QString)
         endResetModel();
 
         m_nextSearchOffset = 0;
+        m_searchState = None;
         performPaginatedSearch();
     } else {
         m_searchState = Finished;

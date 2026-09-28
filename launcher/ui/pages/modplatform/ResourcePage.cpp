@@ -83,7 +83,13 @@ ResourcePage::ResourcePage(ResourceDownloadDialog* parent, BaseInstance& base_in
     m_ui->packView->installEventFilter(this);
     m_ui->packView->viewport()->installEventFilter(this);
 
-    connect(m_ui->packDescription, &QTextBrowser::anchorClicked, this, &ResourcePage::openUrl);
+    m_ui->packDescription->setOpenExternalLinks(false);
+    m_ui->packDescription->setOpenLinks(false);
+    connect(m_ui->packDescription, &ProjectDescriptionPage::projectVersionSelected, this, [this](int index) {
+        const auto comboIndex = m_ui->versionSelectionBox->findData(index);
+        if (comboIndex >= 0)
+            m_ui->versionSelectionBox->setCurrentIndex(comboIndex);
+    });
 
     connect(m_ui->packView, &QAbstractItemView::doubleClicked, this, &ResourcePage::onResourceToggle);
     connect(delegate, &ProjectItemDelegate::checkboxClicked, this, &ResourcePage::onResourceToggle);
@@ -189,73 +195,7 @@ void ResourcePage::updateUi(const QModelIndex& index)
 {
     if (index != m_ui->packView->currentIndex())
         return;
-
-    auto current_pack = getCurrentPack();
-    if (!current_pack) {
-        m_ui->packDescription->setHtml({});
-        m_ui->packDescription->flush();
-        return;
-    }
-    QString text = "";
-    QString name = current_pack->name;
-
-    if (current_pack->websiteUrl.isEmpty())
-        text = name;
-    else
-        text = "<a href=\"" + current_pack->websiteUrl + "\">" + name + "</a>";
-
-    if (!current_pack->authors.empty()) {
-        auto authorToStr = [](ModPlatform::ModpackAuthor& author) -> QString {
-            if (author.url.isEmpty()) {
-                return author.name;
-            }
-            return QString("<a href=\"%1\">%2</a>").arg(author.url, author.name);
-        };
-        QStringList authorStrs;
-        for (auto& author : current_pack->authors) {
-            authorStrs.push_back(authorToStr(author));
-        }
-        text += "<br>" + tr(" by ") + authorStrs.join(", ");
-    }
-
-    if (current_pack->extraDataLoaded) {
-        if (current_pack->extraData.status == "archived") {
-            text += "<br><br>" + tr("<b>This project has been archived. It will not receive any further updates unless the author decides "
-                                    "to unarchive the project.</b>");
-        }
-
-        if (!current_pack->extraData.donate.isEmpty()) {
-            text += "<br><br>" + tr("Donate information: ");
-            auto donateToStr = [](ModPlatform::DonationData& donate) -> QString {
-                return QString("<a href=\"%1\">%2</a>").arg(donate.url, donate.platform);
-            };
-            QStringList donates;
-            for (auto& donate : current_pack->extraData.donate) {
-                donates.append(donateToStr(donate));
-            }
-            text += donates.join(", ");
-        }
-
-        if (!current_pack->extraData.issuesUrl.isEmpty() || !current_pack->extraData.sourceUrl.isEmpty() ||
-            !current_pack->extraData.wikiUrl.isEmpty() || !current_pack->extraData.discordUrl.isEmpty()) {
-            text += "<br><br>" + tr("External links:") + "<br>";
-        }
-
-        if (!current_pack->extraData.issuesUrl.isEmpty())
-            text += "- " + tr("Issues: <a href=%1>%1</a>").arg(current_pack->extraData.issuesUrl) + "<br>";
-        if (!current_pack->extraData.wikiUrl.isEmpty())
-            text += "- " + tr("Wiki: <a href=%1>%1</a>").arg(current_pack->extraData.wikiUrl) + "<br>";
-        if (!current_pack->extraData.sourceUrl.isEmpty())
-            text += "- " + tr("Source code: <a href=%1>%1</a>").arg(current_pack->extraData.sourceUrl) + "<br>";
-        if (!current_pack->extraData.discordUrl.isEmpty())
-            text += "- " + tr("Discord: <a href=%1>%1</a>").arg(current_pack->extraData.discordUrl) + "<br>";
-    }
-
-    text += "<hr>";
-
-    m_ui->packDescription->setHtml(StringUtils::htmlListPatch(
-        text + (current_pack->extraData.body.isEmpty() ? current_pack->description : markdownToHTML(current_pack->extraData.body))));
-    m_ui->packDescription->flush();
+    m_ui->packDescription->setProject(getCurrentPack(), m_selectedVersionIndex);
 }
 
 void ResourcePage::updateSelectionButton()
@@ -317,6 +257,7 @@ void ResourcePage::versionListUpdated(const QModelIndex& index)
             onResourceToggle(index);
         } else
             updateSelectionButton();
+        updateUi(index);
     } else if (m_enableQueue.contains(index.row())) {
         m_enableQueue.remove(index.row());
         onResourceToggle(index);
@@ -356,7 +297,8 @@ void ResourcePage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelI
 
 void ResourcePage::onVersionSelectionChanged(int index)
 {
-    m_selectedVersionIndex = m_ui->versionSelectionBox->itemData(index).toInt();
+    m_selectedVersionIndex = index < 0 ? -1 : m_ui->versionSelectionBox->itemData(index).toInt();
+    m_ui->packDescription->setSelectedVersion(m_selectedVersionIndex);
     updateSelectionButton();
 }
 

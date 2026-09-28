@@ -35,6 +35,11 @@ Task::Ptr FlameAPI::matchFingerprints(const QList<uint>& fingerprints, std::shar
     return netJob;
 }
 
+Task::Ptr FlameAPI::getModFileChangelog(int modId, int fileId, std::shared_ptr<QByteArray> response) const
+{
+    return cachedRequest(QUrl(QString(BuildConfig.FLAME_BASE_URL + "/mods/%1/files/%2/changelog").arg(modId).arg(fileId)), response);
+}
+
 QString FlameAPI::getModFileChangelog(int modId, int fileId)
 {
     QEventLoop lock;

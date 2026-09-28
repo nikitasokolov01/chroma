@@ -56,7 +56,7 @@ class ModpackListModel : public QAbstractListModel {
 
    public:
     ModpackListModel(ModrinthPage* parent);
-    ~ModpackListModel() override = default;
+    ~ModpackListModel() override;
 
     inline auto rowCount(const QModelIndex& parent) const -> int override { return parent.isValid() ? 0 : m_modpacks.size(); };
     inline auto columnCount(const QModelIndex& parent) const -> int override { return parent.isValid() ? 0 : 1; };
@@ -119,6 +119,7 @@ class ModpackListModel : public QAbstractListModel {
     enum SearchState { None, CanPossiblyFetchMore, ResetRequested, Finished } m_searchState = None;
 
     Task::Ptr m_jobPtr;
+    bool m_destroying = false;
 
     std::shared_ptr<QByteArray> m_allResponse = std::make_shared<QByteArray>();
     QByteArray m_specific_response;

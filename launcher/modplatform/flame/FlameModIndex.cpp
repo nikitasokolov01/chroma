@@ -38,6 +38,53 @@ void FlameMod::loadIndexedPack(ModPlatform::IndexedPack& pack, QJsonObject& obj)
     }
 
     pack.extraDataLoaded = false;
+    auto& data = pack.extraData;
+    data.bodyIsHtml = true;
+    if (obj.contains("downloadCount"))
+        data.downloads = static_cast<qint64>(obj["downloadCount"].toDouble());
+    data.published = obj["dateCreated"].toString();
+    data.updated = obj["dateModified"].toString();
+    data.categories.clear();
+    for (const auto& value : obj["categories"].toArray()) {
+        const auto name = value.toObject()["name"].toString();
+        if (!name.isEmpty())
+            data.categories.append(name);
+    }
+    data.gallery.clear();
+    for (const auto& value : obj["screenshots"].toArray()) {
+        const auto image = value.toObject();
+        if (!image["url"].toString().isEmpty())
+            data.gallery.append({ image["url"].toString(), image["title"].toString(), image["description"].toString(), false });
+    }
+    data.gameVersions.clear();
+    data.loaders.clear();
+    for (const auto& value : obj["latestFiles"].toArray()) {
+        for (const auto& raw : value.toObject()["gameVersions"].toArray()) {
+            const auto version = raw.toString();
+            const auto loader = version.toLower();
+            if (loader == "forge" || loader == "fabric" || loader == "quilt" || loader == "neoforge")
+                data.loaders.append(loader);
+            else if (version.contains('.'))
+                data.gameVersions.append(version);
+        }
+    }
+    for (const auto& value : obj["latestFilesIndexes"].toArray()) {
+        const auto file = value.toObject();
+        if (!file["gameVersion"].toString().isEmpty())
+            data.gameVersions.append(file["gameVersion"].toString());
+        const QStringList loaders = { "", "forge", "cauldron", "liteloader", "fabric", "quilt", "neoforge" };
+        const auto index = file["modLoader"].toInt();
+        if (index > 0 && index < loaders.size())
+            data.loaders.append(loaders[index]);
+    }
+    data.gameVersions.removeDuplicates();
+    data.loaders.removeDuplicates();
+    if (obj["status"].toInt() == 8)
+        data.status = "abandoned";
+    else if (obj["status"].toInt() == 4)
+        data.status = "approved";
+    else
+        data.status.clear();
     loadURLs(pack, obj);
 }
 
@@ -65,8 +112,8 @@ void FlameMod::loadBody(ModPlatform::IndexedPack& pack)
 {
     pack.extraData.body = api.getModDescription(pack.addonId.toInt());
 
-    if (!pack.extraData.issuesUrl.isEmpty() || !pack.extraData.sourceUrl.isEmpty() || !pack.extraData.wikiUrl.isEmpty())
-        pack.extraDataLoaded = true;
+    pack.extraData.bodyIsHtml = true;
+    pack.extraDataLoaded = true;
 }
 
 static QString enumToString(int hash_algorithm)
@@ -108,13 +155,13 @@ auto FlameMod::loadIndexedPackVersion(QJsonObject& obj, bool load_changelog) -> 
     auto versionArray = Json::requireArray(obj, "gameVersions");
 
     ModPlatform::IndexedVersion file;
+    file.side = ModPlatform::Side::NoSide;
     for (auto mcVer : versionArray) {
         auto str = mcVer.toString();
 
         if (str.contains('.'))
             file.mcVersion.append(str);
 
-        file.side = ModPlatform::Side::NoSide;
         if (auto loader = str.toLower(); loader == "neoforge")
             file.loaders |= ModPlatform::NeoForge;
         else if (loader == "forge")

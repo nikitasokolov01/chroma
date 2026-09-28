@@ -39,6 +39,10 @@ ResourceModel::ResourceModel(ResourceAPI* api) : QAbstractListModel(), m_api(api
 ResourceModel::~ResourceModel()
 {
     s_running_models.find(this).value() = false;
+    if (m_current_info_job.isRunning())
+        m_current_info_job.abort();
+    if (m_current_search_job && m_current_search_job->isRunning())
+        m_current_search_job->abort();
 }
 
 auto ResourceModel::data(const QModelIndex& index, int role) const -> QVariant
@@ -210,9 +214,10 @@ void ResourceModel::loadEntry(const QModelIndex& entry)
                 versionRequestSucceeded(doc, addonId, entry);
             };
         if (!callbacks.on_fail)
-            callbacks.on_fail = [](QString reason, int) {
-                QMessageBox::critical(nullptr, tr("Error"),
-                                      tr("A network error occurred. Could not load project versions: %1").arg(reason));
+            callbacks.on_fail = [this, entry](QString, int) {
+                if (!s_running_models.constFind(this).value())
+                    return;
+                emit projectInfoUpdated(entry);
             };
 
         if (auto job = m_api->getProjectVersions(std::move(args), std::move(callbacks)); job)
@@ -228,15 +233,16 @@ void ResourceModel::loadEntry(const QModelIndex& entry)
                 return;
             infoRequestSucceeded(newpack, entry);
         };
-        callbacks.on_fail = [this](QString reason, int) {
+        callbacks.on_fail = [this, entry, pack](QString, int) {
             if (!s_running_models.constFind(this).value())
                 return;
-            QMessageBox::critical(nullptr, tr("Error"), tr("A network error occurred. Could not load project info: %1").arg(reason));
+            pack->extraData.notice = tr("Additional project information is unavailable. Available releases can still be installed.");
+            emit projectInfoUpdated(entry);
         };
         callbacks.on_abort = [this] {
             if (!s_running_models.constFind(this).value())
                 return;
-            qCritical() << tr("The request was aborted for an unknown reason");
+            // Navigation and search resets intentionally cancel metadata requests.
         };
 
         if (auto job = m_api->getProjectInfo(std::move(args), std::move(callbacks)); job)
@@ -246,26 +252,14 @@ void ResourceModel::loadEntry(const QModelIndex& entry)
 
 void ResourceModel::refresh()
 {
-    bool reset_requested = false;
-
-    if (hasActiveInfoJob()) {
+    // Mark the reset before aborting: cached tasks can finish cancellation synchronously.
+    m_search_state = SearchState::ResetRequested;
+    if (hasActiveInfoJob())
         m_current_info_job.abort();
-        reset_requested = true;
-    }
-
-    if (hasActiveSearchJob()) {
+    if (hasActiveSearchJob())
         m_current_search_job->abort();
-        reset_requested = true;
-    }
-
-    if (reset_requested) {
-        m_search_state = SearchState::ResetRequested;
-        return;
-    }
-
     clearData();
     m_search_state = SearchState::None;
-
     m_next_search_offset = 0;
     search();
 }
@@ -394,7 +388,7 @@ void ResourceModel::searchRequestForOneSucceeded(ModPlatform::IndexedPack::Ptr p
 {
     m_search_state = SearchState::Finished;
 
-    beginInsertRows(QModelIndex(), m_packs.size(), m_packs.size() + 1);
+    beginInsertRows(QModelIndex(), m_packs.size(), m_packs.size());
     m_packs.append(pack);
     endInsertRows();
 }
@@ -418,14 +412,9 @@ void ResourceModel::searchRequestFailed([[maybe_unused]] QString reason, int net
 
 void ResourceModel::searchRequestAborted()
 {
-    if (m_search_state != SearchState::ResetRequested)
-        qCritical() << "Search task in" << debugName() << "aborted by an unknown reason!";
-
-    // Retry fetching
-    clearData();
-
-    m_next_search_offset = 0;
-    search();
+    if (m_search_state == SearchState::ResetRequested)
+        return;
+    m_search_state = SearchState::Finished;
 }
 
 void ResourceModel::versionRequestSucceeded(QVector<ModPlatform::IndexedVersion>& doc, QVariant pack, const QModelIndex& index)
@@ -433,7 +422,7 @@ void ResourceModel::versionRequestSucceeded(QVector<ModPlatform::IndexedVersion>
     auto current_pack = data(index, Qt::UserRole).value<ModPlatform::IndexedPack::Ptr>();
 
     // Check if the index is still valid for this resource or not
-    if (pack != current_pack->addonId)
+    if (!current_pack || pack != current_pack->addonId)
         return;
 
     current_pack->versions = doc;
@@ -455,7 +444,7 @@ void ResourceModel::infoRequestSucceeded(ModPlatform::IndexedPack::Ptr pack, con
     auto current_pack = data(index, Qt::UserRole).value<ModPlatform::IndexedPack::Ptr>();
 
     // Check if the index is still valid for this resource or not
-    if (pack->addonId != current_pack->addonId)
+    if (!current_pack || pack->addonId != current_pack->addonId)
         return;
 
     // Cache info :^)

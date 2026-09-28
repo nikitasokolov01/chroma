@@ -106,4 +106,5 @@ class FlamePage : public QWidget, public ModpackProviderBasePage {
     ModpackBrowser* m_browser = nullptr;
     quint64 m_selectionGeneration = 0;
     Task::Ptr m_job;
+    Task::Ptr m_infoJob;
 };

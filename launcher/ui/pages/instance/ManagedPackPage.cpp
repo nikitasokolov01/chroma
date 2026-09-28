@@ -4,6 +4,7 @@
 
 #include "ManagedPackPage.h"
 #include <QDesktopServices>
+#include <QPointer>
 #include <QUrl>
 #include <QUrlQuery>
 #include "modplatform/ModIndex.h"
@@ -111,22 +112,15 @@ ManagedPackPage::ManagedPackPage(BaseInstance* inst, InstanceWindow* instance_wi
         openedImpl();
     });
 
-    connect(ui->changelogTextBrowser, &QTextBrowser::anchorClicked, this, [](const QUrl url) {
-        if (url.scheme().isEmpty()) {
-            auto querry =
-                QUrlQuery(url.query()).queryItemValue("remoteUrl", QUrl::FullyDecoded);  // curseforge workaround for linkout?remoteUrl=
-            auto decoded = QUrl::fromPercentEncoding(querry.toUtf8());
-            auto newUrl = QUrl(decoded);
-            if (newUrl.isValid() && (newUrl.scheme() == "http" || newUrl.scheme() == "https"))
-                QDesktopServices ::openUrl(newUrl);
-            return;
-        }
-        QDesktopServices::openUrl(url);
-    });
+    ui->changelogTextBrowser->setOpenExternalLinks(false);
+    ui->changelogTextBrowser->setOpenLinks(false);
+    connect(ui->changelogTextBrowser, &ProjectDescriptionPage::projectVersionSelected, ui->versionsComboBox, &QComboBox::setCurrentIndex);
 }
 
 ManagedPackPage::~ManagedPackPage()
 {
+    if (m_projectJob && m_projectJob->isRunning())
+        m_projectJob->abort();
     delete ui;
 }
 
@@ -153,7 +147,64 @@ void ManagedPackPage::openedImpl()
     ui->packOrigin->setText(tr("Website: <a href=%1>%2</a>    |    Pack ID: %3    |    Version ID: %4")
                                 .arg(url(), displayName(), m_inst->getManagedPackID(), m_inst->getManagedPackVersionID()));
 
+    loadProjectInformation();
     parseManagedPack();
+}
+
+void ManagedPackPage::loadProjectInformation()
+{
+    const auto providerType = m_inst->getManagedPackType();
+    if (providerType != "modrinth" && providerType != "flame") {
+        auto local = std::make_shared<ModPlatform::IndexedPack>();
+        local->name = m_inst->getManagedPackName().isEmpty() ? m_inst->name() : m_inst->getManagedPackName();
+        local->description = tr("Installed version: %1").arg(m_inst->getManagedPackVersionName());
+        local->extraData.notice = tr("No supported provider project is recorded. Local management remains available.");
+        local->versionsLoaded = true;
+        ui->changelogTextBrowser->setProject(local);
+        return;
+    }
+    if (m_project && m_project->extraDataLoaded)
+        return;
+    if (m_projectJob && m_projectJob->isRunning())
+        return;
+    static const ModrinthAPI modrinth;
+    static const FlameAPI flame;
+    const bool isFlame = m_inst->getManagedPackType() == "flame";
+    const ResourceAPI* api = isFlame ? static_cast<const ResourceAPI*>(&flame) : static_cast<const ResourceAPI*>(&modrinth);
+    if (!m_project) {
+        m_project = std::make_shared<ModPlatform::IndexedPack>();
+        m_project->addonId = m_inst->getManagedPackID();
+        m_project->provider = isFlame ? ModPlatform::ResourceProvider::FLAME : ModPlatform::ResourceProvider::MODRINTH;
+        m_project->name = m_inst->getManagedPackName();
+        m_project->description = tr("Installed version: %1").arg(m_inst->getManagedPackVersionName());
+        m_project->websiteUrl = url();
+        m_project->extraDataLoaded = false;
+    }
+    ui->changelogTextBrowser->setProject(m_project, ui->versionsComboBox->currentIndex());
+    ResourceAPI::Callback<ModPlatform::IndexedPack::Ptr> callbacks;
+    QPointer<ManagedPackPage> guard(this);
+    callbacks.on_succeed = [guard](auto&) {
+        if (guard)
+            guard->ui->changelogTextBrowser->setProject(guard->m_project, guard->ui->versionsComboBox->currentIndex());
+    };
+    callbacks.on_fail = [guard](const QString&, int) {
+        if (guard)
+            guard->ui->changelogTextBrowser->setProjectNotice(
+                tr("Online project information is unavailable. Your installed content remains available."));
+    };
+    m_projectJob = api->getProjectInfo({ m_project }, std::move(callbacks));
+    if (m_projectJob)
+        m_projectJob->start();
+}
+
+void ManagedPackPage::showProjectVersions(const ModPlatform::IndexedPack& pack, int selectedVersion)
+{
+    if (!m_project)
+        return;
+    m_project->versions = pack.versions;
+    m_project->versionsLoaded = pack.versionsLoaded;
+    m_project->versionsError = pack.versionsError;
+    ui->changelogTextBrowser->setProject(m_project, selectedVersion);
 }
 
 QString ManagedPackPage::displayName() const
@@ -227,7 +278,9 @@ void ManagedPackPage::setFailState()
     ui->versionsComboBox->addItem(tr("Failed to search for available versions."), {});
     ui->versionsComboBox->blockSignals(false);
 
-    ui->changelogTextBrowser->setText(tr("Failed to request changelog data for this modpack."));
+    if (m_project)
+        m_project->versionsError = tr("Available versions could not be loaded. Use Reload to try again.");
+    ui->changelogTextBrowser->setProjectNotice(tr("Available versions could not be loaded. Your installed pack is unchanged."));
 
     ui->updateButton->setText(tr("Cannot update!"));
     ui->updateButton->setDisabled(true);
@@ -289,26 +342,24 @@ void ModrinthManagedPackPage::parseManagedPack()
     m_fetch_job = m_api.getProjectVersions(
         { std::make_shared<ModPlatform::IndexedPack>(m_pack), {}, {}, ModPlatform::ResourceType::Modpack }, std::move(callbacks));
 
-    ui->changelogTextBrowser->setText(tr("Fetching changelogs..."));
-
     m_fetch_job->start();
 }
 
 QString ModrinthManagedPackPage::url() const
 {
-    return "https://modrinth.com/mod/" + m_inst->getManagedPackID();
+    return "https://modrinth.com/modpack/" + m_inst->getManagedPackID();
 }
 
 void ModrinthManagedPackPage::suggestVersion()
 {
     auto index = ui->versionsComboBox->currentIndex();
-    if (m_pack.versions.length() == 0) {
+    if (index < 0 || index >= m_pack.versions.size()) {
         setFailState();
         return;
     }
     auto version = m_pack.versions.at(index);
 
-    ui->changelogTextBrowser->setHtml(StringUtils::htmlListPatch(markdownToHTML(version.changelog.toUtf8())));
+    showProjectVersions(m_pack, index);
 
     ManagedPackPage::suggestVersion();
 }
@@ -340,7 +391,7 @@ void ManagedPackPage::onUpdateTaskCompleted(bool did_succeed) const
 void ModrinthManagedPackPage::update()
 {
     auto index = ui->versionsComboBox->currentIndex();
-    if (m_pack.versions.length() == 0) {
+    if (index < 0 || index >= m_pack.versions.size()) {
         setFailState();
         return;
     }
@@ -473,14 +524,13 @@ QString FlameManagedPackPage::url() const
 void FlameManagedPackPage::suggestVersion()
 {
     auto index = ui->versionsComboBox->currentIndex();
-    if (m_pack.versions.length() == 0) {
+    if (index < 0 || index >= m_pack.versions.size()) {
         setFailState();
         return;
     }
     auto version = m_pack.versions.at(index);
 
-    ui->changelogTextBrowser->setHtml(
-        StringUtils::htmlListPatch(m_api.getModFileChangelog(m_inst->getManagedPackID().toInt(), version.fileId.toInt())));
+    showProjectVersions(m_pack, index);
 
     ManagedPackPage::suggestVersion();
 }
@@ -488,7 +538,7 @@ void FlameManagedPackPage::suggestVersion()
 void FlameManagedPackPage::update()
 {
     auto index = ui->versionsComboBox->currentIndex();
-    if (m_pack.versions.length() == 0) {
+    if (index < 0 || index >= m_pack.versions.size()) {
         setFailState();
         return;
     }

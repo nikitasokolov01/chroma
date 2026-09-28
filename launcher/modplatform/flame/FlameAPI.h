@@ -17,6 +17,11 @@ class FlameAPI : public ResourceAPI {
    public:
     QString getModFileChangelog(int modId, int fileId);
     QString getModDescription(int modId);
+    Task::Ptr getModFileChangelog(int modId, int fileId, std::shared_ptr<QByteArray> response) const;
+    std::optional<QString> getDescriptionURL(const QString& id) const override
+    {
+        return QString(BuildConfig.FLAME_BASE_URL + "/mods/%1/description").arg(id);
+    }
 
     std::optional<ModPlatform::IndexedVersion> getLatestVersion(QList<ModPlatform::IndexedVersion> versions,
                                                                 QList<ModPlatform::ModLoaderType> instanceLoaders,
@@ -157,7 +162,7 @@ class FlameAPI : public ResourceAPI {
         }
         return {};
     };
-    void loadExtraPackInfo(ModPlatform::IndexedPack& m, [[maybe_unused]] QJsonObject&) const override { FlameMod::loadBody(m); }
+    void loadExtraPackInfo(ModPlatform::IndexedPack& m, QJsonObject& obj) const override { FlameMod::loadURLs(m, obj); }
 
    private:
     std::optional<QString> getInfoURL(QString const& id) const override { return QString(BuildConfig.FLAME_BASE_URL + "/mods/%1").arg(id); }

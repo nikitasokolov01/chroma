@@ -68,6 +68,7 @@ class ListModel : public QAbstractListModel {
     int m_nextSearchOffset = 0;
     enum SearchState { None, CanPossiblyFetchMore, ResetRequested, Finished } m_searchState = None;
     Task::Ptr m_jobPtr;
+    bool m_destroying = false;
 };
 
 }  // namespace Flame

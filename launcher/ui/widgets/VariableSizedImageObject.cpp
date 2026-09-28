@@ -37,8 +37,11 @@ QSizeF VariableSizedImageObject::intrinsicSize(QTextDocument* doc, int posInDocu
 
     auto image = qvariant_cast<QImage>(format.property(ImageData));
     auto size = image.size();
-    if (size.isEmpty())  // can't resize an empty image
-        return { size };
+    if (size.isEmpty()) {
+        // Keep a visible loading/error placeholder; offscreen galleries then load on demand.
+        const auto width = qMax(80.0, qMin(640.0, doc->textWidth() - 2 * doc->documentMargin()));
+        return { width, width * 9.0 / 16.0 };
+    }
 
     // calculate the new image size based on the properties
     int width = 0;
@@ -80,12 +83,13 @@ void VariableSizedImageObject::drawObject(QPainter* painter,
 {
     if (!format.hasProperty(ImageData)) {
         QUrl image_url{ qvariant_cast<QString>(format.property(QTextFormat::ImageName)) };
-        if (m_fetching_images.contains(image_url) || image_url.isEmpty())
+        if (m_fetching_images.contains(image_url) || (image_url.scheme() != "https" && image_url.scheme() != "http"))
             return;
 
         auto meta = std::make_shared<ImageMetadata>();
         meta->posInDocument = posInDocument;
         meta->url = image_url;
+        meta->generation = m_generation;
 
         auto widthVar = format.property(QTextFormat::ImageWidth);
         if (widthVar.isValid()) {
@@ -102,12 +106,20 @@ void VariableSizedImageObject::drawObject(QPainter* painter,
 
     auto image = qvariant_cast<QImage>(format.property(ImageData));
 
-    painter->setRenderHint(QPainter::RenderHint::SmoothPixmapTransform);
-    painter->drawImage(rect, image);
+    if (image.isNull()) {
+        painter->save();
+        painter->setPen(Qt::gray);
+        painter->drawText(rect, Qt::AlignCenter, tr("Image unavailable"));
+        painter->restore();
+    } else {
+        painter->setRenderHint(QPainter::RenderHint::SmoothPixmapTransform);
+        painter->drawImage(rect, image);
+    }
 }
 
 void VariableSizedImageObject::flush()
 {
+    ++m_generation;
     m_fetching_images.clear();
 }
 
@@ -159,19 +171,19 @@ void VariableSizedImageObject::loadImage(QTextDocument* doc, std::shared_ptr<Ima
 
         m_fetching_images.remove(source_url);
     };
-    connect(job, &NetJob::succeeded, this, [this, full_entry_path, source_url, loadImage] {
+    connect(job, &NetJob::succeeded, this, [this, full_entry_path, source_url, loadImage, meta] {
         qDebug() << "Loaded resource at:" << full_entry_path;
         // If we flushed, don't proceed.
-        if (!m_fetching_images.contains(source_url))
+        if (meta->generation != m_generation || !m_fetching_images.contains(source_url))
             return;
 
         QImage image(full_entry_path);
         loadImage(image);
     });
-    connect(job, &NetJob::failed, this, [this, full_entry_path, source_url, loadImage](QString reason) {
+    connect(job, &NetJob::failed, this, [this, full_entry_path, source_url, loadImage, meta](QString reason) {
         qWarning() << "Failed resource at:" << full_entry_path << "because:" << reason;
         // If we flushed, don't proceed.
-        if (!m_fetching_images.contains(source_url))
+        if (meta->generation != m_generation || !m_fetching_images.contains(source_url))
             return;
 
         loadImage(QImage());

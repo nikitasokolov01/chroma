@@ -28,6 +28,57 @@
 
 static ModrinthAPI api;
 
+static QStringList strings(const QJsonValue& value)
+{
+    QStringList result;
+    for (const auto& item : value.toArray())
+        if (!item.toString().isEmpty())
+            result.append(item.toString());
+    result.removeDuplicates();
+    return result;
+}
+
+static void loadMetadata(ModPlatform::IndexedPack& pack, const QJsonObject& obj)
+{
+    auto& data = pack.extraData;
+    if (obj.contains("downloads"))
+        data.downloads = static_cast<qint64>(obj["downloads"].toDouble());
+    if (obj.contains("followers"))
+        data.followers = static_cast<qint64>(obj["followers"].toDouble());
+    else if (obj.contains("follows"))
+        data.followers = static_cast<qint64>(obj["follows"].toDouble());
+    data.categories = strings(obj["categories"]);
+    data.categories.append(strings(obj["additional_categories"]));
+    data.categories.removeDuplicates();
+    if (obj.contains("loaders"))
+        data.loaders = strings(obj["loaders"]);
+    if (obj.contains("game_versions"))
+        data.gameVersions = strings(obj["game_versions"]);
+    data.environments = strings(obj["environment"]);
+    data.clientSide = obj["client_side"].toString();
+    data.serverSide = obj["server_side"].toString();
+    data.published = obj["published"].toString(obj["date_created"].toString());
+    data.updated = obj["updated"].toString(obj["date_modified"].toString());
+    if (obj["license"].isObject()) {
+        const auto license = obj["license"].toObject();
+        data.license = license["id"].toString(license["name"].toString());
+        data.licenseUrl = license["url"].toString();
+    } else if (obj["license"].isString()) {
+        data.license = obj["license"].toString();
+    }
+    data.team = obj["team"].toString();
+    if (obj.contains("gallery")) {
+        data.gallery.clear();
+        for (const auto& item : obj["gallery"].toArray()) {
+            const auto image = item.toObject();
+            const auto url = item.isString() ? item.toString() : image["url"].toString();
+            if (!url.isEmpty())
+                data.gallery.append({ url, image["title"].toString(), image["description"].toString(), image["featured"].toBool() });
+        }
+        std::stable_sort(data.gallery.begin(), data.gallery.end(), [](const auto& a, const auto& b) { return a.featured && !b.featured; });
+    }
+}
+
 bool shouldDownloadOnSide(QString side)
 {
     return side == "required" || side == "optional";
@@ -45,7 +96,7 @@ void Modrinth::loadIndexedPack(ModPlatform::IndexedPack& pack, QJsonObject& obj)
 
     pack.slug = obj["slug"].toString("");
     if (!pack.slug.isEmpty())
-        pack.websiteUrl = "https://modrinth.com/mod/" + pack.slug;
+        pack.websiteUrl = "https://modrinth.com/" + obj["project_type"].toString("mod") + "/" + pack.slug;
     else
         pack.websiteUrl = "";
 
@@ -61,6 +112,8 @@ void Modrinth::loadIndexedPack(ModPlatform::IndexedPack& pack, QJsonObject& obj)
         pack.authors = { modAuthor };
     }
 
+    loadMetadata(pack, obj);
+    pack.side = ModPlatform::Side::NoSide;
     auto client = shouldDownloadOnSide(obj["client_side"].toString());
     auto server = shouldDownloadOnSide(obj["server_side"].toString());
 
@@ -78,6 +131,8 @@ void Modrinth::loadIndexedPack(ModPlatform::IndexedPack& pack, QJsonObject& obj)
 
 void Modrinth::loadExtraPackData(ModPlatform::IndexedPack& pack, QJsonObject& obj)
 {
+    loadMetadata(pack, obj);
+    pack.extraData.donate.clear();
     pack.extraData.issuesUrl = obj["issues_url"].toString();
     if (pack.extraData.issuesUrl.endsWith('/'))
         pack.extraData.issuesUrl.chop(1);
@@ -110,6 +165,8 @@ void Modrinth::loadExtraPackData(ModPlatform::IndexedPack& pack, QJsonObject& ob
     pack.extraData.status = obj["status"].toString();
 
     pack.extraData.body = obj["body"].toString().remove("<br>");
+    pack.extraData.bodyIsHtml = false;
+    pack.extraData.notice.clear();
 
     pack.extraDataLoaded = true;
 }
@@ -148,7 +205,7 @@ ModPlatform::IndexedVersion Modrinth::loadIndexedPackVersion(QJsonObject& obj, Q
     file.version_number = Json::requireString(obj, "version_number");
     file.version_type = ModPlatform::IndexedVersionType::fromString(Json::requireString(obj, "version_type"));
 
-    file.changelog = Json::requireString(obj, "changelog");
+    file.changelog = obj["changelog"].toString();
 
     auto dependencies = obj["dependencies"].toArray();
     for (auto d : dependencies) {

@@ -1,5 +1,6 @@
 #include "FlameModel.h"
 #include <Json.h>
+#include <QPointer>
 #include "Application.h"
 #include "modplatform/ModIndex.h"
 #include "modplatform/ResourceAPI.h"
@@ -18,7 +19,12 @@ namespace Flame {
 
 ListModel::ListModel(QObject* parent) : QAbstractListModel(parent) {}
 
-ListModel::~ListModel() {}
+ListModel::~ListModel()
+{
+    m_destroying = true;
+    if (m_jobPtr && m_jobPtr->isRunning())
+        m_jobPtr->abort();
+}
 
 int ListModel::rowCount(const QModelIndex& parent) const
 {
@@ -177,17 +183,27 @@ void ListModel::fetchMore(const QModelIndex& parent)
 
 void ListModel::performPaginatedSearch()
 {
+    if (m_destroying || hasActiveSearchJob())
+        return;
+    setProperty("catalogLoading", true);
+    setProperty("catalogError", QString());
     static const FlameAPI api;
     if (m_currentSearchTerm.startsWith("#")) {
         auto projectId = m_currentSearchTerm.mid(1);
         if (!projectId.isEmpty()) {
             ResourceAPI::Callback<ModPlatform::IndexedPack::Ptr> callbacks;
 
-            callbacks.on_fail = [this](QString reason, int) { searchRequestFailed(reason); };
-            callbacks.on_succeed = [this](auto& pack) { searchRequestForOneSucceeded(pack); };
-            callbacks.on_abort = [this] {
-                qCritical() << "Search task aborted by an unknown reason!";
-                searchRequestFailed("Aborted");
+            callbacks.on_fail = [guard = QPointer<ListModel>(this)](QString reason, int) {
+                if (guard && !guard->m_destroying)
+                    guard->searchRequestFailed(reason);
+            };
+            callbacks.on_succeed = [guard = QPointer<ListModel>(this)](auto& pack) {
+                if (guard && !guard->m_destroying)
+                    guard->searchRequestForOneSucceeded(pack);
+            };
+            callbacks.on_abort = [guard = QPointer<ListModel>(this)] {
+                if (guard && !guard->m_destroying)
+                    guard->searchRequestFailed(QString());
             };
             auto project = std::make_shared<ModPlatform::IndexedPack>();
             project->addonId = projectId;
@@ -203,11 +219,17 @@ void ListModel::performPaginatedSearch()
 
     ResourceAPI::Callback<QList<ModPlatform::IndexedPack::Ptr>> callbacks{};
 
-    callbacks.on_succeed = [this](auto& doc) { searchRequestFinished(doc); };
-    callbacks.on_fail = [this](QString reason, int) { searchRequestFailed(reason); };
-    callbacks.on_abort = [this] {
-        qCritical() << "Search task aborted by an unknown reason!";
-        searchRequestFailed("Aborted");
+    callbacks.on_succeed = [guard = QPointer<ListModel>(this)](auto& doc) {
+        if (guard && !guard->m_destroying)
+            guard->searchRequestFinished(doc);
+    };
+    callbacks.on_fail = [guard = QPointer<ListModel>(this)](QString reason, int) {
+        if (guard && !guard->m_destroying)
+            guard->searchRequestFailed(reason);
+    };
+    callbacks.on_abort = [guard = QPointer<ListModel>(this)] {
+        if (guard && !guard->m_destroying)
+            guard->searchRequestFailed(QString());
     };
 
     auto netJob = api.searchProjects({ ModPlatform::ResourceType::Modpack, m_nextSearchOffset, m_currentSearchTerm, sort, m_filter->loaders,
@@ -220,15 +242,16 @@ void ListModel::performPaginatedSearch()
 
 void ListModel::searchWithTerm(const QString& term, int sort, std::shared_ptr<ModFilterWidget::Filter> filter, bool filterChanged)
 {
-    if (m_currentSearchTerm == term && m_currentSearchTerm.isNull() == term.isNull() && m_currentSort == sort && !filterChanged) {
+    if (m_currentSearchTerm == term && m_currentSearchTerm.isNull() == term.isNull() && m_currentSort == sort && !filterChanged &&
+        property("catalogError").toString().isEmpty()) {
         return;
     }
     m_currentSearchTerm = term;
     m_currentSort = sort;
     m_filter = filter;
     if (hasActiveSearchJob()) {
-        m_jobPtr->abort();
         m_searchState = ResetRequested;
+        m_jobPtr->abort();
         return;
     }
     beginResetModel();
@@ -242,6 +265,8 @@ void ListModel::searchWithTerm(const QString& term, int sort, std::shared_ptr<Mo
 
 void Flame::ListModel::searchRequestFinished(QList<ModPlatform::IndexedPack::Ptr>& newList)
 {
+    setProperty("catalogLoading", false);
+    setProperty("catalogError", QString());
     if (hasActiveSearchJob())
         return;
 
@@ -263,15 +288,20 @@ void Flame::ListModel::searchRequestFinished(QList<ModPlatform::IndexedPack::Ptr
 
 void Flame::ListModel::searchRequestForOneSucceeded(ModPlatform::IndexedPack::Ptr pack)
 {
+    m_searchState = Finished;
+    setProperty("catalogLoading", false);
+    setProperty("catalogError", QString());
     m_jobPtr.reset();
 
-    beginInsertRows(QModelIndex(), m_modpacks.size(), m_modpacks.size() + 1);
+    beginInsertRows(QModelIndex(), m_modpacks.size(), m_modpacks.size());
     m_modpacks.append(pack);
     endInsertRows();
 }
 
 void Flame::ListModel::searchRequestFailed(QString reason)
 {
+    setProperty("catalogLoading", false);
+    setProperty("catalogError", reason.isEmpty() ? QString() : tr("Could not load this catalog. Check your connection and search again."));
     m_jobPtr.reset();
 
     if (m_searchState == ResetRequested) {
@@ -280,6 +310,7 @@ void Flame::ListModel::searchRequestFailed(QString reason)
         endResetModel();
 
         m_nextSearchOffset = 0;
+        m_searchState = None;
         performPaginatedSearch();
     } else {
         m_searchState = Finished;

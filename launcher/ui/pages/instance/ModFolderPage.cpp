@@ -62,9 +62,14 @@
 #include "minecraft/mod/Mod.h"
 #include "minecraft/mod/ModFolderModel.h"
 
+#include <QDialogButtonBox>
+#include <QVBoxLayout>
+#include "modplatform/flame/FlameAPI.h"
+#include "modplatform/modrinth/ModrinthAPI.h"
 #include "tasks/ConcurrentTask.h"
 #include "tasks/Task.h"
 #include "ui/dialogs/ProgressDialog.h"
+#include "ui/widgets/ProjectDescriptionPage.h"
 
 ModFolderPage::ModFolderPage(BaseInstance* inst, std::shared_ptr<ModFolderModel> model, QWidget* parent)
     : ExternalResourcesPage(inst, model, parent), m_model(model)
@@ -101,6 +106,12 @@ ModFolderPage::ModFolderPage(BaseInstance* inst, std::shared_ptr<ModFolderModel>
     ui->actionChangeVersion->setToolTip(tr("Change a mod's version."));
     connect(ui->actionChangeVersion, &QAction::triggered, this, &ModFolderPage::changeModVersion);
     ui->actionsToolbar->insertActionAfter(ui->actionUpdateItem, ui->actionChangeVersion);
+
+    auto* projectDetails = new QAction(QIcon::fromTheme("help-about"), tr("Project details"), this);
+    projectDetails->setObjectName("actionProjectDetails");
+    projectDetails->setToolTip(tr("Read project information, screenshots, releases and dependencies"));
+    ui->actionsToolbar->insertActionBefore(ui->actionViewHomepage, projectDetails);
+    connect(projectDetails, &QAction::triggered, this, &ModFolderPage::showProjectDetails);
 
     ui->actionViewHomepage->setToolTip(tr("View the homepages of all selected mods."));
 
@@ -299,6 +310,93 @@ void ModFolderPage::deleteModMetadata()
     }
 
     m_model->deleteMetadata(selection);
+}
+
+void ModFolderPage::showProjectDetails()
+{
+    const auto current = m_filterModel->mapToSource(ui->treeView->currentIndex());
+    if (!current.isValid() || current.row() >= m_model->rowCount())
+        return;
+    const Mod& mod = m_model->at(current.row());
+    const auto metadata = mod.metadata();
+    const bool hasProvider =
+        metadata && metadata->isValid() &&
+        (metadata->provider == ModPlatform::ResourceProvider::MODRINTH || metadata->provider == ModPlatform::ResourceProvider::FLAME);
+    auto pack = std::make_shared<ModPlatform::IndexedPack>();
+    pack->name = mod.name();
+    pack->description = mod.description();
+    pack->websiteUrl = mod.homepage();
+    pack->extraData.issuesUrl = mod.issueTracker();
+    pack->extraDataLoaded = true;
+    pack->versionsLoaded = true;
+    for (const auto& name : mod.authors())
+        pack->authors.append({ name, {} });
+    if (hasProvider) {
+        pack->addonId = metadata->project_id;
+        pack->provider = metadata->provider;
+        pack->extraDataLoaded = false;
+        pack->versionsLoaded = false;
+    } else {
+        pack->extraData.notice = tr("Local mod. No provider project is recorded; local management remains available.");
+    }
+    auto* dialog = new QDialog(this);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+    dialog->setWindowTitle(tr("Project details - %1").arg(mod.name()));
+    dialog->resize(760, 680);
+    auto* layout = new QVBoxLayout(dialog);
+    auto* details = new ProjectDescriptionPage(dialog);
+    details->setProject(pack);
+    layout->addWidget(details, 1);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, dialog);
+    connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+    auto tasks = std::make_shared<QList<Task::Ptr>>();
+    connect(dialog, &QObject::destroyed, [tasks] {
+        for (const auto& task : *tasks)
+            if (task && task->isRunning())
+                task->abort();
+    });
+    if (hasProvider) {
+        static const ModrinthAPI modrinth;
+        static const FlameAPI flame;
+        const ResourceAPI* api = metadata->provider == ModPlatform::ResourceProvider::FLAME ? static_cast<const ResourceAPI*>(&flame)
+                                                                                            : static_cast<const ResourceAPI*>(&modrinth);
+        const QPointer<ProjectDescriptionPage> guard(details);
+        ResourceAPI::Callback<ModPlatform::IndexedPack::Ptr> info;
+        info.on_succeed = [guard, pack](auto&) {
+            if (guard)
+                guard->setProject(pack);
+        };
+        info.on_fail = [guard](const QString&, int) {
+            if (guard)
+                guard->setProjectNotice(tr("Online information is unavailable. Local mod information is shown."));
+        };
+        const auto infoTask = api->getProjectInfo({ pack }, std::move(info));
+        tasks->append(infoTask);
+        if (infoTask)
+            infoTask->start();
+        ResourceAPI::Callback<QVector<ModPlatform::IndexedVersion>> versions;
+        versions.on_succeed = [guard, pack, currentFile = metadata->file_id](auto& releases) {
+            if (!guard)
+                return;
+            pack->versions = releases;
+            pack->versionsLoaded = true;
+            int selected = 0;
+            for (int i = 0; i < releases.size(); ++i)
+                if (releases[i].fileId == currentFile)
+                    selected = i;
+            guard->setProject(pack, selected);
+        };
+        versions.on_fail = [guard](const QString&, int) {
+            if (guard)
+                guard->setProjectNotice(tr("Online releases are unavailable. Your installed mod remains available."));
+        };
+        const auto versionTask = api->getProjectVersions({ pack, {}, {}, ModPlatform::ResourceType::Mod }, std::move(versions));
+        tasks->append(versionTask);
+        if (versionTask)
+            versionTask->start();
+    }
+    dialog->open();
 }
 
 void ModFolderPage::changeModVersion()

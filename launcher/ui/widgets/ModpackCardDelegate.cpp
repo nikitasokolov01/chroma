@@ -8,6 +8,8 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QScopedValueRollback>
+#include <QScrollBar>
+#include <QStyleOption>
 #include <QTextDocumentFragment>
 #include <QTextLayout>
 #include <QTimer>
@@ -115,7 +117,22 @@ void ModpackCardDelegate::updateGrid()
     if (!m_view || m_updating)
         return;
     QScopedValueRollback<bool> updating(m_updating, true);
-    const int width = qMax(1, m_view->viewport()->contentsRect().width() - 2);
+    // QListView reserves the style's scrollbar extent while wrapping icons,
+    // even when a stylesheet makes the visible scrollbar narrower. Fit that
+    // layout area as well as the actual viewport so the last column stays put.
+    int layoutWidth = m_view->maximumViewportSize().width();
+    const auto* style = m_view->style();
+    auto* scrollBar = m_view->verticalScrollBar();
+    if (m_view->verticalScrollBarPolicy() == Qt::ScrollBarAsNeeded &&
+        !style->pixelMetric(QStyle::PM_ScrollView_ScrollBarOverlap, nullptr, scrollBar)) {
+        layoutWidth -= style->pixelMetric(QStyle::PM_ScrollBarExtent, nullptr, scrollBar);
+        if (style->styleHint(QStyle::SH_ScrollView_FrameOnlyAroundContents)) {
+            QStyleOption option;
+            option.initFrom(m_view);
+            layoutWidth -= 2 * style->pixelMetric(QStyle::PM_DefaultFrameWidth, &option);
+        }
+    }
+    const int width = qMax(1, qMin(layoutWidth, m_view->viewport()->contentsRect().width()) - 2);
     const int columns = qBound(1, width / (minimumCardWidth + gap), 5);
     const int cellWidth = width / columns;
     const int cardWidth = qMax(60, cellWidth - gap);

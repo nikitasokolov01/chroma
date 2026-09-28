@@ -113,7 +113,7 @@ struct IndexedVersion {
     bool is_preferred = true;
     QString changelog;
     QList<Dependency> dependencies;
-    Side side;  // this is for flame API
+    Side side = Side::NoSide;  // this is for flame API
 
     // For internal use, not provided by APIs
     bool is_currently_selected = false;
@@ -136,6 +136,13 @@ struct IndexedVersion {
     }
 };
 
+struct ProjectImage {
+    QString url;
+    QString title;
+    QString description;
+    bool featured = false;
+};
+
 struct ExtraPackData {
     QList<DonationData> donate;
 
@@ -147,13 +154,29 @@ struct ExtraPackData {
     QString status;
 
     QString body;
+    bool bodyIsHtml = false;
+    QList<ProjectImage> gallery;
+    QStringList categories;
+    QStringList gameVersions;
+    QStringList loaders;
+    QStringList environments;
+    qint64 downloads = -1;
+    qint64 followers = -1;
+    QString published;
+    QString updated;
+    QString license;
+    QString licenseUrl;
+    QString team;
+    QString clientSide;
+    QString serverSide;
+    QString notice;
 };
 
 struct IndexedPack {
     using Ptr = std::shared_ptr<IndexedPack>;
 
     QVariant addonId;
-    ResourceProvider provider;
+    ResourceProvider provider = ResourceProvider::MODRINTH;
     QString name;
     QString slug;
     QString description;
@@ -161,10 +184,11 @@ struct IndexedPack {
     QString logoName;
     QString logoUrl;
     QString websiteUrl;
-    Side side;
+    Side side = Side::NoSide;
 
     bool versionsLoaded = false;
     QList<IndexedVersion> versions;
+    QString versionsError;
 
     // Don't load by default, since some modplatform don't have that info
     bool extraDataLoaded = true;

@@ -30,6 +30,7 @@ class CatalogEmptyState : public QLabel {
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setStyleSheet("color: palette(placeholder-text); background: transparent; padding: 24px;");
         view->viewport()->installEventFilter(this);
+        view->model()->installEventFilter(this);
         auto update = [this] { refresh(); };
         connect(view->model(), &QAbstractItemModel::modelReset, this, update);
         connect(view->model(), &QAbstractItemModel::rowsInserted, this, update);
@@ -40,7 +41,7 @@ class CatalogEmptyState : public QLabel {
    protected:
     bool eventFilter(QObject* watched, QEvent* event) override
     {
-        if (event->type() == QEvent::Resize || event->type() == QEvent::Show)
+        if (event->type() == QEvent::Resize || event->type() == QEvent::Show || event->type() == QEvent::DynamicPropertyChange)
             refresh();
         return QLabel::eventFilter(watched, event);
     }
@@ -49,6 +50,11 @@ class CatalogEmptyState : public QLabel {
     void refresh()
     {
         setGeometry(m_view->viewport()->rect());
+        const auto* model = m_view->model();
+        const auto error = model->property("catalogError").toString();
+        setText(model->property("catalogLoading").toBool() ? tr("Loading modpacks...")
+                : !error.isEmpty()                         ? error
+                                   : tr("No modpacks match this search.\nTry another search or adjust your filters."));
         setVisible(m_view->model()->rowCount(m_view->rootIndex()) == 0);
     }
     QListView* m_view;

@@ -94,6 +94,10 @@ ModrinthPage::ModrinthPage(NewInstanceDialog* dialog, QWidget* parent)
     connect(m_ui->versionSelectionBox, &QComboBox::currentIndexChanged, this, &ModrinthPage::onVersionSelectionChanged);
 
     m_ui->packDescription->setMetaEntry(metaEntryBase());
+    m_ui->packDescription->setOpenExternalLinks(false);
+    m_ui->packDescription->setOpenLinks(false);
+    connect(m_ui->packDescription, &ProjectDescriptionPage::projectVersionSelected, m_ui->versionSelectionBox, &QComboBox::setCurrentIndex);
+    connect(m_ui->versionSelectionBox, &QComboBox::currentIndexChanged, m_ui->packDescription, &ProjectDescriptionPage::setSelectedVersion);
     m_browser = new ModpackBrowser(m_ui->searchEdit, m_ui->sortByBox, m_ui->packView, m_ui->versionSelectionBox, this);
     m_browser->addView(m_ui->packView, m_ui->packDescription);
     m_browser->setFilterWidget(m_filterWidget.get(), m_ui->filterButton);
@@ -103,6 +107,14 @@ ModrinthPage::ModrinthPage(NewInstanceDialog* dialog, QWidget* parent)
 
 ModrinthPage::~ModrinthPage()
 {
+    isOpened = false;
+    ++m_selectionGeneration;
+    if (m_job && m_job->isRunning())
+        m_job->abort();
+    if (m_job2 && m_job2->isRunning())
+        m_job2->abort();
+    if (m_categoriesTask && m_categoriesTask->isRunning())
+        m_categoriesTask->abort();
     delete m_ui;
 }
 
@@ -138,10 +150,14 @@ bool ModrinthPage::eventFilter(QObject* watched, QEvent* event)
 void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelIndex prev)
 {
     const auto generation = ++m_selectionGeneration;
+    if (m_job && m_job->isRunning())
+        m_job->abort();
+    if (m_job2 && m_job2->isRunning())
+        m_job2->abort();
     if (isOpened)
         m_dialog->setSuggestedPack();
     m_selectedVersion.clear();
-    m_ui->packDescription->clear();
+    m_ui->packDescription->setProject({});
     m_ui->versionSelectionBox->clear();
 
     if (!curr.isValid()) {
@@ -154,6 +170,7 @@ void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelI
 
     m_current = m_model->data(curr, Qt::UserRole).value<ModPlatform::IndexedPack::Ptr>();
     auto name = m_current->name;
+    updateUI();
 
     if (!m_current->extraDataLoaded) {
         qDebug() << "Loading modrinth modpack information";
@@ -163,8 +180,8 @@ void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelI
         callbacks.on_fail = [this, generation](QString reason, int) {
             if (!isOpened || generation != m_selectionGeneration)
                 return;
-            m_dialog->setSuggestedPack();
-            CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
+            m_ui->packDescription->setProjectNotice(
+                tr("Additional information could not be loaded. You can still use available releases."));
         };
         callbacks.on_succeed = [this, id, curr, generation](auto& pack) {
             if (!isOpened || generation != m_selectionGeneration || !m_current || id != m_current->addonId) {
@@ -227,12 +244,14 @@ void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelI
                 qWarning() << "Failed to cache versions for the current pack!";
 
             suggestCurrent();
+            updateUI();
         };
         callbacks.on_fail = [this, generation](QString reason, int) {
             if (!isOpened || generation != m_selectionGeneration)
                 return;
             m_dialog->setSuggestedPack();
-            CustomMessageBox::selectable(this, tr("Error"), reason, QMessageBox::Critical)->exec();
+            m_ui->packDescription->setProjectNotice(tr("Releases could not be loaded. Reopen this project to try again."));
+            updateUI();
         };
 
         auto netJob = m_api.getProjectVersions({ m_current, {}, {}, ModPlatform::ResourceType::Modpack }, std::move(callbacks));
@@ -255,66 +274,7 @@ void ModrinthPage::onSelectionChanged(QModelIndex curr, [[maybe_unused]] QModelI
 
 void ModrinthPage::updateUI()
 {
-    QString text = "";
-
-    if (m_current->websiteUrl.isEmpty())
-        text = m_current->name;
-    else
-        text = "<a href=\"" + m_current->websiteUrl + "\">" + m_current->name + "</a>";
-
-    if (!m_current->authors.empty()) {
-        auto authorToStr = [](ModPlatform::ModpackAuthor& author) {
-            if (author.url.isEmpty()) {
-                return author.name;
-            }
-            return QString("<a href=\"%1\">%2</a>").arg(author.url, author.name);
-        };
-        QStringList authorStrs;
-        for (auto& author : m_current->authors) {
-            authorStrs.push_back(authorToStr(author));
-        }
-        text += "<br>" + tr(" by ") + authorStrs.join(", ");
-    }
-
-    if (m_current->extraDataLoaded) {
-        if (m_current->extraData.status == "archived") {
-            text += "<br><br>" + tr("<b>This project has been archived. It will not receive any further updates unless the author decides "
-                                    "to unarchive the project.</b>");
-        }
-
-        if (!m_current->extraData.donate.isEmpty()) {
-            text += "<br><br>" + tr("Donate information: ");
-            auto donateToStr = [](ModPlatform::DonationData& donate) -> QString {
-                return QString("<a href=\"%1\">%2</a>").arg(donate.url, donate.platform);
-            };
-            QStringList donates;
-            for (auto& donate : m_current->extraData.donate) {
-                donates.append(donateToStr(donate));
-            }
-            text += donates.join(", ");
-        }
-
-        if (!m_current->extraData.issuesUrl.isEmpty() || !m_current->extraData.sourceUrl.isEmpty() ||
-            !m_current->extraData.wikiUrl.isEmpty() || !m_current->extraData.discordUrl.isEmpty()) {
-            text += "<br><br>" + tr("External links:") + "<br>";
-        }
-
-        if (!m_current->extraData.issuesUrl.isEmpty())
-            text += "- " + tr("Issues: <a href=%1>%1</a>").arg(m_current->extraData.issuesUrl) + "<br>";
-        if (!m_current->extraData.wikiUrl.isEmpty())
-            text += "- " + tr("Wiki: <a href=%1>%1</a>").arg(m_current->extraData.wikiUrl) + "<br>";
-        if (!m_current->extraData.sourceUrl.isEmpty())
-            text += "- " + tr("Source code: <a href=%1>%1</a>").arg(m_current->extraData.sourceUrl) + "<br>";
-        if (!m_current->extraData.discordUrl.isEmpty())
-            text += "- " + tr("Discord: <a href=%1>%1</a>").arg(m_current->extraData.discordUrl) + "<br>";
-    }
-
-    text += "<hr>";
-
-    text += markdownToHTML(m_current->extraData.body.toUtf8());
-
-    m_ui->packDescription->setHtml(StringUtils::htmlListPatch(text + m_current->description));
-    m_ui->packDescription->flush();
+    m_ui->packDescription->setProject(m_current, m_ui->versionSelectionBox->currentIndex());
 }
 
 void ModrinthPage::suggestCurrent()
@@ -356,7 +316,7 @@ void ModrinthPage::triggerSearch()
         m_browser->showResults();
     m_ui->packView->selectionModel()->setCurrentIndex({}, QItemSelectionModel::SelectionFlag::ClearAndSelect);
     m_ui->packView->clearSelection();
-    m_ui->packDescription->clear();
+    m_ui->packDescription->setProject({});
     m_ui->versionSelectionBox->clear();
     bool filterChanged = m_filterWidget->changed();
     m_model->searchWithTerm(m_ui->searchEdit->text(), m_ui->sortByBox->currentIndex(), m_filterWidget->getFilter(), filterChanged);
