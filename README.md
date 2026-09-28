@@ -1,7 +1,7 @@
 <h1 align="center">Chroma</h1>
 
-<p align="center"><strong>A fresh interface for your Minecraft library.</strong><br>
-Native C++ and Qt. Built on Prism Launcher. Soft clay surfaces, vivid violet, and room for your own colors.</p>
+<p align="center"><strong>Minecraft instances, modpacks, and skins in one native launcher.</strong><br>
+Built on Prism Launcher with C++, Qt Widgets, and customizable light and dark clay themes.</p>
 
 <p align="center">
   <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0">Download for Windows</a> ·
@@ -18,7 +18,11 @@ Chroma rebuilds Prism Launcher's default interface around a card library, a pers
 
 ## Download
 
-**v0.1.0 preview · Windows x64**
+**Published download: v0.1.0 preview · Windows x64**
+
+The features and screenshots below show the current source revision. The v0.1.0
+downloads are an earlier preview and do not include all of these changes. To run
+the current revision, follow the [Windows build guide](docs/CHROMA.md#build-from-source).
 
 | Package | Use it when… |
 | --- | --- |
@@ -27,14 +31,38 @@ Chroma rebuilds Prism Launcher's default interface around a card library, a pers
 
 Read the [release notes](https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0) for this preview's requirements and known limitations. Updates are downloaded from Releases; the upstream binary updater is disabled.
 
-## Your library, in one place
+## Features in the current revision
 
-- **Jump back in.** Recently played instances sit above a searchable, grouped card library.
-- **Pin your favorites.** Keep instance shortcuts in the sidebar and open their settings with one click.
-- **Browse by service.** Choose Modrinth, CurseForge, ATLauncher, Technic, or FTB Legacy, then browse covers, filters, and versions. Available services depend on the build's API configuration.
-- **Stay in the workspace.** Instance editing, launcher settings, accounts, and installation flows open inside the main window.
-- **Choose your appearance.** Switch between light and dark clay themes, then pick a preset or custom accent color.
-- **Keep your Prism library.** Open an existing profile directly, including custom instance locations, without copying your modpacks.
+- **Organize instances.** Search grouped cards, open recent instances, or drag cards into a saved manual order. Name and last-played sorting remain available.
+- **Pin from the library.** Drop an instance onto the sidebar to pin it, then open its settings with one click.
+- **Manage skins from the sidebar.** Open **Skins**, switch accounts with the dropdown, and manage skins and capes without changing your default launch account. Local editing works before adding an account.
+- **Edit in Skin Studio.** Use compact brush, eraser, color-picker, and pan tools with keyboard shortcuts, a live 3D preview, Classic/Slim models, layers, undo/redo, and PNG import/export. Save locally or apply a skin to an eligible Microsoft account.
+- **Browse modpacks and project details.** Browse Modrinth, CurseForge, ATLauncher, Technic, and FTB Legacy. Modrinth and CurseForge share **About**, **Gallery**, and **Releases** views with cached project information for offline use. Available services depend on the build's API configuration.
+- **Work inside one window.** Instance editing, settings, accounts, and installation flows open inline. Smooth scrolling and restored scroll positions help with navigation; clickable cards and controls use hand cursors.
+- **Handle larger libraries.** Card painting visits visible rows, geometry is cached, and progress updates avoid full layouts. The library background stays still while idle. Regression coverage includes a 4,000-instance library.
+- **Choose your appearance.** Use light or dark clay themes and preset or custom accents. Windows caption colors follow the theme while retaining native window controls.
+- **Use your existing Prism profile.** Open instances, worlds, accounts, and custom instance locations directly, without copying modpacks.
+
+This revision also fixes skin-preview corruption when the status bar is visible,
+removes decorative UI slogans, and keeps Alt from revealing the legacy menu bar.
+Commands remain available from **Launcher menu (•••)**.
+
+### Light and dark themes
+
+| Light | Dark |
+| --- | --- |
+| [![Current Chroma home with the Skins sidebar entry, recent instances, and searchable library](docs/screenshots/home.png)](docs/screenshots/home.png) | [![Chroma home using the dark clay theme](docs/screenshots/dark-home.png)](docs/screenshots/dark-home.png) |
+
+### Skin Library and Skin Studio
+
+| Choose an account and skin | Paint and preview |
+| --- | --- |
+| [![Skin Library with its account dropdown, Classic and Slim models, and cape selector](docs/screenshots/skin-library.png)](docs/screenshots/skin-library.png) | [![Skin Studio with compact icon tools, a texture canvas, and a live 3D preview](docs/screenshots/skin-studio.png)](docs/screenshots/skin-studio.png) |
+
+Open **Skins** in the sidebar, choose a skin, then select **Edit Skin…**. On the
+canvas, use **B** for brush, **E** for eraser, **I** for color picker, and **H** for
+pan. Applying a skin requires a Microsoft account with a Minecraft Java profile;
+editing and exporting can stay local.
 
 ### Browse, choose, install
 
@@ -42,13 +70,17 @@ Read the [release notes](https://github.com/nikitasokolov01/chroma/releases/tag/
 | --- | --- |
 | [![Modpack provider gallery](docs/screenshots/provider-gallery.png)](docs/screenshots/provider-gallery.png) | [![Cover grid and selected modpack's version and details](docs/screenshots/modpack-details.png)](docs/screenshots/modpack-details.png) |
 
+[![Shared project information with About, Gallery, and Releases tabs and an offline cache notice](docs/screenshots/project-details.png)](docs/screenshots/project-details.png)
+
 ### Familiar controls, inside the new interface
 
 | Launcher settings | Compact layout |
 | --- | --- |
 | [![Settings open inside Chroma's main window](docs/screenshots/inline-settings.png)](docs/screenshots/inline-settings.png) | [![Modpack cards in a narrow Chroma window](docs/screenshots/modpack-catalog-compact.png)](docs/screenshots/modpack-catalog-compact.png) |
 
-These screenshots show the running native application with synthetic example instances and catalog entries.
+These screenshots were captured from the running native Windows application for
+this revision. Instances, accounts, skins, and catalog entries use synthetic test
+data; they do not show a signed-in user's profile.
 
 ## Already use Prism?
 
@@ -65,6 +97,7 @@ See the [existing-profile guide](docs/CHROMA-MIGRATION.md) for portable profiles
 - [Getting started, accounts, building, and testing](docs/CHROMA.md)
 - [Appearance and accent colors](docs/appearance.md)
 - [Using an existing Prism folder](docs/CHROMA-MIGRATION.md)
+- [UI features, implementation notes, and verification results](docs/UI-MODERNIZATION.md)
 - [Privacy and local account data](PRIVACY.md)
 
 The interface is implemented in C++ and Qt Widgets and compiled into the launcher. Development builds use the scripts in [`scripts/`](scripts/); prerequisites and native UI tests are covered in the [build guide](docs/CHROMA.md#build-from-source).

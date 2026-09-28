@@ -152,11 +152,11 @@ fixtures, and writes screenshots under its isolated test root. It is excluded
 from the default build and CTest. Use `QT_QPA_PLATFORM=offscreen` for headless
 layout checks; native caption, window-state, and OpenGL behavior need a native run.
 
-Focused tests are registered as `WindowChrome`, `ProjectMetadata`, and
-`SkinTextureDocument`:
+Focused tests are registered as `WindowChrome`, `ProjectMetadata`,
+`SkinTextureDocument`, `SkinPreview`, and `InstanceView`:
 
 ```powershell
-ctest --test-dir .tools/build --output-on-failure -R '^(WindowChrome|ProjectMetadata|SkinTextureDocument)$'
+ctest --test-dir .tools/build --output-on-failure -R '^(WindowChrome|ProjectMetadata|SkinTextureDocument|SkinPreview|InstanceView)$'
 ```
 
 The new smoke coverage includes popup keyboard behavior and placement, native
@@ -190,9 +190,9 @@ Screenshots and synthetic profiles are under `.chroma-test/`; neither directory
 is part of the committed source.
 
 Run the development build with `./scripts/run-chroma.ps1` from the repository
-root. The script supplies the local Qt runtime paths. The feature branch is
-`codex/prism-ui-modernization`; the existing redesign was preserved in a separate
-baseline checkpoint before the feature commits.
+root. The script supplies the local Qt runtime paths. These changes are included
+on `main`; the existing redesign was preserved in a separate baseline checkpoint
+before the feature commits.
 
 ## Skin and library refinement verification — 2026-09-28
 
