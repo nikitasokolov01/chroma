@@ -110,6 +110,7 @@
 #include "ui/instanceview/InstanceView.h"
 #include "ui/themes/ITheme.h"
 #include "ui/themes/ThemeManager.h"
+#include "ui/themes/WindowChrome.h"
 #include "ui/widgets/InlineWorkspace.h"
 #include "ui/widgets/LabeledToolButton.h"
 #include "ui/widgets/LauncherHome.h"
@@ -153,6 +154,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     setWindowIcon(APPLICATION->logo());
     setWindowTitle(APPLICATION->applicationDisplayName());
+    WindowChrome::install(this);
 #ifndef QT_NO_ACCESSIBILITY
     setAccessibleName(BuildConfig.LAUNCHER_DISPLAYNAME);
 #endif

@@ -6,6 +6,12 @@ ecm_add_test(ChromaProfile_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION
 ecm_add_test(AccentColor_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME AccentColor)
 
+ecm_add_test(WindowChrome_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME WindowChrome)
+if(UNIX AND NOT APPLE)
+    set_tests_properties(WindowChrome PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # Opt-in native UI verification and screenshots; deliberately excluded from the
 # default build and CTest because it opens windows and writes a fixture profile.
 add_executable(ChromaUiSmoke EXCLUDE_FROM_ALL LauncherHome_test.cpp)

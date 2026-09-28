@@ -854,8 +854,12 @@ SET(LAUNCHER_SOURCES
     ui/widgets/LauncherHome.h
     ui/widgets/ClayWidgets.cpp
     ui/widgets/ClayWidgets.h
+    ui/widgets/FloatingUi.cpp
+    ui/widgets/FloatingUi.h
     ui/themes/ClayStyle.cpp
     ui/themes/ClayStyle.h
+    ui/themes/WindowChrome.cpp
+    ui/themes/WindowChrome.h
     ui/widgets/InlineWorkspace.cpp
     ui/widgets/InlineWorkspace.h
     ui/dialogs/PrismProfileDialog.cpp
@@ -1368,6 +1372,10 @@ target_link_libraries(Launcher_logic
     BuildConfig
     Qt${QT_VERSION_MAJOR}::Widgets
 )
+
+if(WIN32)
+    target_link_libraries(Launcher_logic dwmapi)
+endif()
 
 if(TARGET PkgConfig::libqrencode)
     target_link_libraries(Launcher_logic PkgConfig::libqrencode)
