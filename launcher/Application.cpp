@@ -702,9 +702,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             m_settings.reset(new INISettingsObject({ BuildConfig.LAUNCHER_CONFIGFILE, "polymc.cfg", "multimc.cfg" }, this));
 
         // Theming
-        m_settings->registerSetting("IconTheme", QString("breeze_dark"));
+        m_settings->registerSetting("IconTheme", QString("breeze_light"));
         m_settings->registerSetting("ApplicationTheme", QString("chroma"));
-        m_settings->registerSetting("AccentColor", QString("#b7a5f5"));
+        m_settings->registerSetting("AccentColor", QString("#7c3aed"));
         m_settings->registerSetting("BackgroundCat", QString("kitteh"));
 
         // Remembered state

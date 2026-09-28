@@ -11,7 +11,7 @@ The default main window is rebuilt in C++ and Qt Widgets:
 - Pinned instances in the persistent sidebar, with direct access to their instance pages.
 - Search, sorting, native grouped instance cards, and selection details.
 - Existing Prism actions for launch, stop, edit, accounts, folders, import, export, and instance management.
-- A built-in charcoal color scheme with lavender accents, five color presets, and a custom color picker.
+- A built-in clay color scheme with violet accents, six color presets, and a custom color picker.
 - A native [Prism folder selector](CHROMA-MIGRATION.md) that opens your existing profile directly, sharing instances, worlds, accounts, and launch settings.
 - Keyboard shortcuts, inline rename, native context menus, grouped drag and drop, and game status/progress indicators.
 - An inline workspace for launcher settings, instance editing, account management, and adding instances, with the header and sidebar always available.
@@ -151,7 +151,7 @@ On Windows, the test runner stages the two upstream directory-symlink fixtures i
 - `InlineWorkspace` hosts existing Qt screens and nested prompts. Navigation uses their normal close handling before returning to Home.
 - `ModpackBrowser` supplies the provider catalog and details layout; `ModpackCardDelegate` renders covers, titles, authors, and summaries. Provider pages retain their native models and install tasks.
 - `InstanceView` remains the source of keyboard navigation, grouped layout, accessibility, selection, and drag/drop. On Home it expands to the full grouped content height and forwards wheel scrolling, selection visibility, and drag-edge scrolling to the outer page. The delegate draws the larger cards.
-- The new `ChromaTheme` is separate from the old Dark palette, preserving the base used by existing custom themes.
+- `ChromaTheme` supplies the light and dark clay palettes and bundled fonts. `ClayStyle` and `ClayWidgets` share surface painting, motion preferences, and native controls; the original Dark palette remains available for existing custom themes.
 - `AccentColor` validates saved values and chooses readable foreground colors.
 - `ChromaProfile` inspects existing Prism folders and stores the remembered selection. `ChromaSettingsObject` keeps interface preferences in `chroma-ui.cfg` while launch preferences remain in `prismlauncher.cfg`.
 - Below 1,000 logical pixels, the details panel hides to preserve library space. The launcher menu retains accounts and instance actions.

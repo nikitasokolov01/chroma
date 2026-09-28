@@ -35,53 +35,85 @@
  */
 #include "ChromaTheme.h"
 
+#include <QDebug>
+#include <QFontDatabase>
 #include <QObject>
 #include "AccentColor.h"
 #include "Application.h"
+#include "ClayStyle.h"
+
+static void registerClayFonts()
+{
+    // Static fonts work on the Qt 6.5 Windows font backend as well as newer
+    // runtimes. Register once, even when the accent or theme changes.
+    static const bool registered = [] {
+        Q_INIT_RESOURCE(chroma_fonts);
+        Q_INIT_RESOURCE(chroma_style);
+        const char* files[] = { ":/fonts/DMSans-400.ttf", ":/fonts/DMSans-500.ttf", ":/fonts/DMSans-700.ttf",
+                                ":/fonts/Nunito-700.ttf", ":/fonts/Nunito-800.ttf", ":/fonts/Nunito-900.ttf" };
+        for (const auto* file : files) {
+            if (QFontDatabase::addApplicationFont(QString::fromLatin1(file)) < 0)
+                qWarning() << "Unable to load bundled interface font:" << file;
+        }
+        return true;
+    }();
+    Q_UNUSED(registered)
+}
 
 QString ChromaTheme::id()
 {
-    return "chroma";
+    return m_dark ? "chroma-dark" : "chroma";
 }
 
 QString ChromaTheme::name()
 {
-    return QObject::tr("Chroma");
+    return m_dark ? QObject::tr("Chroma Dark") : QObject::tr("Chroma");
 }
 
 QPalette ChromaTheme::colorScheme()
 {
+    const auto& colors = Clay::colors(m_dark);
     const QColor accent = AccentColor::fromSetting(APPLICATION->settings()->get("AccentColor").toString());
-    const QColor background("#17191d");
-    QPalette darkPalette;
-    darkPalette.setColor(QPalette::Window, QColor("#202329"));
-    darkPalette.setColor(QPalette::WindowText, QColor("#f3f4f7"));
-    darkPalette.setColor(QPalette::Base, background);
-    darkPalette.setColor(QPalette::AlternateBase, QColor("#262a31"));
-    darkPalette.setColor(QPalette::ToolTipBase, QColor("#30343d"));
-    darkPalette.setColor(QPalette::ToolTipText, QColor("#f3f4f7"));
-    darkPalette.setColor(QPalette::Text, QColor("#f3f4f7"));
-    darkPalette.setColor(QPalette::Button, QColor("#30343d"));
-    darkPalette.setColor(QPalette::ButtonText, QColor("#f3f4f7"));
-    darkPalette.setColor(QPalette::BrightText, QColor("#ff7b91"));
-    darkPalette.setColor(QPalette::Link, AccentColor::link(accent, darkPalette.color(QPalette::Window)));
-    darkPalette.setColor(QPalette::Highlight, accent);
-    darkPalette.setColor(QPalette::HighlightedText, AccentColor::foreground(accent));
-    darkPalette.setColor(QPalette::PlaceholderText, QColor("#979eaa"));
-    darkPalette.setColor(QPalette::Mid, QColor("#3a404b"));
-    darkPalette.setColor(QPalette::Dark, QColor("#111316"));
-    darkPalette.setColor(QPalette::Light, QColor("#454c59"));
-    return fadeInactive(darkPalette, fadeAmount(), fadeColor());
+    const QColor linkSurface = m_dark ? colors.Surface : colors.Canvas;
+    QPalette palette;
+    palette.setColor(QPalette::Window, colors.Canvas);
+    palette.setColor(QPalette::WindowText, colors.Foreground);
+    palette.setColor(QPalette::Base, colors.Surface);
+    palette.setColor(QPalette::AlternateBase, colors.Input);
+    palette.setColor(QPalette::ToolTipBase, colors.Surface);
+    palette.setColor(QPalette::ToolTipText, colors.Foreground);
+    palette.setColor(QPalette::Text, colors.Foreground);
+    palette.setColor(QPalette::Button, colors.Surface);
+    palette.setColor(QPalette::ButtonText, colors.Foreground);
+    palette.setColor(QPalette::BrightText, m_dark ? QColor("#FF80AD") : QColor("#AE1855"));
+    palette.setColor(QPalette::Link, AccentColor::link(accent, linkSurface));
+    palette.setColor(QPalette::LinkVisited, AccentColor::link(Clay::Pink, linkSurface));
+    palette.setColor(QPalette::Highlight, accent);
+    palette.setColor(QPalette::HighlightedText, AccentColor::foreground(accent));
+    palette.setColor(QPalette::PlaceholderText, colors.Muted);
+    palette.setColor(QPalette::Mid, m_dark ? QColor("#4A4058") : QColor("#D8D0E5"));
+    palette.setColor(QPalette::Midlight, m_dark ? QColor("#3D334B") : QColor("#E6E0F0"));
+    palette.setColor(QPalette::Dark, m_dark ? QColor("#14101B") : colors.Muted);
+    palette.setColor(QPalette::Light, m_dark ? QColor("#4D425D") : QColor("#FFFFFF"));
+    palette.setColor(QPalette::Shadow, m_dark ? QColor("#09070D") : QColor("#BFB5D2"));
+    palette = fadeInactive(palette, fadeAmount(), fadeColor());
+    // Disabled controls keep legible labels instead of fading below the
+    // design system's minimum text contrast.
+    for (const auto role : { QPalette::WindowText, QPalette::Text, QPalette::ButtonText, QPalette::Link })
+        palette.setColor(QPalette::Disabled, role, colors.Muted);
+    palette.setColor(QPalette::Disabled, QPalette::HighlightedText,
+                     AccentColor::foreground(palette.color(QPalette::Disabled, QPalette::Highlight)));
+    return palette;
 }
 
 double ChromaTheme::fadeAmount()
 {
-    return 0.5;
+    return 0.25;
 }
 
 QColor ChromaTheme::fadeColor()
 {
-    return QColor("#202329");
+    return Clay::colors(m_dark).Canvas;
 }
 
 bool ChromaTheme::hasStyleSheet()
@@ -91,10 +123,58 @@ bool ChromaTheme::hasStyleSheet()
 
 QString ChromaTheme::appStyleSheet()
 {
-    return "QToolTip { color: #f3f4f7; background-color: #30343d; border: 1px solid #454c59; padding: 6px; }";
+    registerClayFonts();
+    const auto& colors = Clay::colors(m_dark);
+    const QColor accent = AccentColor::fromSetting(APPLICATION->settings()->get("AccentColor").toString());
+    const QColor linkSurface = m_dark ? colors.Surface : colors.Canvas;
+    // Keep native font sizes and control geometry in dense settings pages.
+    // Text editors are deliberately absent: console and code fonts are user
+    // preferences. Home controls use the painted Clay widgets for depth.
+    return QStringLiteral(R"(
+        QLabel, QAbstractButton, QLineEdit, QComboBox, QAbstractSpinBox,
+        QMenu, QMenuBar, QTabBar, QHeaderView, QAbstractItemView, QGroupBox {
+            font-family: "DM Sans";
+        }
+        QLabel[role="heading"], QLabel[role="brand"], QLabel[role="strong"], QLabel[role="eyebrow"],
+        QLabel[clayRole="heading"], QLabel[clayRole="number"], QLabel[clayRole="label"] {
+            font-family: "Nunito"; font-weight: 800;
+        }
+        QToolTip {
+            color: %1; background-color: %2; border: 1px solid %8;
+            border-radius: 20px; padding: 8px 12px;
+        }
+        QPushButton {
+            color: %1; border: 2px solid %9; border-radius: 20px;
+            background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 %2, stop:1 %3);
+            padding: 8px 16px; min-height: 24px; font-weight: 700;
+        }
+        QPushButton:hover { border-color: %4; }
+        QPushButton:focus { border-color: %4; }
+        QPushButton:pressed, QPushButton:checked { background: %3; border-color: %4; }
+        QPushButton:disabled { color: %5; background: %3; }
+        QLineEdit {
+            color: %1; background: %3; border: 2px solid %9;
+            placeholder-text-color: %5;
+            border-radius: 20px; padding: 5px 12px;
+            selection-background-color: %6; selection-color: %7;
+        }
+        QLineEdit:focus { background: %2; border-color: %4; }
+        QLineEdit:disabled { color: %5; }
+        QComboBox::drop-down {
+            subcontrol-origin: padding; subcontrol-position: top right;
+            width: 28px; border: none;
+        }
+        QComboBox::down-arrow { image: url(%10); width: 12px; height: 12px; }
+    )")
+        .arg(colors.Foreground.name(), colors.Surface.name(), colors.Input.name(), AccentColor::link(accent, linkSurface).name(),
+             colors.Muted.name(), accent.name(), AccentColor::foreground(accent).name(),
+             m_dark ? QStringLiteral("#4A4058") : colors.Input.name(),
+             m_dark ? QStringLiteral("#4A4058") : QStringLiteral("transparent"))
+        .arg(m_dark ? QStringLiteral(":/chroma/style/chevron-down-dark.svg")
+                    : QStringLiteral(":/chroma/style/chevron-down-light.svg"));
 }
 
 QString ChromaTheme::tooltip()
 {
-    return "";
+    return QObject::tr("Soft clay surfaces, rounded typography, and your chosen accent color.");
 }

@@ -71,6 +71,7 @@
 #include "ui/pages/modplatform/legacy_ftb/Page.h"
 #include "ui/pages/modplatform/modrinth/ModrinthPage.h"
 #include "ui/pages/modplatform/technic/TechnicPage.h"
+#include "ui/widgets/ClayWidgets.h"
 #include "ui/widgets/PageContainer.h"
 
 namespace {
@@ -270,7 +271,7 @@ NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
     allProviders->setAutoDefault(false);
     connect(allProviders, &QPushButton::clicked, this, &NewInstanceDialog::showProviderHub);
     providerLayout->addWidget(allProviders);
-    m_providerSelector = new QComboBox(m_providerBar);
+    m_providerSelector = new ClayComboBox(m_providerBar);
     m_providerSelector->setObjectName("providerSelector");
     m_providerSelector->setAccessibleName(tr("Modpack service"));
     m_providerSelector->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);

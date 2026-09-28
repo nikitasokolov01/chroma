@@ -1,7 +1,7 @@
 <h1 align="center">Chroma</h1>
 
 <p align="center"><strong>A fresh interface for your Minecraft library.</strong><br>
-Native C++ and Qt. Built on Prism Launcher. Charcoal, lavender, and room for your own colors.</p>
+Native C++ and Qt. Built on Prism Launcher. Soft clay surfaces, vivid violet, and room for your own colors.</p>
 
 <p align="center">
   <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0">Download for Windows</a> ·
@@ -10,7 +10,7 @@ Native C++ and Qt. Built on Prism Launcher. Charcoal, lavender, and room for you
   <a href="https://github.com/nikitasokolov01/chroma/issues">Report an issue</a>
 </p>
 
-![Chroma home: recently played instances, a searchable library, and instance controls in a charcoal and lavender interface](docs/screenshots/home.png)
+![Chroma home: recently played instances, a searchable library, and instance controls in a soft clay interface](docs/screenshots/home.png)
 
 Chroma rebuilds Prism Launcher's default interface around a card library, a persistent sidebar, and screens that open inside the main window. It keeps Prism's instance management and installation workflows underneath, with a visual direction inspired by Modrinth.
 
@@ -33,7 +33,7 @@ Read the [release notes](https://github.com/nikitasokolov01/chroma/releases/tag/
 - **Pin your favorites.** Keep instance shortcuts in the sidebar and open their settings with one click.
 - **Browse by service.** Choose Modrinth, CurseForge, ATLauncher, Technic, or FTB Legacy, then browse covers, filters, and versions. Available services depend on the build's API configuration.
 - **Stay in the workspace.** Instance editing, launcher settings, accounts, and installation flows open inside the main window.
-- **Choose your accent.** Lavender is the default. Pick a preset or a custom color over the charcoal palette.
+- **Choose your appearance.** Switch between light and dark clay themes, then pick a preset or custom accent color.
 - **Keep your Prism library.** Open an existing profile directly, including custom instance locations, without copying your modpacks.
 
 ### Browse, choose, install

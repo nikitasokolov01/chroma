@@ -161,6 +161,18 @@ void AppearanceWidget::applyWidgetTheme(int index)
     auto newAppTheme = m_ui->widgetStyleComboBox->itemData(index).toString();
     if (originalAppTheme != newAppTheme) {
         settings->set("ApplicationTheme", newAppTheme);
+        const auto iconTheme = settings->get("IconTheme").toString();
+        if ((newAppTheme == "chroma" || newAppTheme == "chroma-dark") &&
+            (iconTheme == "breeze_light" || iconTheme == "breeze_dark")) {
+            // Pair the built-in icons on a deliberate clay-theme change.
+            // Loading this widget never alters saved or custom icon choices.
+            const QString pairedIcons = newAppTheme == "chroma-dark" ? "breeze_dark" : "breeze_light";
+            settings->set("IconTheme", pairedIcons);
+            const QSignalBlocker blocker(m_ui->iconsComboBox);
+            const int pairedIndex = m_ui->iconsComboBox->findData(pairedIcons);
+            if (pairedIndex >= 0)
+                m_ui->iconsComboBox->setCurrentIndex(pairedIndex);
+        }
         APPLICATION->themeManager()->applyCurrentlySelectedTheme();
     }
 
@@ -186,7 +198,8 @@ void AppearanceWidget::updateAccentControls()
         swatch.fill(QColor(hex));
         m_ui->accentComboBox->addItem(QIcon(swatch), label, hex);
     };
-    addPreset(tr("Lavender (Default)"), "#b7a5f5");
+    addPreset(tr("Violet (Default)"), "#7c3aed");
+    addPreset(tr("Lavender"), "#b7a5f5");
     addPreset(tr("Sky Blue"), "#8ecbff");
     addPreset(tr("Mint"), "#8cdbbc");
     addPreset(tr("Rose"), "#f4a9c2");
@@ -198,7 +211,8 @@ void AppearanceWidget::updateAccentControls()
     }
     m_ui->accentComboBox->setCurrentIndex(index);
 
-    const bool chromaTheme = APPLICATION->settings()->get("ApplicationTheme").toString() == "chroma";
+    const auto theme = APPLICATION->settings()->get("ApplicationTheme").toString();
+    const bool chromaTheme = theme == "chroma" || theme == "chroma-dark";
     m_ui->accentLabel->setEnabled(chromaTheme);
     m_ui->accentComboBox->setEnabled(chromaTheme);
     m_ui->customAccentButton->setEnabled(chromaTheme);

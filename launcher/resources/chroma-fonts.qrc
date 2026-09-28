@@ -1,0 +1,12 @@
+<RCC>
+    <qresource prefix="/fonts">
+        <file alias="DMSans-400.ttf">fonts/DMSans-400.ttf</file>
+        <file alias="DMSans-500.ttf">fonts/DMSans-500.ttf</file>
+        <file alias="DMSans-700.ttf">fonts/DMSans-700.ttf</file>
+        <file alias="Nunito-700.ttf">fonts/Nunito-700.ttf</file>
+        <file alias="Nunito-800.ttf">fonts/Nunito-800.ttf</file>
+        <file alias="Nunito-900.ttf">fonts/Nunito-900.ttf</file>
+        <file alias="Nunito-OFL.txt">fonts/Nunito-OFL.txt</file>
+        <file alias="DMSans-OFL.txt">fonts/DMSans-OFL.txt</file>
+    </qresource>
+</RCC>

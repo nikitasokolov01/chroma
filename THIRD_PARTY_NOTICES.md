@@ -90,7 +90,25 @@ name and interface; the retained upstream artwork is not claimed as new Chroma a
 Other retained icons include the Batch, Material Design, Breeze and Oxygen sets.
 Their copyright and permission notices remain in `COPYING.md`; relevant resource
 sidecars, the SIL Open Font License and Apache 2.0 text are included in the license
-bundle. No additional font files are bundled by the Chroma UI.
+bundle.
+
+## Interface fonts
+
+The Chroma interface bundles static **Nunito** weights 700, 800 and 900 and
+**DM Sans** weights 400, 500 and 700 from the official Google Fonts service.
+The font files are unmodified and are distributed under the **SIL Open Font
+License, version 1.1**.
+
+- Nunito: Copyright 2014 The Nunito Project Authors
+  (https://github.com/googlefonts/nunito).
+- DM Sans: Copyright 2014 The DM Sans Project Authors
+  (https://github.com/googlefonts/dm-fonts).
+
+The complete licenses are retained in
+[`Nunito-OFL.txt`](launcher/resources/fonts/Nunito-OFL.txt) and
+[`DMSans-OFL.txt`](launcher/resources/fonts/DMSans-OFL.txt), and embedded in the
+application resources with the fonts. Exact font download sources are recorded
+in [`launcher/resources/fonts/README.md`](launcher/resources/fonts/README.md).
 
 ## Service identity
 

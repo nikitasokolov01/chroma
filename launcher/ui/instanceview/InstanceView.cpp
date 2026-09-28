@@ -311,6 +311,11 @@ int InstanceView::contentWidth() const
 
 int InstanceView::itemWidth() const
 {
+    if (model() && model()->rowCount() > 0 && itemDelegate()) {
+        QStyleOptionViewItem option;
+        initViewItemOption(&option);
+        return itemDelegate()->sizeHint(option, model()->index(0, 0)).width();
+    }
     return m_itemWidth;
 }
 
@@ -587,7 +592,9 @@ void InstanceView::paintEvent([[maybe_unused]] QPaintEvent* event)
         } else {
             option.state &= ~QStyle::State_Selected;
         }
-        option.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver);
+        option.state &= ~(QStyle::State_HasFocus | QStyle::State_MouseOver | QStyle::State_Editing);
+        if (state() == EditingState && index == currentIndex())
+            option.state |= QStyle::State_Editing;
         if (index == currentIndex() && hasFocus())
             option.state |= QStyle::State_HasFocus;
         if (viewport()->underMouse() && option.rect.contains(viewport()->mapFromGlobal(QCursor::pos())))
@@ -636,8 +643,12 @@ void InstanceView::resizeEvent([[maybe_unused]] QResizeEvent* event)
     int newItemsPerRow = calculateItemsPerRow();
     if (newItemsPerRow != m_currentItemsPerRow) {
         m_currentCursorColumn = -1;
-        m_currentItemsPerRow = newItemsPerRow;
-        updateGeometries();
+        // The outer scroll area's layout can resize our viewport while
+        // updateScrollbar() is still applying its previous fixed height.
+        // Rebuilding here would recurse into setFixedHeight(), after which
+        // the outer call can overwrite the new row count's height. Let Qt
+        // coalesce the layout until the viewport width has settled instead.
+        scheduleDelayedItemsLayout();
     } else {
         updateScrollbar();
     }

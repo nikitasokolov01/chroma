@@ -24,7 +24,8 @@ class AccentColorTest : public QObject {
         QTest::addColumn<QString>("setting");
         QTest::addColumn<QColor>("expected");
 
-        QTest::newRow("default lavender") << "#b7a5f5" << QColor("#b7a5f5");
+        QTest::newRow("default violet") << "#7c3aed" << QColor("#7c3aed");
+        QTest::newRow("saved lavender") << "#b7a5f5" << QColor("#b7a5f5");
         QTest::newRow("uppercase") << "#B7A5F5" << QColor("#b7a5f5");
         QTest::newRow("surrounding whitespace") << "  #B7A5F5\t" << QColor("#b7a5f5");
         QTest::newRow("black") << "#000000" << QColor(Qt::black);
@@ -42,7 +43,7 @@ class AccentColorTest : public QObject {
         QCOMPARE(color.alpha(), 255);
     }
 
-    void invalidSettingsUseLavender_data()
+    void invalidSettingsUseViolet_data()
     {
         QTest::addColumn<QString>("setting");
 
@@ -61,10 +62,10 @@ class AccentColorTest : public QObject {
         QTest::newRow("opaque alpha") << "#ff123456";
     }
 
-    void invalidSettingsUseLavender()
+    void invalidSettingsUseViolet()
     {
         QFETCH(QString, setting);
-        QCOMPARE(AccentColor::fromSetting(setting), QColor("#b7a5f5"));
+        QCOMPARE(AccentColor::fromSetting(setting), QColor("#7c3aed"));
     }
 
     void luminanceUsesLinearSrgb()
@@ -80,6 +81,7 @@ class AccentColorTest : public QObject {
 
     void foregroundFollowsContrast()
     {
+        QCOMPARE(AccentColor::foreground(QColor("#7c3aed")), QColor(Qt::white));
         QCOMPARE(AccentColor::foreground(QColor("#b7a5f5")), QColor(Qt::black));
         QCOMPARE(AccentColor::foreground(QColor("#161124")), QColor(Qt::white));
         QCOMPARE(AccentColor::foreground(QColor(Qt::black)), QColor(Qt::white));
@@ -92,17 +94,38 @@ class AccentColorTest : public QObject {
 
     void readableLinksPreserveTheAccent()
     {
-        const QColor background("#202329");
+        const QColor dark("#202329");
+        const QColor light("#F4F1FA");
         const QColor lavender("#b7a5f5");
-        QCOMPARE(AccentColor::link(lavender, background), lavender);
-        QCOMPARE(AccentColor::link(QColor(Qt::white), background), QColor(Qt::white));
-        QVERIFY(AccentColor::link(QColor(Qt::black), background) != QColor(Qt::black));
+        const QColor violet("#7c3aed");
+        QCOMPARE(AccentColor::link(lavender, dark), lavender);
+        QCOMPARE(AccentColor::link(QColor(Qt::white), dark), QColor(Qt::white));
+        QVERIFY(AccentColor::link(QColor(Qt::black), dark) != QColor(Qt::black));
+        QCOMPARE(AccentColor::link(violet, light), violet);
+        QCOMPARE(AccentColor::link(QColor(Qt::black), light), QColor(Qt::black));
+        QVERIFY(AccentColor::link(QColor(Qt::white), light) != QColor(Qt::white));
+        QVERIFY(AccentColor::luminance(AccentColor::link(lavender, light)) < AccentColor::luminance(lavender));
+    }
+
+    void foregroundAndLinksMeetContrastAcrossRgb_data()
+    {
+        QTest::addColumn<QColor>("window");
+        QTest::addColumn<QColor>("content");
+
+        QTest::newRow("dark surfaces") << QColor("#202329") << QColor("#17191d");
+        QTest::newRow("clay surfaces") << QColor("#F4F1FA") << QColor("#FAF8FF");
+        QTest::newRow("white surface") << QColor(Qt::white) << QColor(Qt::white);
+        QTest::newRow("black surface") << QColor(Qt::black) << QColor(Qt::black);
+        // Mid-tone backgrounds exercise the endpoint choice near the
+        // black/white contrast crossover, not only at theme extremes.
+        QTest::newRow("mid gray") << QColor("#757575") << QColor("#757575");
+        QTest::newRow("lighter mid gray") << QColor("#767676") << QColor("#767676");
     }
 
     void foregroundAndLinksMeetContrastAcrossRgb()
     {
-        const QColor window("#202329");
-        const QColor content("#17191d");
+        QFETCH(QColor, window);
+        QFETCH(QColor, content);
         int colorsChecked = 0;
         for (int red = 0; red <= 255; red += 17) {
             for (int green = 0; green <= 255; green += 17) {

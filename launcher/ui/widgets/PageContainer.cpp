@@ -57,7 +57,9 @@
 
 #include "settings/SettingsObject.h"
 
+#include "ui/widgets/ClayWidgets.h"
 #include "ui/widgets/IconLabel.h"
+#include "ui/themes/ClayStyle.h"
 
 #include "Application.h"
 #include "DesktopServices.h"
@@ -200,7 +202,7 @@ void PageContainer::createUI()
     m_pageList->setMaximumWidth(220);
     m_pageList->setTextElideMode(Qt::ElideRight);
     m_pageList->setSpacing(3);
-    m_pageSelector = new QComboBox(this);
+    m_pageSelector = new ClayComboBox(this);
     m_pageSelector->setObjectName("pageSelector");
     m_pageSelector->setAccessibleName(tr("Current page"));
     m_pageSelector->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
@@ -240,7 +242,13 @@ void PageContainer::createUI()
     m_layout->setVerticalSpacing(12);
     setLayout(m_layout);
 
-    setStyleSheet(QStringLiteral(R"(
+    applyStyle();
+}
+
+void PageContainer::applyStyle()
+{
+    m_clayStyle = Clay::enabled();
+    auto sheet = QStringLiteral(R"(
         QWidget#pageContainer { background: palette(base); }
         QWidget#pageContainer QLabel { background: transparent; }
         QListView#pageNavigation { background: palette(window); color: palette(text); border: 1px solid palette(mid); border-radius: 10px; padding: 5px; outline: none; }
@@ -262,7 +270,17 @@ void PageContainer::createUI()
         QWidget#pageContainer QTabWidget::pane { border: 1px solid palette(mid); border-radius: 8px; }
         QWidget#pageContainer QTabBar::tab { background: palette(window); color: palette(text); padding: 8px 12px; border-bottom: 2px solid transparent; }
         QWidget#pageContainer QTabBar::tab:selected { border-bottom-color: palette(highlight); background: palette(alternate-base); }
-    )"));
+    )");
+    if (m_clayStyle) {
+        sheet += Clay::formStyleSheet(QStringLiteral("QWidget#pageContainer"));
+        sheet += QStringLiteral(R"(
+            QLabel#pageHeader { font-family: "Nunito"; font-weight: 800; }
+            QListView#pageNavigation { border-radius: 24px; }
+            QListView#pageNavigation::item { border-radius: 20px; min-height: 36px; }
+            QWidget#pageContainer QComboBox#pageSelector { min-height: 28px; }
+        )");
+    }
+    setStyleSheet(sheet);
 }
 
 void PageContainer::retranslate()
@@ -394,4 +412,6 @@ void PageContainer::changeEvent(QEvent* event)
         retranslate();
     }
     QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange && m_clayStyle != Clay::enabled())
+        applyStyle();
 }

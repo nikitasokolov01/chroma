@@ -44,6 +44,7 @@
 #include <utility>
 
 #include "InstanceView.h"
+#include "ui/themes/ClayStyle.h"
 
 VisualGroup::VisualGroup(QString text, InstanceView* view) : view(view), text(std::move(text)), collapsed(false) {}
 
@@ -143,15 +144,16 @@ void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& opti
 {
     QRect optRect = option.rect;
     optRect.setTop(optRect.top() + 7);
-    QFont font(QApplication::font());
+    QFont font(Clay::enabled() ? Clay::headingFont() : QApplication::font());
     font.setBold(true);
     const QFontMetrics fontMetrics = QFontMetrics(font);
     painter->setFont(font);
 
     QPen pen;
     pen.setWidth(2);
-    QColor penColor = option.palette.text().color();
-    penColor.setAlphaF(0.6);
+    QColor penColor = Clay::enabled() ? Clay::colors().Muted : option.palette.text().color();
+    if (!Clay::enabled())
+        penColor.setAlphaF(0.6);
     pen.setColor(penColor);
     painter->setPen(pen);
     painter->setRenderHint(QPainter::Antialiasing);
@@ -194,7 +196,7 @@ void VisualGroup::drawHeader(QPainter* painter, const QStyleOptionViewItem& opti
 
     // BEGIN: horizontal line
     {
-        penColor.setAlphaF(0.05);
+        penColor.setAlphaF(Clay::enabled() && Clay::dark() ? 0.16 : 0.05);
         pen.setColor(penColor);
         painter->setPen(pen);
         // startPoint is left + arrow + text + space
@@ -217,13 +219,13 @@ int VisualGroup::totalHeight() const
 
 int VisualGroup::headerHeight()
 {
-    QFont font(QApplication::font());
+    QFont font(Clay::enabled() ? Clay::headingFont() : QApplication::font());
     font.setBold(true);
     QFontMetrics fontMetrics(font);
 
     const int height = fontMetrics.height() + 1 /* 1 pixel-width gradient */
                        + 11 /* top and bottom separation */;
-    return height;
+    return Clay::enabled() ? qMax(44, height) : height;
     /*
     int raw = view->viewport()->fontMetrics().height() + 4;
     // add english. maybe. depends on font height.

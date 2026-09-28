@@ -817,6 +817,8 @@ SET(LAUNCHER_SOURCES
     KonamiCode.cpp
 
     # Bundled resources
+    resources/chroma-fonts.qrc
+    resources/chroma-style.qrc
     resources/backgrounds/backgrounds.qrc
     resources/multimc/multimc.qrc
     resources/pe_dark/pe_dark.qrc
@@ -850,6 +852,10 @@ SET(LAUNCHER_SOURCES
     ui/MainWindow.cpp
     ui/widgets/LauncherHome.cpp
     ui/widgets/LauncherHome.h
+    ui/widgets/ClayWidgets.cpp
+    ui/widgets/ClayWidgets.h
+    ui/themes/ClayStyle.cpp
+    ui/themes/ClayStyle.h
     ui/widgets/InlineWorkspace.cpp
     ui/widgets/InlineWorkspace.h
     ui/dialogs/PrismProfileDialog.cpp
@@ -1296,6 +1302,8 @@ if (NOT Apple)
 endif()
 
 qt_add_resources(LAUNCHER_RESOURCES
+    resources/chroma-fonts.qrc
+    resources/chroma-style.qrc
     resources/backgrounds/backgrounds.qrc
     resources/multimc/multimc.qrc
     resources/pe_dark/pe_dark.qrc

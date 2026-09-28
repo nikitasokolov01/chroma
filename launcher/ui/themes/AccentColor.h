@@ -13,7 +13,7 @@ inline QColor fromSetting(const QString& value)
     const QColor color(hex);
     // Persist opaque RGB values only. Malformed or old configuration values
     // must never result in invisible controls.
-    return hex.size() == 7 && hex.startsWith('#') && color.isValid() ? color : QColor("#b7a5f5");
+    return hex.size() == 7 && hex.startsWith('#') && color.isValid() ? color : QColor("#7c3aed");
 }
 
 inline double luminance(const QColor& color)
@@ -34,10 +34,16 @@ inline QColor link(const QColor& accent, const QColor& background)
 {
     QColor color = accent;
     const double backgroundLight = luminance(background);
-    // A very dark custom accent is valid for filled buttons, but links still
-    // need enough contrast against the dark content surface.
-    for (int step = 0; step < 32 && (luminance(color) + 0.05) / (backgroundLight + 0.05) < 4.5; ++step) {
-        color.setRgb(qMin(255, color.red() + 8), qMin(255, color.green() + 8), qMin(255, color.blue() + 8));
+    const auto contrast = [backgroundLight](const QColor& candidate) {
+        const double light = luminance(candidate);
+        return (qMax(light, backgroundLight) + 0.05) / (qMin(light, backgroundLight) + 0.05);
+    };
+    // Preserve readable custom accents. Otherwise move towards the endpoint
+    // with the strongest contrast, on either a light or dark surface.
+    const int direction = foreground(background) == QColor(Qt::white) ? 8 : -8;
+    for (int step = 0; step < 32 && contrast(color) < 4.5; ++step) {
+        color.setRgb(qBound(0, color.red() + direction, 255), qBound(0, color.green() + direction, 255),
+                     qBound(0, color.blue() + direction, 255));
     }
     return color;
 }

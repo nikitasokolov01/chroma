@@ -31,6 +31,7 @@ class InlineWorkspace : public QWidget {
 
    protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void changeEvent(QEvent* event) override;
 
    private:
     struct Page {
@@ -51,4 +52,5 @@ class InlineWorkspace : public QWidget {
     QList<QWidget*> m_active;
     bool m_adopting = false;
     bool m_closing = false;
+    bool m_clayStyle = false;
 };

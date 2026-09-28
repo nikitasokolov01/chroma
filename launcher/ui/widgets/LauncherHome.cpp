@@ -7,6 +7,7 @@
 #include <QDateTime>
 #include <QEvent>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -31,6 +32,8 @@
 #include "icons/IconList.h"
 #include "ui/instanceview/InstanceProxyModel.h"
 #include "ui/instanceview/InstanceView.h"
+#include "ui/themes/ClayStyle.h"
+#include "ui/widgets/ClayWidgets.h"
 
 namespace {
 class HeaderTitleLabel : public QLabel {
@@ -57,12 +60,13 @@ QLabel* label(const QString& text, const char* role, QWidget* parent)
 
 QToolButton* actionButton(QAction* action, QWidget* parent, const char* role = "secondary")
 {
-    auto* button = new QToolButton(parent);
+    auto* button = new ClayToolButton(parent);
     button->setDefaultAction(action);
     button->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     button->setProperty("role", role);
+    button->setProperty("claySymbolic", true);
     button->setCursor(Qt::PointingHandCursor);
-    button->setMinimumHeight(36);
+    button->setMinimumHeight(48);
     button->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     if (action->menu())
         button->setPopupMode(QToolButton::MenuButtonPopup);
@@ -86,7 +90,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     shell->setContentsMargins(0, 0, 0, 0);
     shell->setSpacing(0);
 
-    auto* header = new QFrame(this);
+    auto* header = new ClayPanel(this);
     header->setObjectName("homeHeader");
     auto* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(20, 12, 20, 12);
@@ -114,21 +118,22 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     body->setSpacing(0);
     shell->addLayout(body, 1);
 
-    auto* rail = new QFrame(this);
+    auto* rail = new ClayPanel(this);
     rail->setObjectName("homeRail");
-    rail->setFixedWidth(72);
+    rail->setFixedWidth(80);
     auto* railLayout = new QVBoxLayout(rail);
-    railLayout->setContentsMargins(10, 18, 10, 16);
+    railLayout->setContentsMargins(12, 18, 12, 16);
     railLayout->setSpacing(12);
     auto navigation = [rail, railLayout](const QString& text, const QString& icon) {
-        auto* button = new QToolButton(rail);
+        auto* button = new ClayToolButton(rail);
         button->setIcon(QIcon::fromTheme(icon));
         button->setText(text);
         button->setToolTip(text);
         button->setAccessibleName(text);
         button->setIconSize(QSize(24, 24));
-        button->setFixedSize(50, 50);
+        button->setFixedSize(56, 56);
         button->setProperty("role", "navigation");
+        button->setProperty("claySymbolic", true);
         button->setCursor(Qt::PointingHandCursor);
         railLayout->addWidget(button);
         return button;
@@ -162,6 +167,8 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     m_pinnedRows->setSpacing(8);
     m_pinnedRows->setAlignment(Qt::AlignTop | Qt::AlignHCenter);
     m_pinsScroll->setWidget(pins);
+    m_pinsScroll->viewport()->setAutoFillBackground(false);
+    pins->setAutoFillBackground(false);
     railLayout->addWidget(m_pinsScroll, 1);
     auto* folders = navigation(tr("Launcher menu"), "more");
     folders->setText(QStringLiteral("\u2022\u2022\u2022"));
@@ -194,43 +201,53 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     m_homeScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_homeScroll->setMinimumWidth(340);
     m_homeScroll->verticalScrollBar()->setSingleStep(48);
-    auto* library = new QWidget(m_homeScroll);
+    auto* library = new ClayCanvas(m_homeScroll);
     library->setObjectName("homeLibrary");
     library->setMinimumWidth(340);
     auto* libraryLayout = new QVBoxLayout(library);
-    libraryLayout->setContentsMargins(24, 22, 24, 14);
-    libraryLayout->setSpacing(14);
+    libraryLayout->setContentsMargins(24, 20, 24, 24);
+    libraryLayout->setSpacing(12);
 
     m_recent = new QWidget(library);
     m_recent->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
     auto* recentLayout = new QVBoxLayout(m_recent);
     recentLayout->setContentsMargins(0, 0, 0, 8);
-    recentLayout->setSpacing(12);
+    recentLayout->setSpacing(6);
+    auto* recentEyebrow = label(tr("A LITTLE PLAY GOES A LONG WAY"), "eyebrow", m_recent);
+    recentEyebrow->setObjectName("recentEyebrow");
+    recentLayout->addWidget(recentEyebrow);
     auto* recentTitle = label(tr("Jump back in"), "heading", m_recent);
     recentTitle->setObjectName("recentTitle");
     recentLayout->addWidget(recentTitle);
-    m_recentRows = new QVBoxLayout();
-    m_recentRows->setSpacing(8);
+    m_recentRows = new QGridLayout();
+    m_recentRows->setSpacing(10);
     recentLayout->addLayout(m_recentRows);
     libraryLayout->addWidget(m_recent);
 
+    m_libraryControls = new QGridLayout();
+    m_libraryControls->setHorizontalSpacing(12);
+    m_libraryControls->setVerticalSpacing(10);
+    m_libraryControls->setColumnStretch(0, 1);
+    libraryLayout->addLayout(m_libraryControls);
     auto* titleRow = new QHBoxLayout();
+    m_libraryTitleRow = titleRow;
     auto* libraryTitle = label(tr("Your library"), "heading", library);
     libraryTitle->setObjectName("libraryTitle");
     titleRow->addWidget(libraryTitle);
     m_count = label({}, "muted", library);
+    m_count->setObjectName("libraryCount");
     titleRow->addWidget(m_count);
     titleRow->addStretch();
-    libraryLayout->addLayout(titleRow);
+    m_libraryControls->addLayout(titleRow, 0, 0);
 
     auto* searchRow = new QHBoxLayout();
     searchRow->setSpacing(10);
-    m_search = new QLineEdit(library);
+    m_search = new ClayLineEdit(library);
     m_search->setObjectName("librarySearch");
     m_search->setPlaceholderText(tr("Search your instances"));
     m_search->setAccessibleName(tr("Search your instances"));
     m_search->setClearButtonEnabled(true);
-    m_search->setMinimumHeight(38);
+    m_search->setMinimumHeight(56);
     m_model->setFilterCaseSensitivity(Qt::CaseInsensitive);
     connect(m_search, &QLineEdit::textChanged, this, [this](const QString& text) {
         m_model->setFilterFixedString(text);
@@ -238,11 +255,14 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     });
     searchRow->addWidget(m_search, 1);
     auto* newInstance = actionButton(m_actions.add, library, "primary");
+    newInstance->setMinimumHeight(56);
     searchRow->addWidget(newInstance);
-    libraryLayout->addLayout(searchRow);
+    m_libraryControls->addLayout(searchRow, 1, 0, 1, 2);
 
     auto* filters = new QHBoxLayout();
-    m_sort = new QComboBox(library);
+    m_libraryFilters = filters;
+    m_sort = new ClayComboBox(library);
+    m_sort->setMinimumHeight(44);
     m_sort->setAccessibleName(tr("Sort instances"));
     m_sort->addItem(tr("Name"), "Name");
     m_sort->addItem(tr("Last played"), "LastLaunch");
@@ -255,7 +275,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     filters->addWidget(m_sort);
     filters->addWidget(actionButton(m_actions.group, library));
     filters->addStretch();
-    libraryLayout->addLayout(filters);
+    m_libraryControls->addLayout(filters, 2, 0, 1, 2);
 
     m_empty = label({}, "empty", library);
     m_empty->setAlignment(Qt::AlignCenter);
@@ -269,6 +289,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     libraryLayout->addWidget(m_view);
     libraryLayout->addStretch();
     m_homeScroll->setWidget(library);
+    m_homeScroll->viewport()->setAutoFillBackground(false);
     m_view->setOuterScrollArea(m_homeScroll);
     homeLayout->addWidget(m_homeScroll, 1);
 
@@ -277,16 +298,18 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     detailsScroll->setWidgetResizable(true);
     detailsScroll->setFrameShape(QFrame::NoFrame);
     detailsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    detailsScroll->setFixedWidth(258);
+    detailsScroll->setFixedWidth(278);
     m_details = detailsScroll;
-    auto* details = new QWidget(detailsScroll);
+    auto* details = new ClayPanel(detailsScroll);
+    details->setObjectName("homeDetailsPanel");
     auto* detailsLayout = new QVBoxLayout(details);
-    detailsLayout->setContentsMargins(18, 22, 18, 18);
+    detailsLayout->setContentsMargins(22, 24, 22, 24);
     detailsLayout->setSpacing(12);
     auto* playingLabel = label(tr("PLAYING AS"), "eyebrow", details);
     playingLabel->setObjectName("playingLabel");
     detailsLayout->addWidget(playingLabel);
     auto* accountButton = actionButton(m_actions.accounts, details);
+    accountButton->setProperty("claySymbolic", false);
     accountButton->setPopupMode(QToolButton::InstantPopup);
     accountButton->setIconSize(QSize(32, 32));
     accountButton->setMinimumHeight(56);
@@ -315,21 +338,21 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
         button->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
         detailsLayout->addWidget(button);
     }
-    m_pinButton = new QToolButton(details);
+    m_pinButton = new ClayToolButton(details);
     m_pinButton->setObjectName("pinSelectedInstance");
     m_pinButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     m_pinButton->setIcon(QIcon::fromTheme("star"));
-    m_pinButton->setMinimumHeight(36);
+    m_pinButton->setMinimumHeight(48);
     m_pinButton->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     connect(m_pinButton, &QToolButton::clicked, this, &LauncherHome::toggleSelectedPin);
     detailsLayout->addWidget(m_pinButton);
-    auto* more = new QToolButton(details);
+    auto* more = new ClayToolButton(details);
     more->setText(tr("More instance actions"));
     more->setObjectName("moreInstanceActions");
     more->setMenu(m_actions.instanceMenu);
     more->setPopupMode(QToolButton::InstantPopup);
     more->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    more->setMinimumHeight(36);
+    more->setMinimumHeight(48);
     more->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     detailsLayout->addWidget(more);
     detailsLayout->addStretch();
@@ -340,6 +363,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     tip->setWordWrap(true);
     detailsLayout->addWidget(tip);
     detailsScroll->setWidget(details);
+    detailsScroll->viewport()->setAutoFillBackground(false);
     homeLayout->addWidget(detailsScroll);
 
     auto* searchShortcut = new QShortcut(QKeySequence::Find, this);
@@ -365,6 +389,7 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     connect(APPLICATION, &Application::globalSettingsApplied, this, [this, schedule] {
         QSignalBlocker blocker(m_sort);
         m_sort->setCurrentIndex(APPLICATION->settings()->get("InstSortMode").toString() == "LastLaunch" ? 1 : 0);
+        applyStyle();
         schedule();
     });
     applyStyle();
@@ -475,7 +500,7 @@ void LauncherHome::refreshPins()
         const auto instance = APPLICATION->instances()->getInstanceById(id);
         auto* button = m_pinButtons.value(id);
         if (!button) {
-            button = new QToolButton(m_pinsScroll->widget());
+            button = new ClayToolButton(m_pinsScroll->widget());
             button->setObjectName("pinnedInstance");
             button->setProperty("instanceId", id);
             button->setProperty("role", "navigation");
@@ -539,20 +564,29 @@ void LauncherHome::refresh()
     }
     for (int i = 0; i < qMin(m_recentLimit, int(recent.size())); ++i) {
         auto instance = recent.at(i);
-        auto* row = new QFrame(m_recent);
+        auto* row = new ClayPanel(m_recent);
         row->setObjectName("recentInstance");
-        row->setMinimumHeight(68);
+        row->setProperty("featured", i == 0);
+        row->setProperty("clayTint", QColor(i == 0 ? "#E8DDFC" : (i == 1 ? "#E2F2FB" : "#FBE4EF")));
+        row->setProperty("clayDarkTint", QColor(i == 0 ? "#392A51" : (i == 1 ? "#203B48" : "#482B3F")));
+        row->setMinimumHeight(i == 0 ? 164 : 82);
         row->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
-        auto* rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(14, 10, 14, 10);
-        rowLayout->setSpacing(12);
+        auto* cardLayout = new QVBoxLayout(row);
+        cardLayout->setContentsMargins(20, 12, 20, 12);
+        cardLayout->setSpacing(12);
+        auto* rowLayout = new QHBoxLayout();
+        rowLayout->setSpacing(10);
+        cardLayout->addLayout(rowLayout, 1);
         auto* icon = new QLabel(row);
-        icon->setPixmap(APPLICATION->icons()->getIcon(instance->iconKey()).pixmap(44, 44));
+        const int iconSize = i == 0 ? 64 : 40;
+        icon->setPixmap(APPLICATION->icons()->getIcon(instance->iconKey()).pixmap(iconSize, iconSize));
         rowLayout->addWidget(icon);
         auto* description = new QVBoxLayout();
         description->setContentsMargins(0, 0, 0, 0);
         description->setSpacing(4);
-        auto* name = label(instance->name(), "strong", row);
+        auto* name = new HeaderTitleLabel(instance->name(), row);
+        name->setTextFormat(Qt::PlainText);
+        name->setProperty("role", i == 0 ? "featureTitle" : "strong");
         name->setMinimumWidth(0);
         name->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
         name->ensurePolished();
@@ -560,25 +594,39 @@ void LauncherHome::refresh()
         name->setToolTip(instance->name());
         description->addWidget(name);
         auto lastPlayed = QDateTime::fromMSecsSinceEpoch(instance->lastLaunch()).toString(tr("MMM d, yyyy"));
-        auto* subtitle = label(instance->isRunning() ? tr("Running") : tr("Last played %1").arg(lastPlayed), "muted", row);
-        subtitle->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+        auto* subtitle = new HeaderTitleLabel(instance->isRunning() ? tr("Running") : tr("Last played %1").arg(lastPlayed), row);
+        subtitle->setTextFormat(Qt::PlainText);
+        subtitle->setProperty("role", "muted");
+        subtitle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Minimum);
+        subtitle->setToolTip(subtitle->text());
         subtitle->ensurePolished();
         subtitle->setMinimumHeight(subtitle->fontMetrics().height() + 2);
         description->addWidget(subtitle);
         rowLayout->addLayout(description, 1);
-        auto* play = new QToolButton(row);
+        auto* play = new ClayToolButton(row);
         play->setText(instance->isRunning() ? tr("Running") : tr("Play"));
         play->setIcon(QIcon::fromTheme("launch"));
         play->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
         play->setProperty("role", "primary");
-        play->setMinimumHeight(36);
+        play->setProperty("claySymbolic", true);
+        play->setMinimumHeight(48);
         play->setAccessibleName(tr("Play %1").arg(instance->name()));
         play->setEnabled(instance->canLaunch() && !instance->isRunning());
         const auto id = instance->id();
         connect(play, &QToolButton::clicked, this, [this, id] { emit launchRequested(id); });
-        rowLayout->addWidget(play);
-        m_recentRows->addWidget(row);
+        if (i == 0) {
+            auto* footer = new QHBoxLayout();
+            auto* invitation = label(tr("Your world is waiting."), "muted", row);
+            invitation->setWordWrap(true);
+            footer->addWidget(invitation, 1);
+            footer->addWidget(play);
+            cardLayout->addLayout(footer);
+        } else {
+            rowLayout->addWidget(play);
+        }
+        m_recentRows->addWidget(row, i, 0);
     }
+    layoutRecentCards();
     m_running->setText(running == 0 ? tr("No instances running") : tr("%n instance(s) running", nullptr, running));
     m_count->setText(tr("%1 / %2").arg(m_model->rowCount()).arg(instances->count()));
     m_recent->setVisible(!m_libraryOnly && instances->count() > 0);
@@ -622,6 +670,35 @@ void LauncherHome::resizeEvent(QResizeEvent* event)
     QWidget::resizeEvent(event);
     // The library and its context menu remain usable on smaller displays.
     m_details->setVisible(event->size().width() >= 1000);
+    layoutRecentCards();
+}
+
+void LauncherHome::layoutRecentCards()
+{
+    // The same three native cards form a bento at wide sizes and a single
+    // column on compact displays. Model order and keyboard order stay intact.
+    const bool wide = width() >= 1180 && m_recentRows->count() > 1;
+    if (m_libraryControls) {
+        m_libraryControls->removeItem(m_libraryTitleRow);
+        m_libraryControls->removeItem(m_libraryFilters);
+        m_libraryControls->addLayout(m_libraryTitleRow, 0, 0, 1, width() >= 1180 ? 1 : 2);
+        m_libraryControls->addLayout(m_libraryFilters, width() >= 1180 ? 0 : 2, width() >= 1180 ? 1 : 0,
+                                    1, width() >= 1180 ? 1 : 2);
+    }
+    QList<QWidget*> cards;
+    while (auto* item = m_recentRows->takeAt(0)) {
+        if (item->widget())
+            cards.append(item->widget());
+        delete item;
+    }
+    m_recentRows->setColumnStretch(0, wide ? 6 : 1);
+    m_recentRows->setColumnStretch(1, wide ? 5 : 0);
+    for (int i = 0; i < cards.size(); ++i) {
+        if (wide && i == 0)
+            m_recentRows->addWidget(cards[i], 0, 0, cards.size() - 1, 1);
+        else
+            m_recentRows->addWidget(cards[i], wide ? i - 1 : i, wide ? 1 : 0);
+    }
 }
 
 void LauncherHome::changeEvent(QEvent* event)
@@ -629,6 +706,8 @@ void LauncherHome::changeEvent(QEvent* event)
     QWidget::changeEvent(event);
     if (event->type() == QEvent::LanguageChange)
         retranslate();
+    if (event->type() == QEvent::PaletteChange && m_sort && m_clayStyle != Clay::enabled())
+        applyStyle();
 }
 
 void LauncherHome::retranslate()
@@ -638,6 +717,7 @@ void LauncherHome::retranslate()
     m_sort->setItemText(0, tr("Name"));
     m_sort->setItemText(1, tr("Last played"));
     findChild<QLabel*>("recentTitle")->setText(tr("Jump back in"));
+    findChild<QLabel*>("recentEyebrow")->setText(tr("A LITTLE PLAY GOES A LONG WAY"));
     findChild<QLabel*>("libraryTitle")->setText(tr("Your library"));
     findChild<QLabel*>("playingLabel")->setText(tr("PLAYING AS"));
     findChild<QLabel*>("selectedLabel")->setText(tr("INSTANCE DETAILS"));
@@ -649,6 +729,63 @@ void LauncherHome::retranslate()
 
 void LauncherHome::applyStyle()
 {
+    m_clayStyle = Clay::enabled();
+    layout()->setContentsMargins(m_clayStyle ? 12 : 0, m_clayStyle ? 10 : 0, m_clayStyle ? 12 : 0, m_clayStyle ? 10 : 0);
+    layout()->setSpacing(m_clayStyle ? 8 : 0);
+    m_view->viewport()->setAutoFillBackground(!m_clayStyle);
+    if (m_clayStyle) {
+        setStyleSheet(QStringLiteral(R"(
+            QWidget#launcherHome { background: palette(window); }
+            QWidget#launcherHome QLabel { background: transparent; }
+            QFrame#homeHeader, QFrame#homeRail, QFrame#recentInstance,
+            QFrame#homeDetailsPanel { background: transparent; border: none; }
+            QWidget#homeLibrary, QWidget#instanceLibrary { background: transparent; border: none; }
+            QScrollArea#homeContentScroll, QScrollArea#pinnedInstances,
+            QScrollArea#homeDetails { background: transparent; border: none; }
+            QFrame#homeDivider { background: palette(mid); border: none; }
+            QLabel[role="brand"] { font-family: "Nunito"; font-size: 25px; font-weight: 900; }
+            QLabel[role="heading"] { font-family: "Nunito"; font-size: 30px; font-weight: 900; }
+            QLabel#libraryTitle { font-size: 27px; }
+            QLabel[role="featureTitle"] { font-family: "Nunito"; font-size: 25px; font-weight: 900; }
+            QLabel[role="strong"] { font-family: "Nunito"; font-size: 16px; font-weight: 800; }
+            QLabel[role="body"] { font-size: 14px; font-weight: 500; }
+            QLabel[role="muted"], QLabel[role="eyebrow"] { color: palette(placeholder-text); font-size: 12px; }
+            QLabel[role="eyebrow"] { font-family: "Nunito"; font-weight: 800; }
+            QLabel#recentEyebrow { color: palette(link); font-size: 11px; }
+            QLabel[role="welcome"], QLabel[role="empty"] {
+                background: palette(alternate-base); border: 1px solid palette(light);
+                border-radius: 24px; padding: 26px; color: palette(placeholder-text); font-size: 15px;
+            }
+            QLabel#runningStatus, QLabel#libraryCount {
+                background: palette(alternate-base); border: 1px solid palette(light);
+                border-radius: 20px; min-height: 20px; padding: 10px 14px; font-family: "Nunito"; font-weight: 800;
+            }
+            QWidget#launcherHome QToolButton {
+                background: transparent; border: none; padding: 5px 14px;
+                font-family: "Nunito"; font-size: 13px; font-weight: 800; color: palette(button-text);
+            }
+            QWidget#launcherHome QToolButton[role="navigation"] { padding: 0; }
+            QWidget#launcherHome QToolButton:disabled { color: palette(placeholder-text); }
+            QWidget#launcherHome QLineEdit#librarySearch {
+                background: transparent; border: none; padding: 0 20px; font-size: 14px;
+                selection-background-color: palette(highlight); selection-color: palette(highlighted-text);
+            }
+            QWidget#launcherHome QComboBox {
+                background: palette(button); color: palette(text); border: 2px solid palette(light);
+                border-radius: 20px; padding: 0 16px;
+            }
+            QWidget#launcherHome QComboBox:focus { border-color: palette(link); }
+            QWidget#launcherHome QComboBox::drop-down {
+                border: none; background: transparent; width: 26px; subcontrol-origin: padding;
+                subcontrol-position: center right;
+            }
+            QWidget#launcherHome QScrollBar:vertical { width: 10px; background: transparent; }
+            QWidget#launcherHome QScrollBar::handle:vertical { background: palette(mid); border-radius: 5px; min-height: 40px; }
+            QWidget#launcherHome QScrollBar::add-line:vertical, QWidget#launcherHome QScrollBar::sub-line:vertical { height: 0; }
+        )"));
+        m_view->doItemsLayout();
+        return;
+    }
     // Scoped to the native home widget; Qt palettes keep other color schemes usable.
     setStyleSheet(QStringLiteral(R"(
         QWidget#launcherHome { background: palette(base); }
@@ -685,4 +822,5 @@ void LauncherHome::applyStyle()
         QWidget#launcherHome QScrollBar::handle:vertical { background: palette(mid); border-radius: 4px; min-height: 30px; }
         QWidget#launcherHome QScrollBar::add-line:vertical, QWidget#launcherHome QScrollBar::sub-line:vertical { height: 0; }
     )"));
+    m_view->doItemsLayout();
 }

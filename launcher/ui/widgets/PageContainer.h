@@ -101,6 +101,7 @@ class PageContainer : public QWidget, public BasePageContainer {
 
    private:
     void createUI();
+    void applyStyle();
     void retranslate();
     void updateNavigation();
 
@@ -127,4 +128,5 @@ class PageContainer : public QWidget, public BasePageContainer {
     QGridLayout* m_layout;
     QVBoxLayout* m_buttonLayout;
     bool m_navigationHidden = false;
+    bool m_clayStyle = false;
 };

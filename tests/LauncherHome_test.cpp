@@ -23,6 +23,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QMenu>
 #include <QMessageBox>
 #include <QPointer>
 #include <QPushButton>
@@ -30,7 +31,10 @@
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSettings>
+#include <QSignalSpy>
 #include <QStandardPaths>
+#include <QStyle>
+#include <QStyleOptionToolButton>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -63,7 +67,10 @@
 #include "ui/pages/modplatform/modrinth/ModrinthModel.h"
 #include "ui/pages/modplatform/modrinth/ModrinthPage.h"
 #include "ui/themes/ThemeManager.h"
+#include "ui/themes/AccentColor.h"
+#include "ui/themes/ClayStyle.h"
 #include "ui/widgets/AppearanceWidget.h"
+#include "ui/widgets/ClayWidgets.h"
 #include "ui/widgets/InlineWorkspace.h"
 #include "ui/widgets/LauncherHome.h"
 #include "ui/widgets/ModFilterWidget.h"
@@ -411,7 +418,11 @@ class LauncherHomeTest : public QObject {
             m_view->scrollTo(index, QAbstractItemView::PositionAtCenter);
             QCoreApplication::processEvents();
             const QRect visual = m_view->visualRect(index);
-            QVERIFY(m_view->viewport()->rect().contains(visual.center()));
+            QVERIFY2(m_view->viewport()->rect().contains(visual.center()),
+                     qPrintable(QString("row %1, window %2x%3, viewport %4x%5, card %6,%7 %8x%9")
+                                    .arg(row).arg(m_window->width()).arg(m_window->height())
+                                    .arg(m_view->viewport()->width()).arg(m_view->viewport()->height())
+                                    .arg(visual.x()).arg(visual.y()).arg(visual.width()).arg(visual.height())));
             QCOMPARE(m_view->indexAt(visual.center()), index);
             auto* scroll = m_home->findChild<QScrollArea*>("homeContentScroll");
             QVERIFY(scroll);
@@ -486,7 +497,7 @@ class LauncherHomeTest : public QObject {
         QCOMPARE(APPLICATION->instances()->count(), 5);
         QCOMPARE(m_view->model()->rowCount(), 5);
         QCOMPARE(m_home->findChildren<QFrame*>("recentInstance").size(), 3);
-        QCOMPARE(APPLICATION->palette().highlight().color(), QColor("#b7a5f5"));
+        QCOMPARE(APPLICATION->palette().highlight().color(), QColor("#7c3aed"));
         QVERIFY(labelWithText(m_home, "5 / 5"));
     }
 
@@ -598,10 +609,212 @@ class LauncherHomeTest : public QObject {
         QCOMPARE(prism.value("AccentColor").toString(), QString("#118833"));
         APPLICATION->themeManager()->applyCurrentlySelectedTheme();
         QCOMPARE(APPLICATION->palette().highlight().color(), QColor("#24304f"));
-        presets->setCurrentIndex(presets->findData("#b7a5f5"));
-        QCOMPARE(APPLICATION->palette().highlight().color(), QColor("#b7a5f5"));
+        presets->setCurrentIndex(presets->findData("#7c3aed"));
+        QCOMPARE(APPLICATION->palette().highlight().color(), QColor("#7c3aed"));
         appearance.close();
         QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
+    }
+
+    void clayAccessibilityAndThemeSwitching()
+    {
+        const auto previousMotion = qgetenv("CHROMA_REDUCED_MOTION");
+        const auto restore = qScopeGuard([&] {
+            if (previousMotion.isNull())
+                qunsetenv("CHROMA_REDUCED_MOTION");
+            else
+                qputenv("CHROMA_REDUCED_MOTION", previousMotion);
+            APPLICATION->settings()->set("ApplicationTheme", "chroma");
+            APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+        });
+        qputenv("CHROMA_REDUCED_MOTION", "1");
+        QVERIFY(!Clay::motionAllowed());
+        QVERIFY(Clay::enabled());
+        QCOMPARE(APPLICATION->palette().color(QPalette::Window), QColor("#f4f1fa"));
+        QCOMPARE(APPLICATION->palette().color(QPalette::PlaceholderText), QColor("#635f69"));
+        QVERIFY(QFontDatabase::families().contains("Nunito"));
+        QVERIFY(QFontDatabase::families().contains("DM Sans"));
+        for (auto* button : m_home->findChildren<QToolButton*>()) {
+            if (button->isVisible() && !button->accessibleName().isEmpty())
+                QVERIFY2(button->height() >= 44 && button->width() >= 44, qPrintable(button->accessibleName()));
+        }
+        m_search->setFocus();
+        QVERIFY(m_search->hasFocus());
+        for (const auto* theme : { "dark", "bright", "chroma-dark", "chroma" }) {
+            APPLICATION->settings()->set("ApplicationTheme", theme);
+            APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+            QCoreApplication::processEvents();
+            QCOMPARE(Clay::enabled(), QString(theme).startsWith("chroma"));
+            QCOMPARE(Clay::dark(), QString(theme) == "chroma-dark");
+            m_search->setText("COBBLE");
+            QCOMPARE(m_view->model()->rowCount(), 1);
+            m_search->clear();
+            QCOMPARE(m_view->model()->rowCount(), 5);
+        }
+    }
+
+    void chromaDarkUsesAppearanceSelector()
+    {
+        const auto previousTheme = APPLICATION->settings()->get("ApplicationTheme");
+        const auto previousAccent = APPLICATION->settings()->get("AccentColor");
+        const auto previousIconTheme = APPLICATION->settings()->get("IconTheme");
+        const bool pairedIcons = previousIconTheme.toString() == "breeze_light" || previousIconTheme.toString() == "breeze_dark";
+        const QSize previousSize = m_window->size();
+        AppearanceWidget appearance(false, m_window);
+        const auto restore = qScopeGuard([&] {
+            appearance.close();
+            m_window->inlineWorkspace()->closeAllPages();
+            m_home->showHomePage();
+            m_home->clearSearch();
+            APPLICATION->settings()->set("ApplicationTheme", previousTheme);
+            APPLICATION->settings()->set("AccentColor", previousAccent);
+            APPLICATION->settings()->set("IconTheme", previousIconTheme);
+            APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+            m_window->resize(previousSize);
+            QCoreApplication::processEvents();
+        });
+        m_window->resize(1280, 820);
+        m_window->openInlinePage(&appearance, "Appearance");
+        verifyInline(&appearance, 1);
+        auto* themes = appearance.findChild<QComboBox*>("widgetStyleComboBox");
+        auto* accents = appearance.findChild<QComboBox*>("accentComboBox");
+        auto* custom = appearance.findChild<QPushButton*>("customAccentButton");
+        QVERIFY(themes);
+        QVERIFY(accents);
+        QVERIFY(custom);
+        const int darkIndex = themes->findData("chroma-dark");
+        const int lightIndex = themes->findData("chroma");
+        QVERIFY(darkIndex >= 0);
+        QVERIFY(lightIndex >= 0);
+
+        // Exercise the real Appearance signal and persistence path, including
+        // returning to light and selecting dark again without restarting.
+        for (const int selected : { darkIndex, lightIndex, darkIndex }) {
+            themes->setCurrentIndex(selected);
+            QCoreApplication::processEvents();
+            const bool dark = selected == darkIndex;
+            QCOMPARE(APPLICATION->settings()->get("ApplicationTheme").toString(), dark ? QString("chroma-dark") : QString("chroma"));
+            QCOMPARE(Clay::dark(), dark);
+            QVERIFY(Clay::enabled());
+            QVERIFY(accents->isEnabled());
+            QVERIFY(custom->isEnabled());
+            QCOMPARE(APPLICATION->palette().color(QPalette::Window), Clay::colors().Canvas);
+            QCOMPARE(APPLICATION->palette().color(QPalette::Base), Clay::colors().Surface);
+            QCOMPARE(APPLICATION->palette().color(QPalette::PlaceholderText), Clay::colors().Muted);
+            QCOMPARE(APPLICATION->settings()->get("AccentColor"), previousAccent);
+            QCOMPARE(APPLICATION->settings()->get("IconTheme").toString(),
+                     pairedIcons ? (dark ? QString("breeze_dark") : QString("breeze_light")) : previousIconTheme.toString());
+        }
+
+        const auto contrast = [](const QColor& first, const QColor& second) {
+            const double firstLight = AccentColor::luminance(first);
+            const double secondLight = AccentColor::luminance(second);
+            return (qMax(firstLight, secondLight) + 0.05) / (qMin(firstLight, secondLight) + 0.05);
+        };
+        const auto palette = APPLICATION->palette();
+        QCOMPARE(palette.color(QPalette::Window), QColor("#191622"));
+        QCOMPARE(palette.color(QPalette::Base), QColor("#292333"));
+        QCOMPARE(palette.color(QPalette::Text), QColor("#f4effa"));
+        QCOMPARE(palette.color(QPalette::PlaceholderText), QColor("#beb4cb"));
+        QCOMPARE(m_search->palette().color(QPalette::PlaceholderText), Clay::colors().Muted);
+        QSettings persisted(QDir(m_root).filePath("chroma-ui.cfg"), QSettings::IniFormat);
+        QCOMPARE(persisted.value("ApplicationTheme").toString(), QString("chroma-dark"));
+        QVERIFY(AccentColor::luminance(palette.color(QPalette::Window)) < 0.04);
+        QVERIFY(contrast(palette.color(QPalette::Text), palette.color(QPalette::Base)) >= 7);
+        QVERIFY(contrast(palette.color(QPalette::PlaceholderText), palette.color(QPalette::Base)) >= 4.5);
+        QVERIFY(contrast(palette.color(QPalette::Link), palette.color(QPalette::Window)) >= 4.5);
+        const int skyAccent = accents->findData("#8ecbff");
+        QVERIFY(skyAccent >= 0);
+        accents->setCurrentIndex(skyAccent);
+        QCOMPARE(APPLICATION->settings()->get("AccentColor").toString(), QString("#8ecbff"));
+        QCOMPARE(APPLICATION->palette().color(QPalette::Highlight), QColor("#8ecbff"));
+        QVERIFY(contrast(APPLICATION->palette().color(QPalette::HighlightedText), QColor("#8ecbff")) >= 4.5);
+        const int originalAccent = accents->findData(previousAccent.toString());
+        QVERIFY(originalAccent >= 0);
+        accents->setCurrentIndex(originalAccent);
+        QTest::qWait(100);
+        QVERIFY(m_window->grab().save(QDir(m_root).filePath("dark-settings.png")));
+
+        appearance.close();
+        QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
+        auto* settingsAction = m_window->findChild<QAction*>("actionSettings");
+        QVERIFY(settingsAction);
+        settingsAction->trigger();
+        QTRY_VERIFY(qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage()));
+        auto* settings = qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage());
+        verifyInline(settings, 1);
+        verifyPageGeometry(settings);
+        QVERIFY(Clay::dark());
+        QVERIFY(m_window->grab().save(QDir(m_root).filePath("dark-launcher-settings.png")));
+        auto* back = m_window->findChild<QToolButton*>("inlineBackButton");
+        QVERIFY(back);
+        QTest::mouseClick(back, Qt::LeftButton);
+        QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
+        QTRY_VERIFY(m_search->isVisible());
+        QTest::qWait(100);
+        checkCardGeometry();
+        checkRecentTextGeometry();
+        QVERIFY(m_window->grab().save(QDir(m_root).filePath("dark-home.png")));
+        m_window->resize(680, 640);
+        QTest::qWait(100);
+        QCOMPARE(m_window->size(), QSize(680, 640));
+        checkCardGeometry();
+        checkRecentTextGeometry();
+        QVERIFY(m_window->grab().save(QDir(m_root).filePath("dark-compact.png")));
+        m_search->setText("COBBLE");
+        QCOMPARE(m_view->model()->rowCount(), 1);
+        m_home->clearSearch();
+        QCOMPARE(m_view->model()->rowCount(), 5);
+    }
+
+    void claySplitMenuKeepsNativeActions()
+    {
+        QAction action(tr("Play"), m_home);
+        QMenu menu(m_home);
+        menu.addAction(tr("Launch options"));
+        class MenuButtonProbe : public ClayToolButton {
+           public:
+            using ClayToolButton::ClayToolButton;
+            QStyleOptionToolButton options() const
+            {
+                QStyleOptionToolButton option;
+                initStyleOption(&option);
+                return option;
+            }
+        };
+        MenuButtonProbe button(m_home);
+        button.setDefaultAction(&action);
+        button.setMenu(&menu);
+        button.setPopupMode(QToolButton::MenuButtonPopup);
+        button.setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button.setProperty("role", "primary");
+        button.setGeometry(100, 100, 200, 56);
+        button.show();
+        QSignalSpy triggered(&action, &QAction::triggered);
+        for (const auto direction : { Qt::LeftToRight, Qt::RightToLeft }) {
+            button.setLayoutDirection(direction);
+            bool opened = false;
+            const int arrowX = direction == Qt::LeftToRight ? button.width() - 20 : 20;
+            const QPoint arrowPosition(arrowX, button.height() / 2);
+            const QStyleOptionToolButton option = button.options();
+            const QRect menuRect = button.style()->subControlRect(QStyle::CC_ToolButton, &option, QStyle::SC_ToolButtonMenu, &button);
+            QVERIFY2(menuRect.contains(arrowPosition), qPrintable(QString("Menu rectangle %1,%2 %3x%4 misses target %5,%6")
+                                                                      .arg(menuRect.x()).arg(menuRect.y())
+                                                                      .arg(menuRect.width()).arg(menuRect.height())
+                                                                      .arg(arrowPosition.x()).arg(arrowPosition.y())));
+            QTimer::singleShot(30, &menu, [&] {
+                opened = menu.isVisible();
+                menu.hide();
+            });
+            QTest::mouseClick(&button, Qt::LeftButton, Qt::NoModifier, arrowPosition);
+            QTRY_VERIFY(opened);
+            QCOMPARE(triggered.count(), 0);
+        }
+        button.setLayoutDirection(Qt::LeftToRight);
+        QTest::mouseClick(&button, Qt::LeftButton, Qt::NoModifier, QPoint(50, button.height() / 2));
+        QCOMPARE(triggered.count(), 1);
+        button.setFocus();
+        QTest::keyClick(&button, Qt::Key_Space);
+        QCOMPARE(triggered.count(), 2);
     }
 
     void responsiveGeometryAndScreenshots()

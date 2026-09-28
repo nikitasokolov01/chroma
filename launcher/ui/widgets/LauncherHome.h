@@ -6,6 +6,8 @@
 
 class QAction;
 class QComboBox;
+class QGridLayout;
+class QHBoxLayout;
 class QLabel;
 class QLineEdit;
 class QMenu;
@@ -64,6 +66,7 @@ class LauncherHome : public QWidget {
     void retranslate();
     void setLibraryOnly(bool enabled);
     void refreshPins();
+    void layoutRecentCards();
     void togglePin(const QString& id);
 
     InstanceView* m_view;
@@ -73,6 +76,7 @@ class LauncherHome : public QWidget {
     QTimer* m_refreshTimer = nullptr;
     int m_recentLimit = 3;
     bool m_libraryOnly = false;
+    bool m_clayStyle = false;
     QStackedWidget* m_pages;
     QWidget* m_homePage;
     QWidget* m_pageHost;
@@ -82,9 +86,12 @@ class LauncherHome : public QWidget {
     QToolButton* m_pinButton;
     QHash<QString, QToolButton*> m_pinButtons;
     QLineEdit* m_search;
-    QComboBox* m_sort;
+    QComboBox* m_sort = nullptr;
     QWidget* m_recent;
-    QVBoxLayout* m_recentRows;
+    QGridLayout* m_recentRows;
+    QGridLayout* m_libraryControls = nullptr;
+    QHBoxLayout* m_libraryTitleRow = nullptr;
+    QHBoxLayout* m_libraryFilters = nullptr;
     QWidget* m_details;
     QLabel* m_running;
     QLabel* m_count;

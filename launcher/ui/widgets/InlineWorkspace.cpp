@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "InlineWorkspace.h"
 #include "ui/dialogs/ProgressDialog.h"
+#include "ui/themes/ClayStyle.h"
+#include "ui/widgets/ClayWidgets.h"
 
 #include <QApplication>
 #include <QDialog>
@@ -23,7 +25,8 @@ InlineWorkspace::InlineWorkspace(QMainWindow* window, QWidget* parent) : QWidget
     layout->setContentsMargins(22, 18, 22, 18);
     layout->setSpacing(14);
     auto* heading = new QHBoxLayout;
-    auto* back = new QToolButton(this);
+    auto* back = new ClayToolButton(this);
+    back->setProperty("claySymbolic", true);
     back->setObjectName("inlineBackButton");
     back->setText(tr("Back"));
     back->setIcon(QIcon::fromTheme("go-previous"));
@@ -252,7 +255,8 @@ bool InlineWorkspace::eventFilter(QObject* watched, QEvent* event)
 
 void InlineWorkspace::applyStyle()
 {
-    setStyleSheet(QStringLiteral(R"(
+    m_clayStyle = Clay::enabled();
+    auto sheet = QStringLiteral(R"(
         QWidget#inlineWorkspace, QWidget#inlineCanvas, QWidget#inlineResponsivePage { background: palette(base); }
         QScrollArea#inlinePageScroll, QScrollArea#inlinePageScroll > QWidget > QWidget { background: palette(base); border: 0; }
         QLabel#inlinePageTitle { font-size: 24px; font-weight: 700; background: transparent; }
@@ -292,5 +296,20 @@ void InlineWorkspace::applyStyle()
         QWidget#inlineWorkspace QScrollBar:vertical { width: 8px; background: transparent; }
         QWidget#inlineWorkspace QScrollBar::handle:vertical { background: palette(mid); border-radius: 4px; min-height: 30px; }
         QWidget#inlineWorkspace QScrollBar::add-line:vertical, QWidget#inlineWorkspace QScrollBar::sub-line:vertical { height: 0; }
-    )"));
+    )");
+    if (m_clayStyle) {
+        sheet += Clay::formStyleSheet(QStringLiteral("QWidget#inlineWorkspace"));
+        sheet += QStringLiteral(R"(
+            QLabel#inlinePageTitle { font-family: "Nunito"; font-size: 28px; font-weight: 900; }
+            QWidget#inlineWorkspace QToolButton#inlineBackButton { background: transparent; border: none; }
+        )");
+    }
+    setStyleSheet(sheet);
+}
+
+void InlineWorkspace::changeEvent(QEvent* event)
+{
+    QWidget::changeEvent(event);
+    if (event->type() == QEvent::PaletteChange && m_clayStyle != Clay::enabled())
+        applyStyle();
 }
