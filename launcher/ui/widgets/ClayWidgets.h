@@ -27,6 +27,9 @@ class ClayToolButton : public QToolButton {
     void enterEvent(QEnterEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void changeEvent(QEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
+    void keyPressEvent(QKeyEvent* event) override;
 
    private:
     void animateHover(qreal target);
@@ -68,7 +71,6 @@ class ClayComboBox : public QComboBox {
     bool m_updatingAppearance = false;
 };
 
-
 class ClayPanel : public QFrame {
    public:
     explicit ClayPanel(QWidget* parent = nullptr);
@@ -92,6 +94,7 @@ class ClayCanvas : public QWidget {
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
     void changeEvent(QEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
    private:
     void updateAnimation();

@@ -1,18 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "ClayWidgets.h"
+#include "FloatingUi.h"
 
 #include <QApplication>
 #include <QEnterEvent>
 #include <QEvent>
 #include <QHideEvent>
+#include <QKeyEvent>
+#include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmapCache>
 #include <QRadialGradient>
 #include <QShowEvent>
 #include <QStyle>
-#include <QStyleOptionToolButton>
 #include <QStyleOptionComboBox>
+#include <QStyleOptionToolButton>
 #include <QTimer>
 #include <QVariantAnimation>
 #include <cmath>
@@ -23,8 +27,7 @@
 namespace {
 QColor mix(const QColor& first, const QColor& second, qreal amount)
 {
-    return QColor::fromRgbF(first.redF() * (1 - amount) + second.redF() * amount,
-                            first.greenF() * (1 - amount) + second.greenF() * amount,
+    return QColor::fromRgbF(first.redF() * (1 - amount) + second.redF() * amount, first.greenF() * (1 - amount) + second.greenF() * amount,
                             first.blueF() * (1 - amount) + second.blueF() * amount);
 }
 
@@ -41,8 +44,7 @@ QColor accessibleAccent(QColor accent, const QColor& foreground)
     // painted copy when either end of the surface gradient needs more contrast.
     const bool lightText = AccentColor::luminance(foreground) > 0.5;
     for (int step = 0; step < 80; ++step) {
-        if (contrast(mix(accent, Qt::white, 0.08), foreground) >= 4.5 &&
-            contrast(mix(accent, Qt::black, 0.03), foreground) >= 4.5)
+        if (contrast(mix(accent, Qt::white, 0.08), foreground) >= 4.5 && contrast(mix(accent, Qt::black, 0.03), foreground) >= 4.5)
             break;
         accent = mix(accent, lightText ? QColor(Qt::black) : QColor(Qt::white), 0.035);
     }
@@ -80,7 +82,6 @@ QIcon symbolicIcon(const QIcon& original, const QSize& size, qreal pixelRatio, c
     return result;
 }
 
-
 void focusOutline(QPainter* painter, const QRectF& rect, qreal radius, const QPalette& palette)
 {
     QColor outline = palette.color(QPalette::Highlight);
@@ -99,15 +100,38 @@ void focusOutline(QPainter* painter, const QRectF& rect, qreal radius, const QPa
 
 ClayToolButton::ClayToolButton(QWidget* parent) : QToolButton(parent), m_hoverAnimation(new QVariantAnimation(this))
 {
+    FloatingUi::install();
+    setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_Hover);
     setProperty("clayButton", true);
     updateAppearance();
-    m_hoverAnimation->setDuration(160);
+    m_hoverAnimation->setDuration(Clay::Motion::Hover);
     m_hoverAnimation->setEasingCurve(QEasingCurve::OutCubic);
     connect(m_hoverAnimation, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
         m_hover = value.toReal();
         update();
     });
+}
+
+void ClayToolButton::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton)
+        FloatingUi::anchor(menu(), this);
+    QToolButton::mousePressEvent(event);
+}
+
+void ClayToolButton::mouseReleaseEvent(QMouseEvent* event)
+{
+    QToolButton::mouseReleaseEvent(event);
+    if (menu() && !menu()->isVisible())
+        menu()->setProperty("chromaPopupAnchor", QVariant());
+}
+
+void ClayToolButton::keyPressEvent(QKeyEvent* event)
+{
+    if (event->key() == Qt::Key_Down || (popupMode() == QToolButton::InstantPopup && event->key() == Qt::Key_Space))
+        FloatingUi::anchor(menu(), this);
+    QToolButton::keyPressEvent(event);
 }
 
 void ClayToolButton::updateAppearance()
@@ -122,11 +146,12 @@ void ClayToolButton::updateAppearance()
         // QToolButton's own hit testing reads this same style subcontrol.
         // Qt mirrors logical right in RTL. Insetting only the painted arrow
         // would leave its menu target behind.
-        m_menuStyle = QStringLiteral("\n/* Chroma clay split-menu geometry */\n"
-                                     "QToolButton[clayButton=\"true\"]::menu-button { "
-                                     "subcontrol-origin: border; subcontrol-position: center right; "
-                                     "position: absolute; right: 5px; width: 24px; "
-                                     "border: none; background: transparent; }\n");
+        m_menuStyle = QStringLiteral(
+            "\n/* Chroma clay split-menu geometry */\n"
+            "QToolButton[clayButton=\"true\"]::menu-button { "
+            "subcontrol-origin: border; subcontrol-position: center right; "
+            "position: absolute; right: 5px; width: 24px; "
+            "border: none; background: transparent; }\n");
         sheet += m_menuStyle;
     }
     if (sheet == styleSheet())
@@ -140,18 +165,15 @@ void ClayToolButton::updateAppearance()
 void ClayToolButton::changeEvent(QEvent* event)
 {
     QToolButton::changeEvent(event);
-    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange ||
-        event->type() == QEvent::LayoutDirectionChange)
+    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange || event->type() == QEvent::LayoutDirectionChange)
         updateAppearance();
 }
-
 
 QSize ClayToolButton::sizeHint() const
 {
     const QSize native = QToolButton::sizeHint();
-    return Clay::enabled() ? (native + QSize(2 * Clay::ShadowMargin, 2 * Clay::ShadowMargin))
-                                .expandedTo(QSize(Clay::MinimumTarget, 54))
-                          : native;
+    return Clay::enabled() ? (native + QSize(2 * Clay::ShadowMargin, 2 * Clay::ShadowMargin)).expandedTo(QSize(Clay::MinimumTarget, 54))
+                           : native;
 }
 
 QSize ClayToolButton::minimumSizeHint() const
@@ -201,12 +223,11 @@ void ClayToolButton::paintEvent(QPaintEvent* event)
     const bool pressed = isDown() || isChecked();
     const bool animate = isEnabled() && Clay::motionAllowed();
     const qreal hover = animate ? m_hover : 0;
-    QRectF surface = QRectF(rect()).adjusted(Clay::ShadowMargin, Clay::ShadowMargin,
-                                           -Clay::ShadowMargin, -Clay::ShadowMargin);
+    QRectF surface = QRectF(rect()).adjusted(Clay::ShadowMargin, Clay::ShadowMargin, -Clay::ShadowMargin, -Clay::ShadowMargin);
     painter.save();
     if (isDown() && animate) {
         painter.translate(surface.center());
-        painter.scale(0.92, 0.92);
+        painter.scale(0.98, 0.98);
         painter.translate(-surface.center());
     } else {
         painter.translate(0, -2.5 * hover);
@@ -374,8 +395,7 @@ void ClayComboBox::paintEvent(QPaintEvent* event)
     QStyleOptionComboBox option;
     initStyleOption(&option);
     option.frame = false;
-    const QRectF surface = QRectF(rect()).adjusted(Clay::ShadowMargin, Clay::ShadowMargin,
-                                                 -Clay::ShadowMargin, -Clay::ShadowMargin);
+    const QRectF surface = QRectF(rect()).adjusted(Clay::ShadowMargin, Clay::ShadowMargin, -Clay::ShadowMargin, -Clay::ShadowMargin);
     const bool pressed = option.state.testFlag(QStyle::State_On) || option.state.testFlag(QStyle::State_Sunken);
     Clay::drawSurface(&painter, surface, Clay::colors().Surface, Clay::Radius::Control, pressed);
 
@@ -403,7 +423,6 @@ void ClayComboBox::paintEvent(QPaintEvent* event)
         focusOutline(&painter, QRectF(rect()).adjusted(1.5, 1.5, -1.5, -1.5), Clay::Radius::Control + 3, palette());
 }
 
-
 ClayPanel::ClayPanel(QWidget* parent) : QFrame(parent)
 {
     setProperty("clayPanel", true);
@@ -417,9 +436,7 @@ void ClayPanel::updateAppearance()
         return;
     m_updatingAppearance = true;
     m_clayAppearance = Clay::enabled();
-    setStyleSheet(m_clayAppearance
-                      ? QStringLiteral("QFrame[clayPanel=\"true\"] { background: transparent; border: none; }")
-                      : QString());
+    setStyleSheet(m_clayAppearance ? QStringLiteral("QFrame[clayPanel=\"true\"] { background: transparent; border: none; }") : QString());
     m_updatingAppearance = false;
 }
 
@@ -448,11 +465,12 @@ void ClayPanel::paintEvent(QPaintEvent* event)
 
 ClayCanvas::ClayCanvas(QWidget* parent) : QWidget(parent), m_driftTimer(new QTimer(this))
 {
+    qApp->installEventFilter(this);
     setAutoFillBackground(false);
     m_driftTimer->setInterval(100);
     m_driftTimer->setTimerType(Qt::CoarseTimer);
     connect(m_driftTimer, &QTimer::timeout, this, [this] {
-        if (!isVisible() || !Clay::enabled() || !Clay::motionAllowed()) {
+        if (!isVisible() || !window()->isActiveWindow() || window()->isMinimized() || !Clay::enabled() || !Clay::motionAllowed()) {
             m_driftTimer->stop();
             update();
             return;
@@ -461,9 +479,16 @@ ClayCanvas::ClayCanvas(QWidget* parent) : QWidget(parent), m_driftTimer(new QTim
     });
 }
 
+bool ClayCanvas::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == window() && (event->type() == QEvent::ActivationChange || event->type() == QEvent::WindowStateChange))
+        updateAnimation();
+    return false;
+}
+
 void ClayCanvas::updateAnimation()
 {
-    const bool animate = isVisible() && Clay::enabled() && Clay::motionAllowed();
+    const bool animate = isVisible() && window()->isActiveWindow() && !window()->isMinimized() && Clay::enabled() && Clay::motionAllowed();
     if (animate && !m_driftTimer->isActive()) {
         m_elapsed.restart();
         m_driftTimer->start();
@@ -488,8 +513,8 @@ void ClayCanvas::hideEvent(QHideEvent* event)
 void ClayCanvas::changeEvent(QEvent* event)
 {
     QWidget::changeEvent(event);
-    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange ||
-        event->type() == QEvent::EnabledChange)
+    if (event->type() == QEvent::StyleChange || event->type() == QEvent::PaletteChange || event->type() == QEvent::EnabledChange ||
+        event->type() == QEvent::ActivationChange || event->type() == QEvent::WindowStateChange)
         updateAnimation();
 }
 
