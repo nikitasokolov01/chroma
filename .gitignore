@@ -69,3 +69,5 @@ dist/
 aqtinstall.log
 build-chroma/
 install-chroma/
+# Python release-tool bytecode
+__pycache__/

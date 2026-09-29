@@ -8,6 +8,7 @@ param(
     [string]$VcVars
 )
 $ErrorActionPreference = 'Stop'
+$releaseVersion = & (Join-Path $PSScriptRoot 'get-chroma-version.ps1')
 $environmentArguments = @{ Action = 'Environment' }
 foreach ($name in @('QtRoot', 'VcpkgRoot', 'JavaHome', 'VcVars')) {
     if ($PSBoundParameters.ContainsKey($name)) { $environmentArguments[$name] = $PSBoundParameters[$name] }
@@ -24,6 +25,10 @@ $deployTool = Join-Path $QtRoot 'bin\windeployqt.exe'
 foreach ($required in @($launcher, $deployTool, (Join-Path $RuntimeDirectory 'msvcp140.dll'), (Join-Path $RuntimeDirectory 'vcruntime140.dll'))) {
     if (-not (Test-Path -LiteralPath $required)) { throw "Missing build artifact or deployment tool: $required" }
 }
+$builtVersion = (Get-Item -LiteralPath $launcher).VersionInfo.FileVersion
+if ($builtVersion -ne "$releaseVersion.0") {
+    throw "Built executable version $builtVersion differs from $releaseVersion.0. Rebuild before packaging."
+}
 New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
 & cmake --install $buildRoot --component Runtime --prefix $packageRoot
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -38,6 +43,9 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'LICENSE'), (Join-Path $projectRo
 # component also uses options introduced in newer Qt releases.
 & $deployTool --release --no-compiler-runtime --no-translations --no-opengl-sw --no-quick-import --no-system-d3d-compiler --skip-plugin-types generic,networkinformation (Join-Path $packageRoot 'chroma.exe')
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'Qt6OpenGLWidgets.dll'))) {
+    throw 'Qt deployment did not include the Skin Studio OpenGL widget runtime.'
+}
 Get-ChildItem -LiteralPath $RuntimeDirectory -Filter '*.dll' -File | Copy-Item -Destination $packageRoot -Force
 Set-Content -LiteralPath (Join-Path $packageRoot 'qt.conf') -Encoding ASCII -Value @('[Paths]', 'Plugins=.', 'Libraries=.', 'Prefix=.')
 $licenseDestination = Join-Path $packageRoot 'licenses'
@@ -50,7 +58,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\licenses') -Destination (Jo
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'), (Join-Path $projectRoot 'docs\RELEASE-LICENSING.md'), (Join-Path $projectRoot 'PRIVACY.md') -Destination $packageRoot -Force
 $profileHome = if ($PackageKind -eq 'Portable') { 'this portable folder' } else { '%APPDATA%\Chroma' }
 $packageReadme = @"
-# Chroma 0.1.0 preview ($PackageKind)
+# Chroma $releaseVersion preview ($PackageKind)
 
 Chroma is an independent native UI fork of Prism Launcher 10.0.5. It is not
 an official Prism Launcher or Modrinth release and is not affiliated with or
@@ -75,7 +83,7 @@ updates are disabled. Java and Minecraft are not bundled.
 
 Source and build instructions: https://github.com/nikitasokolov01/chroma
 Matching application, dependency, and Qt source archives accompany this release:
-https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0
+https://github.com/nikitasokolov01/chroma/releases/tag/v$releaseVersion
 Upstream source: https://github.com/PrismLauncher/PrismLauncher
 See LICENSE, COPYING.md, THIRD_PARTY_NOTICES.md, RELEASE-LICENSING.md, and licenses/.
 Privacy: PRIVACY.md or https://github.com/nikitasokolov01/chroma/blob/main/PRIVACY.md

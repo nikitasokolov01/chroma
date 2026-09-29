@@ -1,15 +1,21 @@
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '0.1.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version,
     [string]$OutputDirectory,
     [string]$NsisCompiler,
     [string]$RuntimeDirectory
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $projectRoot 'dist\release' }
+$sourceVersion = & (Join-Path $PSScriptRoot 'get-chroma-version.ps1')
+if (-not $Version) { $Version = $sourceVersion }
+if ($Version -ne $sourceVersion) { throw "Installer version $Version differs from application version $sourceVersion." }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $projectRoot "dist\release\v$Version" }
 if (-not $NsisCompiler) { $NsisCompiler = Join-Path $projectRoot '.tools\nsis-3.12-portable\nsis-3.12\makensis.exe' }
 if (-not (Test-Path -LiteralPath $NsisCompiler)) { throw 'Run scripts/prepare-release-tools.ps1 or provide -NsisCompiler.' }
 $releaseRoot = [IO.Path]::GetFullPath($OutputDirectory)
+foreach ($name in @("Chroma-$Version-Windows-x64-Setup.exe", "Chroma-$Version-Windows-x64.zip", 'package-manifest.json')) {
+    if (Test-Path -LiteralPath (Join-Path $releaseRoot $name)) { throw "Release output already exists: $name. Choose a new output directory." }
+}
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $stagingRoot = Join-Path $projectRoot ('.tools\release-staging\' + [guid]::NewGuid().ToString('N'))
 $installedStage = Join-Path $stagingRoot 'installed'

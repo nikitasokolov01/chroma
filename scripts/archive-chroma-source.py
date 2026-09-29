@@ -4,10 +4,11 @@
 import argparse
 import io
 from pathlib import Path, PurePosixPath
-import re
 import subprocess
 import tarfile
 import tempfile
+
+from chroma_version import read_version
 
 
 def git(repo, *args, **kwargs):
@@ -21,17 +22,19 @@ def git(repo, *args, **kwargs):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ref", default="HEAD", help="Committed release revision")
-    parser.add_argument("--version", default="0.1.0")
+    parser.add_argument("--version", help="Must match the version at --ref; defaults to that version")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     args.output = args.output.resolve()
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", args.version):
-        parser.error("Version must contain only letters, numbers, dots, underscores, or hyphens")
     if args.output.exists():
         parser.error("Output already exists; choose a new archive path")
 
     repo = Path(__file__).resolve().parent.parent
     commit = git(repo, "rev-parse", "--verify", f"{args.ref}^{{commit}}", capture_output=True, text=True).stdout.strip()
+    version = read_version(git(repo, "show", f"{commit}:CMakeLists.txt", capture_output=True, text=True).stdout)
+    if args.version and args.version != version:
+        parser.error(f"Requested version differs from application version {version} at {commit}")
+    args.version = version
     prefix = f"Chroma-{args.version}/"
     revisions = [f"Chroma: {commit}"]
     sources = [(repo, commit, prefix)]

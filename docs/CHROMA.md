@@ -28,7 +28,7 @@ This is the actual Qt interface rendered by the native test harness with sample 
 
 ## Install and run
 
-The [v0.1.0 preview release](https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0) provides a Windows x64 installer and a portable ZIP. Close Chroma before installing an update.
+The [v0.2.0 preview release](https://github.com/nikitasokolov01/chroma/releases/tag/v0.2.0) provides a Windows x64 installer and a portable ZIP. Close Chroma before installing an update.
 
 - **Installer:** install for your Windows account, then open Chroma. Its default profile is `%APPDATA%\Chroma`.
 - **Portable ZIP:** extract it and run `chroma.exe`. Keep the folder together; its default profile lives beside the executable.
@@ -177,6 +177,35 @@ After a successful build, package the executable, Qt plugins, native libraries, 
 The script prints the new package path under `dist`; run `chroma.exe` there and keep its folder together. It requires an empty output directory so existing profile data cannot enter the release package. The portable profile is stored beside the executable until another profile is selected. Use **Launcher menu (•••) → Use Prism folder…** to select an existing Prism profile. The script accepts `-OutputDirectory`, `-RuntimeDirectory`, and the same dependency path options as the build script. Redistributable runtime DLLs must be available in `.tools/release-runtime` or the supplied runtime directory. It does not install or launch the application.
 
 On Windows, the test runner stages the two upstream directory-symlink fixtures inside `.tools/build` so the tests also work when Git checked out symlinks as text files.
+
+## Release versions and Windows installer
+
+Chroma has its own version sequence. While it is in preview, feature releases
+increment the minor version (`0.2.0`, `0.3.0`) and fixes increment the patch version
+(`0.2.1`, `0.2.2`). The three `Launcher_VERSION_*` numbers in `CMakeLists.txt` are
+the source of truth for the app, installer, package README, and source archives.
+Update the download links and add notes under `docs/releases/` with each release.
+
+Commit and tag the release as `v<version>`, then configure and build from that
+revision so the executable records its matching commit and version. Run the unit
+and native UI checks before packaging. With release tools prepared:
+
+```powershell
+.\scripts\build-installer.ps1
+.\scripts\test-installer.ps1
+$version = .\scripts\get-chroma-version.ps1
+.\.tools\python\Scripts\python.exe scripts/archive-chroma-source.py --ref "v$version" --output "dist/release/v$version/Chroma-$version-source.tar.gz"
+.\.tools\python\Scripts\python.exe scripts/archive-dependency-sources.py
+```
+
+The installer and portable ZIP are written to `dist/release/v<version>/`.
+Packaging rejects a stale executable version or existing release output.
+Installer checks use a temporary directory without shell integration and verify
+install, upgrade, uninstall, bundled runtime loading, and profile preservation.
+Publish both packages, the application and dependency source archives, the
+matching full Qt source archive, `package-manifest.json`, and `SHA256SUMS.txt` on
+the same GitHub release. See [release licensing](RELEASE-LICENSING.md) for the
+source inventory. Keep previous releases available.
 
 ## Implementation notes
 

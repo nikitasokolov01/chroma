@@ -4,7 +4,7 @@
 Built on Prism Launcher with C++, Qt Widgets, and customizable light and dark clay themes.</p>
 
 <p align="center">
-  <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0">Download for Windows</a> ·
+  <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v0.2.0">Download for Windows</a> ·
   <a href="docs/CHROMA.md">Guide</a> ·
   <a href="docs/CHROMA-MIGRATION.md">Use your Prism library</a> ·
   <a href="https://github.com/nikitasokolov01/chroma/issues">Report an issue</a>
@@ -18,32 +18,49 @@ Chroma rebuilds Prism Launcher's default interface around a card library, a pers
 
 ## Download
 
-**Published download: v0.1.0 preview · Windows x64**
-
-The features and screenshots below show the current source revision. The v0.1.0
-downloads are an earlier preview and do not include all of these changes. To run
-the current revision, follow the [Windows build guide](docs/CHROMA.md#build-from-source).
+**v0.2.0 · Windows x64**
 
 | Package | Use it when… |
 | --- | --- |
-| [Windows installer](https://github.com/nikitasokolov01/chroma/releases/download/v0.1.0/Chroma-0.1.0-Windows-x64-Setup.exe) | You want a normal installation for your Windows account. |
-| [Portable ZIP](https://github.com/nikitasokolov01/chroma/releases/download/v0.1.0/Chroma-0.1.0-Windows-x64.zip) | You want to extract a folder and run `chroma.exe` from it. Keep its files together. |
+| [Windows installer](https://github.com/nikitasokolov01/chroma/releases/download/v0.2.0/Chroma-0.2.0-Windows-x64-Setup.exe) | You want a normal installation for your Windows account. |
+| [Portable ZIP](https://github.com/nikitasokolov01/chroma/releases/download/v0.2.0/Chroma-0.2.0-Windows-x64.zip) | You want to extract a folder and run `chroma.exe` from it. Keep its files together. |
 
-Read the [release notes](https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0) for this preview's requirements and known limitations. Updates are downloaded from Releases; the upstream binary updater is disabled.
+Read the [v0.2.0 release notes](https://github.com/nikitasokolov01/chroma/releases/tag/v0.2.0) for requirements and known limitations. Updates are downloaded from Releases; the upstream binary updater is disabled.
 
-## Features in the current revision
+## New in v0.2.0: Skin Studio
+
+Paint directly on a Classic or Slim 3D model, or switch to the 2D texture beside
+a live preview. Both views share the same skin, brush, color, and undo history.
+
+| Paint in 3D | Edit the 2D texture |
+| --- | --- |
+| [![Skin Studio with a 3D painting canvas, inline color wheel, and separate base and outer visibility for each body part](docs/screenshots/skin-studio.png)](docs/screenshots/skin-studio.png) | [![Skin Studio with its 2D texture canvas, live 3D preview, color wheel, and body-part layer controls](docs/screenshots/skin-studio-2d.png)](docs/screenshots/skin-studio-2d.png) |
+
+- **Pick colors in place.** The color wheel, hex value, and opacity stay visible beside the canvas.
+- **Reach every surface.** Hide each body part's base or outer layer independently, then rotate the model to paint covered areas.
+- **Keep editing flexible.** Use brush, eraser, color picker, undo/redo, PNG import/export, and local library saving. Base pixels stay opaque; outer layers support transparency.
+
+Open **Skins** in the sidebar, choose a skin, then select **Edit Skin…**. In 3D,
+left-drag paints, right-drag rotates, and scrolling zooms. Switch **3D Paint →
+2D Texture** to work on individual pixels. With a canvas focused, use **B** for
+brush, **E** for eraser, **I** for color picker, and **H** to rotate or pan.
+
+Editing and exporting work without an account. **Apply Skin** requires a Microsoft
+account with a Minecraft Java profile. Devices without OpenGL use the 2D editor
+and image preview.
+
+## More features
 
 - **Organize instances.** Search grouped cards, open recent instances, or drag cards into a saved manual order. Name and last-played sorting remain available.
 - **Pin from the library.** Drop an instance onto the sidebar to pin it, then open its settings with one click.
 - **Manage skins from the sidebar.** Open **Skins**, switch accounts with the dropdown, and manage skins and capes without changing your default launch account. Local editing works before adding an account.
-- **Paint skins in 3D.** Skin Studio opens with direct painting on the Classic or Slim model. Switch to the 2D texture and live preview, choose colors from the always-visible wheel, and hide each body part's base or outer layer independently. Brush, eraser, color picker, undo/redo, and PNG import/export work with the same skin. Save locally or apply it to an eligible Microsoft account.
 - **Browse modpacks and project details.** Browse Modrinth, CurseForge, ATLauncher, Technic, and FTB Legacy. Modrinth and CurseForge share **About**, **Gallery**, and **Releases** views with cached project information for offline use. Available services depend on the build's API configuration.
 - **Work inside one window.** Instance editing, settings, accounts, and installation flows open inline. Smooth scrolling and restored scroll positions help with navigation; clickable cards and controls use hand cursors.
 - **Handle larger libraries.** Card painting visits visible rows, geometry is cached, and progress updates avoid full layouts. The library background stays still while idle. Regression coverage includes a 4,000-instance library.
 - **Choose your appearance.** Use light or dark clay themes and preset or custom accents. Windows caption colors follow the theme while retaining native window controls.
 - **Use your existing Prism profile.** Open instances, worlds, accounts, and custom instance locations directly, without copying modpacks.
 
-This revision also fixes skin-preview corruption when the status bar is visible,
+Version 0.2.0 also fixes first-open and status-bar skin-preview corruption,
 removes decorative UI slogans, and keeps Alt from revealing the legacy menu bar.
 Commands remain available from **Launcher menu (•••)**.
 
@@ -53,25 +70,12 @@ Commands remain available from **Launcher menu (•••)**.
 | --- | --- |
 | [![Current Chroma home with the Skins sidebar entry, recent instances, and searchable library](docs/screenshots/home.png)](docs/screenshots/home.png) | [![Chroma home using the dark clay theme](docs/screenshots/dark-home.png)](docs/screenshots/dark-home.png) |
 
-### Skin Library and Skin Studio
+### Skin Library
 
-| Choose an account and skin | Paint and preview |
-| --- | --- |
-| [![Skin Library with its account dropdown, Classic and Slim models, and cape selector](docs/screenshots/skin-library.png)](docs/screenshots/skin-library.png) | [![Skin Studio with a 3D painting canvas, inline color wheel, and separate base and outer visibility for each body part](docs/screenshots/skin-studio.png)](docs/screenshots/skin-studio.png) |
+[![Skin Library with its account dropdown, Classic and Slim models, and cape selector](docs/screenshots/skin-library.png)](docs/screenshots/skin-library.png)
 
-Open **Skins** in the sidebar, choose a skin, then select **Edit Skin…**. On the
-3D model, left-drag to paint, right-drag to rotate, and scroll to zoom. Switch
-**3D Paint → 2D Texture** to edit individual pixels alongside the live preview.
-The color wheel, hex value, and opacity stay visible beside the canvas. Use the
-**Base** and **Outer** checkboxes to hide individual body parts and reach covered
-surfaces.
-
-[View the 2D texture editor and live preview.](docs/screenshots/skin-studio-2d.png)
-
-Use **B** for brush, **E** for eraser, **I** for color picker, and **H** to rotate
-the model or pan the texture while a canvas is focused. Applying a skin requires
-a Microsoft account with a Minecraft Java profile; editing and exporting can
-stay local. Devices without OpenGL use the 2D editor and image preview.
+Choose whose skins and capes to manage with the account dropdown. Your default
+launch account stays unchanged, and local skins remain available without signing in.
 
 ### Browse, choose, install
 

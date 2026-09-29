@@ -1,10 +1,10 @@
-# Chroma 0.1.0 — notices and source code
+# Chroma 0.2.0 — notices and source code
 
-## Modified version notice — 2026-09-27
+## Modified version notice — 2026-09-28
 
 Chroma is an independent, modified version of Prism Launcher 10.0.5, based on
 upstream commit `16e541f4483241455ffb674bfe975e20158001a2`. The Chroma changes made
-on 2026-09-26 and 2026-09-27 replace the launcher home, instance cards, navigation
+from 2026-09-26 through 2026-09-28 replace the launcher home, instance cards, navigation
 and modpack browsing UI; add accent preferences, pinned instances and direct Prism
 profile selection; and add Windows packaging, tests and documentation. The original
 copyright notices and licenses remain in the source. Chroma is not affiliated with
@@ -17,13 +17,13 @@ This supplement does not replace or narrow those notices or license grants.
 
 ## Get the matching source
 
-The [Chroma 0.1.0 release](https://github.com/nikitasokolov01/chroma/releases/tag/v0.1.0)
+The [Chroma 0.2.0 release](https://github.com/nikitasokolov01/chroma/releases/tag/v0.2.0)
 provides these source archives beside the Windows binaries, at no charge:
 
 | Archive | Contents |
 | --- | --- |
-| `Chroma-0.1.0-source.tar.gz` | The exact application revision, build/package scripts, notices, and populated Git submodules; revision recorded in `SOURCE-REVISION.txt`. |
-| `Chroma-0.1.0-dependency-sources.tar.gz` | Matching dependency source archives, vcpkg ports, patches, build recipes and package provenance. |
+| `Chroma-0.2.0-source.tar.gz` | The exact application revision, build/package scripts, notices, and populated Git submodules; revision recorded in `SOURCE-REVISION.txt`. |
+| `Chroma-0.2.0-dependency-sources.tar.gz` | Matching dependency source archives, vcpkg ports, patches, build recipes and package provenance. |
 | `qt-everywhere-src-6.5.3.tar.xz` | Complete unmodified Qt 6.5.3 source, including the Qt modules and bundled third-party code used by this build. |
 
 The Qt archive SHA-256 is
