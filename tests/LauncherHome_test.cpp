@@ -1278,6 +1278,8 @@ class LauncherHomeTest : public QObject {
 
     void skinToolsUseCompactIconsAndKeyboard() { SkinLibraryUiTests::compactToolbox(m_window, m_root); }
 
+    void skinEditorModesAndVisibility() { SkinLibraryUiTests::editorModesAndVisibility(m_window, m_root); }
+
     void libraryCanvasDoesNotRepaintWhenIdle()
     {
         class CanvasProbe : public ClayCanvas {
@@ -1384,8 +1386,7 @@ class LauncherHomeTest : public QObject {
     {
         QVERIFY(m_window->inlineWorkspace()->closeAllPages());
         m_window->resize(1280, 820);
-        QImage texture(64, 64, QImage::Format_ARGB32);
-        texture.fill(QColor("#86bdb5"));
+        QImage texture = SkinLibraryUiTests::patternedSkin();
         SkinModel skin(texture, SkinModel::CLASSIC);
         SkinEditorDialog editor(m_window, MinecraftAccountPtr(), skin);
         m_window->openInlinePage(&editor, "Skin Studio");
@@ -1395,7 +1396,9 @@ class LauncherHomeTest : public QObject {
         auto* redo = editor.findChild<QPushButton*>("skinRedo");
         auto* apply = editor.findChild<QPushButton*>("skinApply");
         auto* model = editor.findChild<QComboBox*>("skinModel");
-        QVERIFY(canvas && undo && redo && model && apply);
+        auto* mode = editor.findChild<QComboBox*>("skinEditMode");
+        QVERIFY(canvas && undo && redo && model && apply && mode);
+        mode->setCurrentIndex(1);
         QVERIFY(!apply->isEnabled());
         QVERIFY(!undo->isEnabled());
         canvas->setFocus();
@@ -1411,6 +1414,7 @@ class LauncherHomeTest : public QObject {
         QCOMPARE(editor.getSelectedSkin()->getModel(), SkinModel::SLIM);
         QTest::qWait(100);
         if (QGuiApplication::platformName() == "windows" && SkinOpenGLWindow::hasOpenGL()) {
+            mode->setCurrentIndex(0);
             auto* preview = editor.findChild<SkinOpenGLWindow*>();
             QVERIFY(preview);
             QTRY_VERIFY(preview->isValid());
@@ -1433,7 +1437,8 @@ class LauncherHomeTest : public QObject {
         QCOMPARE(m_window->size(), QSize(680, 640));
         QVERIFY(m_window->grab().save(QDir(m_root).filePath("skin-editor-compact.png")));
         for (auto* scroll : editor.findChildren<QScrollArea*>())
-            QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+            QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0,
+                     qPrintable(SkinLibraryUiTests::horizontalScrollDiagnostic(scroll, &editor, m_window)));
         const auto oldDirectory = APPLICATION->settings()->get("SkinsDir");
         auto restoreDirectory = qScopeGuard([&] { APPLICATION->settings()->set("SkinsDir", oldDirectory); });
         APPLICATION->settings()->set("SkinsDir", QDir(m_root).filePath("skin-editor-library"));

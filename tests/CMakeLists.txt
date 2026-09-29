@@ -14,11 +14,15 @@ ecm_add_test(SkinTextureDocument_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_V
     TEST_NAME SkinTextureDocument)
 ecm_add_test(SkinPreview_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME SkinPreview)
+ecm_add_test(SkinPicking_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME SkinPicking)
+ecm_add_test(OpenGLComposition_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME OpenGLComposition)
 ecm_add_test(InstanceView_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME InstanceView)
 set_tests_properties(InstanceView PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(UNIX AND NOT APPLE)
-    set_tests_properties(WindowChrome ProjectMetadata SkinPreview PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(WindowChrome ProjectMetadata SkinPreview OpenGLComposition PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 # Opt-in native UI verification and screenshots; deliberately excluded from the

@@ -24,8 +24,10 @@
 #include <QOpenGLTexture>
 #include <QOpenGLVertexArrayObject>
 #include <QOpenGLWidget>
+#include <QPointer>
 #include <QVector2D>
 #include "minecraft/skins/SkinModel.h"
+#include "ui/dialogs/skins/SkinCanvas.h"
 #include "ui/dialogs/skins/draw/BoxGeometry.h"
 #include "ui/dialogs/skins/draw/Scene.h"
 
@@ -51,11 +53,23 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void resetView();
     void setLayersVisible(bool base, bool overlay);
     void setPartVisible(int part, bool visible);
+    void setPartLayerVisible(int part, SkinTextureDocument::Layer layer, bool visible);
+    bool partLayerVisible(int part, SkinTextureDocument::Layer layer) const;
+    void setDocument(SkinTextureDocument* document);
+    void setEditingEnabled(bool enabled);
+    void setTool(SkinCanvas::Tool tool);
+    void setColor(QColor color) { m_color = color; }
+    void setBrushSize(int size) { m_brushSize = qBound(1, size, 8); }
+    void setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer);
+    std::optional<opengl::SkinPick> pickAt(QPointF position) const;
 
     static bool hasOpenGL();
 
    signals:
     void renderingFailed();
+    void colorPicked(QColor color);
+    void toolChanged(SkinCanvas::Tool tool);
+    void pixelHovered(QPoint pixel, QColor color);
     // Signals completed drawing. Read grabFramebuffer() outside this callback
     // because a widget framebuffer readback may itself invoke paintGL().
     void frameRendered();
@@ -66,6 +80,8 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void mouseMoveEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void focusOutEvent(QFocusEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 
     void initializeGL() override;
     void resizeGL(int w, int h) override;
@@ -78,6 +94,11 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
 
    private:
     void cleanupGL();
+    QVector3D cameraEye() const;
+    void finishStroke();
+    void updateCursor();
+    void paintTo(QPointF position);
+    void applyTool(QPointF position);
     QMetaObject::Connection m_contextCleanup;
     QOpenGLVertexArrayObject m_vertexArray;
     QOpenGLShaderProgram* m_modelProgram = nullptr;
@@ -88,7 +109,18 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
 
     QVector2D m_mousePosition;
 
-    bool m_isMousePressed = false;
+    Qt::MouseButton m_rotateButton = Qt::NoButton;
+    QPointer<SkinTextureDocument> m_document;
+    QMetaObject::Connection m_documentChanged;
+    bool m_editingEnabled = false;
+    bool m_painting = false;
+    SkinCanvas::Tool m_tool = SkinCanvas::Brush;
+    QColor m_color = Qt::white;
+    int m_brushSize = 1;
+    SkinTextureDocument::Part m_part = SkinTextureDocument::All;
+    SkinTextureDocument::Layer m_layer = SkinTextureDocument::Base;
+    QPointF m_lastPaintPosition;
+    std::optional<opengl::SkinPick> m_lastPaintPick;
     float m_distance = 48;
     float m_yaw = 90;   // Horizontal rotation angle
     float m_pitch = 0;  // Vertical rotation angle
@@ -107,5 +139,6 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     bool m_baseVisible = true;
     bool m_overlayVisible = true;
     bool m_elytraVisible = false;
-    unsigned m_visibleParts = 0x3f;
+    unsigned m_baseParts = 0x3f;
+    unsigned m_outerParts = 0x3f;
 };

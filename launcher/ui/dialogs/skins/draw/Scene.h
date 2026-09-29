@@ -19,6 +19,7 @@
 #pragma once
 
 #include "ui/dialogs/skins/draw/BoxGeometry.h"
+#include "ui/dialogs/skins/draw/SkinGeometry.h"
 
 #include <QOpenGLTexture>
 namespace opengl {
@@ -35,14 +36,10 @@ class Scene : protected QOpenGLFunctions {
     void setElytraVisible(bool elytraVisible);
     void setLayersVisible(bool base, bool overlay);
     void setPartVisible(int part, bool visible);
+    void setPartLayerVisible(int part, SkinTextureDocument::Layer layer, bool visible);
 
    private:
-    QList<BoxGeometry*> m_staticComponents;
-    QList<BoxGeometry*> m_normalArms;
-    QList<BoxGeometry*> m_slimArms;
-    QList<BoxGeometry*> m_staticComponentsOverlay;
-    QList<BoxGeometry*> m_normalArmsOverlay;
-    QList<BoxGeometry*> m_slimArmsOverlay;
+    QList<BoxGeometry*> m_parts[2];
     BoxGeometry* m_cape = nullptr;
     QList<BoxGeometry*> m_elytra;
     QOpenGLTexture* m_skinTexture = nullptr;
@@ -52,6 +49,7 @@ class Scene : protected QOpenGLFunctions {
     bool m_elytraVisible = false;
     bool m_baseVisible = true;
     bool m_overlayVisible = true;
-    unsigned m_visibleParts = 0x3f;
+    unsigned m_baseParts = 0x3f;
+    unsigned m_outerParts = 0x3f;
 };
 }  // namespace opengl

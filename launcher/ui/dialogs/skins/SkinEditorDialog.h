@@ -17,6 +17,9 @@ class QGridLayout;
 class QVBoxLayout;
 class QToolButton;
 class SkinCanvas;
+class SkinColorWheel;
+class QLineEdit;
+class QSlider;
 
 class SkinEditorDialog : public QDialog, public SkinProvider {
     Q_OBJECT
@@ -49,6 +52,7 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     void showError(const QString& error);
     void updateLayout();
     void updateToolIcons();
+    void updateEditingMode();
 
     MinecraftAccountPtr m_account;
     SkinTextureDocument m_document;
@@ -57,20 +61,25 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     SkinOpenGLWindow* m_preview = nullptr;
     QWidget* m_previewContainer = nullptr;
     QLabel* m_fallback;
-    QLabel* m_status;
+    QLabel* m_status = nullptr;
     QLabel* m_position = nullptr;
     QLabel* m_heading = nullptr;
+    QLabel* m_subtitle = nullptr;
     QWidget* m_editorControls;
     QSplitter* m_split = nullptr;
     QGridLayout* m_fileLayout = nullptr;
     QGridLayout* m_paletteLayout = nullptr;
-    QVBoxLayout* m_canvasLayout = nullptr;
-    QList<QPushButton*> m_fileButtons;
     QList<QToolButton*> m_swatches;
+    QWidget* m_canvasPanel = nullptr;
+    QWidget* m_inspector = nullptr;
+    QComboBox* m_editMode = nullptr;
+    SkinColorWheel* m_colorWheel = nullptr;
+    QLineEdit* m_colorHex = nullptr;
+    QSlider* m_opacity = nullptr;
+    QList<QPushButton*> m_fileButtons;
     QList<QToolButton*> m_toolButtons;
     int m_layoutMode = -1;
     QComboBox* m_model;
-    QPushButton* m_colorButton;
     QPushButton* m_undo;
     QPushButton* m_redo;
     QPushButton* m_save;

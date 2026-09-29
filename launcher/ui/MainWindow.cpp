@@ -115,6 +115,7 @@
 #include "ui/widgets/InlineWorkspace.h"
 #include "ui/widgets/LabeledToolButton.h"
 #include "ui/widgets/LauncherHome.h"
+#include "ui/widgets/OpenGLComposition.h"
 
 #include "minecraft/PackProfile.h"
 #include "minecraft/VersionFile.h"
@@ -151,6 +152,7 @@ QString profileInUseFilter(const QString& profile, bool used)
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWindow)
 {
+    OpenGLComposition::prepare(this);
     ui->setupUi(this);
 
     setWindowIcon(APPLICATION->logo());

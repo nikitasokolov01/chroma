@@ -3,6 +3,7 @@
 #include <QApplication>
 #include <QHBoxLayout>
 #include <QMainWindow>
+#include <QMouseEvent>
 #include <QOpenGLContext>
 #include <QOpenGLFunctions>
 #include <QScrollArea>
@@ -11,6 +12,8 @@
 #include <QStatusBar>
 #include <QTest>
 #include <QVBoxLayout>
+#include <QWheelEvent>
+#include <memory>
 
 #include "ui/dialogs/skins/draw/SkinOpenGLWindow.h"
 
@@ -47,6 +50,25 @@ bool hasSkinPixels(const QImage& frame, const QColor& skinColor = QColor(220, 35
     }
     return skinPixels > frame.width() * frame.height() / 100;
 }
+QPoint pointForPixel(SkinOpenGLWindow& preview, SkinTextureDocument::Part part, QPoint pixel)
+{
+    for (int y = 2; y < preview.height(); y += 2) {
+        for (int x = 2; x < preview.width(); x += 2) {
+            const QPoint point(x, y);
+            const auto hit = preview.pickAt(point);
+            if (hit && hit->part == part && hit->pixel == pixel && hit->face == 0)
+                return point;
+        }
+    }
+    return QPoint(-1, -1);
+}
+
+void dragMove(SkinOpenGLWindow& preview, QPoint position, Qt::MouseButtons buttons)
+{
+    QMouseEvent event(QEvent::MouseMove, QPointF(position), QPointF(preview.mapToGlobal(position)), Qt::NoButton, buttons, Qt::NoModifier);
+    QApplication::sendEvent(&preview, &event);
+}
+
 }  // namespace
 
 class SkinPreviewTest : public QObject {
@@ -150,6 +172,202 @@ class SkinPreviewTest : public QObject {
             }
         }
         QCOMPARE(failures.count(), 0);
+    }
+
+    void directPaintingInterpolatesAndUndoesOneDrag()
+    {
+        using D = SkinTextureDocument;
+        PreviewProvider provider;
+        D document;
+        QVERIFY(document.load(provider.skin.getTexture()));
+        SkinOpenGLWindow preview(&provider, QColor(225, 225, 235));
+        preview.setDocument(&document);
+        preview.setEditingEnabled(true);
+        preview.setLayersVisible(true, false);
+        preview.resize(440, 480);
+        preview.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&preview));
+        QTRY_VERIFY(preview.isValid());
+        const auto initial = document.image();
+        const auto first = pointForPixel(preview, D::Body, QPoint(21, 25));
+        const auto last = pointForPixel(preview, D::Body, QPoint(26, 25));
+        QVERIFY(first.x() >= 0 && last.x() >= 0);
+        preview.setColor(Qt::green);
+        QSignalSpy changes(&document, &D::changed);
+        QTest::mousePress(&preview, Qt::LeftButton, Qt::NoModifier, first);
+        dragMove(preview, last, Qt::LeftButton);
+        QTest::mouseRelease(&preview, Qt::LeftButton, Qt::NoModifier, last);
+        for (int x = 21; x <= 26; ++x)
+            QCOMPARE(document.image().pixelColor(x, 25), QColor(Qt::green));
+        QVERIFY(changes.count() <= 4);  // Coalesced per pointer event, then history notification.
+        QVERIFY(document.canUndo());
+        document.undo();
+        QCOMPARE(document.image(), initial);
+        QVERIFY(!document.canUndo());
+        document.redo();
+        QCOMPARE(document.image().pixelColor(23, 25), QColor(Qt::green));
+
+        // A large stamp at a face edge must not color the adjacent atlas face.
+        document.reset();
+        preview.setBrushSize(8);
+        const auto edge = pointForPixel(preview, D::Body, QPoint(20, 20));
+        QVERIFY(edge.x() >= 0);
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, edge);
+        for (int y = 0; y < 64; ++y)
+            for (int x = 0; x < 64; ++x)
+                if (document.image().pixel(x, y) != initial.pixel(x, y))
+                    QVERIFY(QRect(20, 20, 8, 12).contains(x, y));
+    }
+
+    void outerPaintingEraserPickerAndVisibility()
+    {
+        using D = SkinTextureDocument;
+        PreviewProvider provider;
+        QImage transparent(64, 64, QImage::Format_ARGB32);
+        transparent.fill(Qt::transparent);
+        D document;
+        QVERIFY(document.load(transparent));
+        SkinOpenGLWindow preview(&provider, QColor(225, 225, 235));
+        preview.setDocument(&document);
+        preview.setEditingEnabled(true);
+        preview.setRegion(D::All, D::Overlay);
+        preview.resize(440, 480);
+        preview.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&preview));
+        QTRY_VERIFY(preview.isValid());
+        const auto point = pointForPixel(preview, D::Body, QPoint(23, 41));
+        QVERIFY(point.x() >= 0);
+        const QColor ink(35, 160, 220, 180);
+        preview.setColor(ink);
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, point);
+        QCOMPARE(document.image().pixelColor(23, 41), ink);
+        preview.setTool(SkinCanvas::Eyedropper);
+        QSignalSpy picked(&preview, &SkinOpenGLWindow::colorPicked);
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, point);
+        QCOMPARE(picked.count(), 1);
+        QCOMPARE(picked.takeFirst().at(0).value<QColor>(), ink);
+        preview.setTool(SkinCanvas::Brush);
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::AltModifier, point);
+        QCOMPARE(picked.count(), 1);
+        preview.setTool(SkinCanvas::Eraser);
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, point);
+        QCOMPARE(document.image().pixelColor(23, 41).alpha(), 0);
+        document.undo();
+        QCOMPARE(document.image().pixelColor(23, 41), ink);
+        preview.setPartLayerVisible(D::Body, D::Overlay, false);
+        QVERIFY(preview.partLayerVisible(D::Body, D::Base));
+        QVERIFY(!preview.partLayerVisible(D::Body, D::Overlay));
+        QVERIFY(!preview.pickAt(point));
+        const auto beforeHiddenClick = document.image();
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, point);
+        QCOMPARE(document.image(), beforeHiddenClick);
+        preview.setRegion(D::All, D::Base);
+        const auto basePoint = pointForPixel(preview, D::Body, QPoint(23, 25));
+        QVERIFY(basePoint.x() >= 0);
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, basePoint);
+        QCOMPARE(document.image(), beforeHiddenClick);  // Base erasing preserves opaque skin.
+    }
+
+    void visibleOuterPixelsAgreeWithPickingAndIndependentMasks()
+    {
+        using D = SkinTextureDocument;
+        PreviewProvider provider;
+        QImage texture(64, 64, QImage::Format_ARGB32);
+        const QColor base(220, 35, 45), outer(25, 200, 80);
+        texture.fill(base);
+        for (const auto& region : D::uvRegion(D::All, D::Overlay, SkinModel::CLASSIC))
+            for (int y = region.top(); y <= region.bottom(); ++y)
+                for (int x = region.left(); x <= region.right(); ++x)
+                    texture.setPixelColor(x, y, outer);
+        D document;
+        QVERIFY(document.load(texture));
+        SkinOpenGLWindow preview(&provider, QColor(225, 225, 235));
+        preview.setDocument(&document);
+        preview.setRegion(D::All, D::Both);
+        preview.resize(440, 480);
+        preview.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&preview));
+        QTRY_VERIFY(preview.isValid());
+        const auto first = pointForPixel(preview, D::Body, QPoint(23, 41));
+        QVERIFY(first.x() >= 0);
+        const auto point = first + QPoint(2, 2);
+        auto hit = preview.pickAt(point);
+        QVERIFY(hit);
+        QCOMPARE(hit->layer, D::Overlay);
+        const QPoint pixel = (QPointF(point) * preview.devicePixelRatioF()).toPoint();
+        QCOMPARE(preview.grabFramebuffer().pixelColor(pixel), outer);
+        preview.setPartLayerVisible(D::Body, D::Overlay, false);
+        hit = preview.pickAt(point);
+        QVERIFY(hit);
+        QCOMPARE(hit->layer, D::Base);
+        QCOMPARE(preview.grabFramebuffer().pixelColor(pixel), base);
+        preview.setPartLayerVisible(D::Body, D::Base, false);
+        QVERIFY(!preview.pickAt(point));
+        QVERIFY(preview.grabFramebuffer().pixelColor(pixel) != base);
+        preview.setPartLayerVisible(D::Body, D::Overlay, true);
+        hit = preview.pickAt(point);
+        QVERIFY(hit);
+        QCOMPARE(hit->layer, D::Overlay);
+        QCOMPARE(preview.grabFramebuffer().pixelColor(pixel), outer);
+    }
+
+    void rotationZoomAndInterruptedStrokesKeepHistoryConsistent()
+    {
+        using D = SkinTextureDocument;
+        PreviewProvider provider;
+        auto document = std::make_unique<D>();
+        QVERIFY(document->load(provider.skin.getTexture()));
+        SkinOpenGLWindow preview(&provider, QColor(225, 225, 235));
+        preview.setDocument(document.get());
+        preview.setEditingEnabled(true);
+        preview.setLayersVisible(true, false);
+        preview.resize(440, 480);
+        preview.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&preview));
+        QTRY_VERIFY(preview.isValid());
+        const auto initial = document->image();
+        const auto frame = preview.grabFramebuffer();
+        const QPoint start(220, 240), end(290, 265);
+        QTest::mousePress(&preview, Qt::RightButton, Qt::NoModifier, start);
+        dragMove(preview, end, Qt::RightButton);
+        QTest::mouseRelease(&preview, Qt::RightButton, Qt::NoModifier, end);
+        QVERIFY(preview.grabFramebuffer() != frame);
+        QCOMPARE(document->image(), initial);
+        QVERIFY(!document->canUndo());
+        preview.resetView();
+        preview.setTool(SkinCanvas::Pan);
+        QTest::mousePress(&preview, Qt::LeftButton, Qt::NoModifier, start);
+        dragMove(preview, end, Qt::LeftButton);
+        QTest::mouseRelease(&preview, Qt::LeftButton, Qt::NoModifier, end);
+        QVERIFY(preview.grabFramebuffer() != frame);
+        QCOMPARE(document->image(), initial);
+        preview.resetView();
+        QWheelEvent wheel(QPointF(start), QPointF(preview.mapToGlobal(start)), {}, QPoint(0, 600), Qt::NoButton, Qt::NoModifier,
+                          Qt::NoScrollPhase, false);
+        QApplication::sendEvent(&preview, &wheel);
+        QVERIFY(wheel.isAccepted());
+        QVERIFY(preview.grabFramebuffer() != frame);
+        preview.resetView();
+        preview.setTool(SkinCanvas::Brush);
+        preview.setColor(Qt::blue);
+        const auto point = pointForPixel(preview, D::Body, QPoint(23, 25));
+        QVERIFY(point.x() >= 0);
+        QTest::mousePress(&preview, Qt::LeftButton, Qt::NoModifier, point);
+        // Lost release (e.g. a compositor cancels mouse capture) must close history.
+        dragMove(preview, point, Qt::NoButton);
+        QVERIFY(document->canUndo());
+        document->undo();
+        QCOMPARE(document->image(), initial);
+        QVERIFY(!document->canUndo());
+        QTest::mousePress(&preview, Qt::LeftButton, Qt::NoModifier, point);
+        preview.hide();
+        QVERIFY(document->canUndo());
+        document->undo();
+        QCOMPARE(document->image(), initial);
+        document.reset();  // The preview's guarded document pointer may outlive its owner.
+        preview.show();
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, start);
+        QVERIFY(!preview.grabFramebuffer().isNull());
     }
 
     void reparentingRebuildsContextResources()

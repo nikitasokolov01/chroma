@@ -2,15 +2,19 @@
 #pragma once
 
 #include <QBuffer>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QLabel>
+#include <QLineEdit>
+#include <QPainter>
 #include <QPushButton>
 #include <QScopeGuard>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSignalSpy>
+#include <QSlider>
 #include <QSpinBox>
 #include <QTest>
 #include <QToolButton>
@@ -19,11 +23,89 @@
 #include "minecraft/auth/AccountList.h"
 #include "ui/MainWindow.h"
 #include "ui/dialogs/skins/SkinCanvas.h"
+#include "ui/dialogs/skins/SkinColorWheel.h"
 #include "ui/dialogs/skins/SkinEditorDialog.h"
 #include "ui/dialogs/skins/SkinManageDialog.h"
+#include "ui/dialogs/skins/draw/SkinOpenGLWindow.h"
 #include "ui/widgets/InlineWorkspace.h"
 
 namespace SkinLibraryUiTests {
+
+inline QString horizontalScrollDiagnostic(QScrollArea* scroll, QWidget* editor, QWidget* window)
+{
+    const auto describe = [](QWidget* widget) {
+        if (!widget)
+            return QString("none");
+        const auto size = widget->size();
+        const auto minimum = widget->minimumSize();
+        const auto hint = widget->minimumSizeHint();
+        return QString("%1(%2) size=%3x%4 minimum=%5x%6 minimumHint=%7x%8")
+            .arg(widget->metaObject()->className(), widget->objectName())
+            .arg(size.width())
+            .arg(size.height())
+            .arg(minimum.width())
+            .arg(minimum.height())
+            .arg(hint.width())
+            .arg(hint.height());
+    };
+    QStringList details{ QString("Unexpected horizontal range %1; editor width=%2; window width=%3")
+                             .arg(scroll->horizontalScrollBar()->maximum())
+                             .arg(editor->width())
+                             .arg(window->width()),
+                         describe(scroll), describe(scroll->viewport()), describe(scroll->widget()) };
+    if (scroll->widget())
+        for (auto* child : scroll->widget()->findChildren<QWidget*>())
+            details.append(describe(child));
+    return details.join('\n');
+}
+
+// Original synthetic artwork: a teal jacket, dark trousers, and a gold scarf.
+// Distinct faces, cuffs, and a transparent outer layer make renderer mistakes
+// visible in screenshots without using a real player's skin or account.
+inline QImage patternedSkin(QColor jacket = QColor("#86bdb5"))
+{
+    QImage texture(64, 64, QImage::Format_ARGB32);
+    texture.fill(Qt::transparent);
+    QPainter paint(&texture);
+    const QColor hair("#383344");
+    const QColor skin("#d49b7f");
+    const QColor trousers("#444b68");
+    const QColor trim("#e8b65b");
+    const QColor boots("#303348");
+    for (int part = SkinTextureDocument::Head; part <= SkinTextureDocument::LeftLeg; ++part) {
+        const auto region =
+            SkinTextureDocument::uvRegion(static_cast<SkinTextureDocument::Part>(part), SkinTextureDocument::Base, SkinModel::CLASSIC);
+        const QColor color = part == SkinTextureDocument::Head ? hair : part >= SkinTextureDocument::RightLeg ? trousers : jacket;
+        for (const auto& rect : region)
+            paint.fillRect(rect, color);
+    }
+    paint.fillRect(QRect(8, 10, 8, 6), skin);
+    paint.fillRect(QRect(10, 11, 2, 1), Qt::white);
+    paint.fillRect(QRect(13, 11, 2, 1), Qt::white);
+    paint.fillRect(QRect(11, 11, 1, 1), boots);
+    paint.fillRect(QRect(13, 11, 1, 1), boots);
+    paint.fillRect(QRect(11, 14, 3, 1), QColor("#ac665e"));
+    paint.fillRect(QRect(20, 20, 8, 2), trim);
+    paint.fillRect(QRect(23, 22, 2, 10), jacket.darker(135));
+    paint.fillRect(QRect(20, 27, 2, 2), jacket.darker(120));
+    paint.fillRect(QRect(26, 27, 2, 2), jacket.darker(120));
+    for (const QPoint arm : { QPoint(40, 16), QPoint(32, 48) }) {
+        paint.fillRect(QRect(arm + QPoint(0, 11), QSize(16, 2)), trim);
+        paint.fillRect(QRect(arm + QPoint(0, 13), QSize(16, 3)), skin);
+    }
+    for (const QPoint leg : { QPoint(0, 16), QPoint(16, 48) }) {
+        paint.fillRect(QRect(leg + QPoint(0, 12), QSize(16, 4)), boots);
+        paint.fillRect(QRect(leg + QPoint(4, 4), QSize(1, 8)), trousers.lighter(115));
+    }
+    paint.fillRect(QRect(20, 36, 8, 1), trim);
+    paint.fillRect(QRect(25, 37, 2, 4), trim);
+    paint.fillRect(QRect(41, 8, 6, 1), trim);
+    paint.end();
+    // These cursor positions are used by the keyboard editing regressions.
+    texture.setPixelColor(8, 8, jacket);
+    texture.setPixelColor(9, 8, jacket);
+    return SkinModel::normalizeTexture(texture);
+}
 
 inline void accountSwitching(MainWindow* window, const QString& root)
 {
@@ -40,8 +122,7 @@ inline void accountSwitching(MainWindow* window, const QString& root)
             accounts->removeAccount(accounts->index(0, 0));
         APPLICATION->settings()->set("SkinsDir", oldDirectory);
     });
-    QImage texture(64, 64, QImage::Format_ARGB32);
-    texture.fill(QColor("#86bdb5"));
+    QImage texture = patternedSkin();
     QVERIFY(texture.save(QDir(library).filePath("Local.png")));
     SkinManageDialog manager(window, MinecraftAccountPtr());
     window->resize(1280, 820);
@@ -69,7 +150,7 @@ inline void accountSwitching(MainWindow* window, const QString& root)
     second->accountData()->type = AccountType::MSA;
     int number = 0;
     for (const auto& account : { first, second }) {
-        texture.fill(number ? QColor("#dc7781") : QColor("#86bdb5"));
+        texture = patternedSkin(number ? QColor("#dc7781") : QColor("#86bdb5"));
         auto& skin = account->accountData()->minecraftProfile.skin;
         QBuffer bytes(&skin.data);
         QVERIFY(bytes.open(QIODevice::WriteOnly));
@@ -129,8 +210,7 @@ inline void accountSwitching(MainWindow* window, const QString& root)
 inline void compactToolbox(MainWindow* window, const QString& root)
 {
     QVERIFY(window->inlineWorkspace()->closeAllPages());
-    QImage texture(64, 64, QImage::Format_ARGB32);
-    texture.fill(QColor("#86bdb5"));
+    QImage texture = patternedSkin();
     SkinModel skin(texture, SkinModel::CLASSIC);
     SkinEditorDialog editor(window, MinecraftAccountPtr(), skin);
     window->resize(1280, 820);
@@ -141,8 +221,13 @@ inline void compactToolbox(MainWindow* window, const QString& root)
     auto* eraser = editor.findChild<QToolButton*>("skinToolEraser");
     auto* picker = editor.findChild<QToolButton*>("skinToolPicker");
     auto* pan = editor.findChild<QToolButton*>("skinToolPan");
-    QVERIFY(document && canvas && brush && eraser && picker && pan);
+    auto* mode = editor.findChild<QComboBox*>("skinEditMode");
+    auto* layer = editor.findChild<QComboBox*>("skinLayer");
+    QVERIFY(document && canvas && brush && eraser && picker && pan && mode && layer);
     auto discardEdits = qScopeGuard([&] { document->markSaved(); });
+    mode->setCurrentIndex(1);
+    layer->setCurrentIndex(0);
+    QVERIFY(canvas->isVisible());
     QVERIFY(brush->isChecked());
     for (auto* button : { brush, eraser, picker, pan }) {
         QVERIFY(!button->icon().isNull());
@@ -197,9 +282,171 @@ inline void compactToolbox(MainWindow* window, const QString& root)
             QVERIFY(button->parentWidget()->rect().contains(button->geometry()));
         }
         for (auto* scroll : editor.findChildren<QScrollArea*>())
-            QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+            QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0, qPrintable(horizontalScrollDiagnostic(scroll, &editor, window)));
         QVERIFY(window->grab().save(QDir(root).filePath(QString("skin-tools-%1.png").arg(size.width()))));
     }
+    document->markSaved();
+    editor.reject();
+}
+
+inline void editorModesAndVisibility(MainWindow* window, const QString& root)
+{
+    QVERIFY(window->inlineWorkspace()->closeAllPages());
+    window->resize(1280, 820);
+    const auto texture = patternedSkin();
+    SkinModel skin(texture, SkinModel::CLASSIC);
+    SkinEditorDialog editor(window, MinecraftAccountPtr(), skin);
+    window->openInlinePage(&editor, "Skin Studio");
+    auto* document = editor.findChild<SkinTextureDocument*>();
+    auto* canvas = editor.findChild<SkinCanvas*>("skinCanvas");
+    auto* preview = editor.findChild<SkinOpenGLWindow*>("skin3DCanvas");
+    auto* mode = editor.findChild<QComboBox*>("skinEditMode");
+    auto* layer = editor.findChild<QComboBox*>("skinLayer");
+    auto* model = editor.findChild<QComboBox*>("skinModel");
+    auto* wheel = editor.findChild<SkinColorWheel*>("skinColorWheel");
+    auto* hex = editor.findChild<QLineEdit*>("skinColorHex");
+    auto* opacity = editor.findChild<QSlider*>("skinOpacity");
+    auto* brushSize = editor.findChild<QSpinBox*>("skinBrushSize");
+    auto* showBase = editor.findChild<QCheckBox*>("skinShowBase");
+    auto* showOuter = editor.findChild<QCheckBox*>("skinShowOuter");
+    QVERIFY(document && canvas && mode && layer && model && wheel && hex && opacity && brushSize && showBase && showOuter);
+    auto discardEdits = qScopeGuard([&] { document->markSaved(); });
+    const bool native = QGuiApplication::platformName() == "windows" && SkinOpenGLWindow::hasOpenGL();
+    if (native) {
+        QVERIFY(preview);
+        QTRY_VERIFY(preview->isValid());
+        QCOMPARE(mode->currentIndex(), 0);
+        QCOMPARE(layer->currentIndex(), int(SkinTextureDocument::Base));
+        QVERIFY(preview->isVisible());
+        QVERIFY(!canvas->isVisible());
+    } else {
+        QCOMPARE(mode->currentIndex(), 1);
+        QVERIFY(canvas->isVisible());
+    }
+    QVERIFY(wheel->isVisible());
+    QVERIFY(!wheel->accessibleName().isEmpty());
+    QCOMPARE(opacity->minimum(), 0);
+    QCOMPARE(opacity->maximum(), 255);
+    QCOMPARE(opacity->value(), 255);
+
+    for (int part = 0; part < 6; ++part) {
+        auto* base = editor.findChild<QCheckBox*>(QString("skinPartBase%1").arg(part));
+        auto* outer = editor.findChild<QCheckBox*>(QString("skinPartOuter%1").arg(part));
+        QVERIFY(base && outer);
+        QVERIFY(base->isChecked() && outer->isChecked());
+        QVERIFY(!base->accessibleName().isEmpty());
+        QVERIFY(!outer->accessibleName().isEmpty());
+        if (native) {
+            base->click();
+            QVERIFY(!preview->partLayerVisible(part, SkinTextureDocument::Base));
+            QVERIFY(preview->partLayerVisible(part, SkinTextureDocument::Overlay));
+            outer->click();
+            QVERIFY(!preview->partLayerVisible(part, SkinTextureDocument::Overlay));
+            base->click();
+            outer->click();
+        }
+    }
+    if (native) {
+        showBase->click();
+        for (int part = 0; part < 6; ++part) {
+            QVERIFY(!preview->partLayerVisible(part, SkinTextureDocument::Base));
+            QVERIFY(preview->partLayerVisible(part, SkinTextureDocument::Overlay));
+        }
+        showBase->click();
+        showOuter->click();
+        for (int part = 0; part < 6; ++part) {
+            QVERIFY(preview->partLayerVisible(part, SkinTextureDocument::Base));
+            QVERIFY(!preview->partLayerVisible(part, SkinTextureDocument::Overlay));
+        }
+        showOuter->click();
+    }
+    // Visibility and brush choices must not alter the texture or its history.
+    QCOMPARE(document->image(), texture);
+    QVERIFY(!document->canUndo());
+    hex->setFocus();
+    hex->setText("#b75cde");
+    QTest::keyClick(hex, Qt::Key_Return);
+    QCOMPARE(wheel->color().rgba(), QColor("#b75cde").rgba());
+    opacity->setValue(73);
+    QCOMPARE(wheel->color().alpha(), 73);
+    QSignalSpy wheelChanges(wheel, &SkinColorWheel::colorChanged);
+    QTest::mouseClick(wheel, Qt::LeftButton, Qt::NoModifier, wheel->rect().center());
+    QCOMPARE(wheelChanges.count(), 1);
+    QCOMPARE(QColor(hex->text()).rgb(), wheel->color().rgb());
+    QCOMPARE(wheel->color().alpha(), 73);
+    QTest::keyClick(wheel, Qt::Key_Up);
+    QCOMPARE(wheelChanges.count(), 2);
+    QCOMPARE(QColor(hex->text()).rgb(), wheel->color().rgb());
+    QCOMPARE(wheel->color().alpha(), 73);
+
+    hex->setText("#40dc7781");
+    QTest::keyClick(hex, Qt::Key_Return);
+    QCOMPARE(wheel->color().rgba(), QColor("#40dc7781").rgba());
+    QCOMPARE(opacity->value(), 64);
+    opacity->setValue(255);
+    brushSize->setValue(2);
+    mode->setCurrentIndex(1);
+    QVERIFY(canvas->isVisible());
+    if (preview)
+        QVERIFY(preview->isVisible());
+    canvas->setFocus();
+    QTest::keyClick(canvas, Qt::Key_Space);
+    QCOMPARE(document->image().pixelColor(8, 8), QColor("#dc7781"));
+    const auto edited = document->image();
+    QVERIFY(document->canUndo());
+    model->setCurrentIndex(1);
+    QCOMPARE(document->model(), SkinModel::SLIM);
+    const auto selectedColor = wheel->color();
+    if (native) {
+        auto* headBase = editor.findChild<QCheckBox*>("skinPartBase0");
+        headBase->click();
+        for (int i = 0; i < 3; ++i) {
+            mode->setCurrentIndex(0);
+            QVERIFY(preview->isVisible());
+            QVERIFY(!canvas->isVisible());
+            QVERIFY(!preview->partLayerVisible(0, SkinTextureDocument::Base));
+            QVERIFY(preview->partLayerVisible(0, SkinTextureDocument::Overlay));
+            QCOMPARE(document->image(), edited);
+            QCOMPARE(document->model(), SkinModel::SLIM);
+            QCOMPARE(wheel->color().rgba(), selectedColor.rgba());
+            QCOMPARE(brushSize->value(), 2);
+            mode->setCurrentIndex(1);
+        }
+        headBase->click();
+    }
+    document->undo();
+    QCOMPARE(document->model(), SkinModel::CLASSIC);
+    document->undo();
+    QCOMPARE(document->image(), texture);
+    document->redo();
+    QCOMPARE(document->image(), edited);
+    document->undo();
+    if (native)
+        mode->setCurrentIndex(0);
+    for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
+        window->resize(size);
+        QTest::qWait(100);
+        QVERIFY(wheel->isVisible());
+        const QRect wheelBounds(wheel->mapTo(window, QPoint()), wheel->size());
+        QVERIFY(window->rect().contains(wheelBounds));
+        auto* activeCanvas = native ? static_cast<QWidget*>(preview) : static_cast<QWidget*>(canvas);
+        const QRect canvasBounds(activeCanvas->mapTo(window, QPoint()), activeCanvas->size());
+        QVERIFY(!wheelBounds.intersects(canvasBounds));
+        for (auto* scroll : editor.findChildren<QScrollArea*>())
+            QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0, qPrintable(horizontalScrollDiagnostic(scroll, &editor, window)));
+        auto* visibility = editor.findChild<QScrollArea*>("skinVisibilityScroll");
+        QVERIFY(visibility);
+        visibility->verticalScrollBar()->setValue(visibility->verticalScrollBar()->maximum());
+        QCOMPARE(QRect(wheel->mapTo(window, QPoint()), wheel->size()), wheelBounds);
+        visibility->verticalScrollBar()->setValue(0);
+        QVERIFY(
+            window->grab().save(QDir(root).filePath(QString("skin-studio-%1-%2.png").arg(native ? "3d" : "fallback").arg(size.width()))));
+    }
+    window->resize(1280, 820);
+    mode->setCurrentIndex(1);
+    QTest::qWait(80);
+    QVERIFY(window->grab().save(QDir(root).filePath("skin-studio-2d.png")));
+    QVERIFY(texture.save(QDir(root).filePath("skin-studio-synthetic.png")));
     document->markSaved();
     editor.reject();
 }

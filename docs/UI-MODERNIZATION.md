@@ -81,22 +81,38 @@ or import a skin and choose **Edit Skin…** (or double-click it). This opens
 **Skin Studio** inline. Switching the skin target leaves the launcher's default
 account unchanged. Local editing is also available before adding an account.
 
-Skin Studio provides PNG import/export, brush and eraser, color picking, brush
-size, body-region and layer selection, grid, zoom/pan, undo/redo, reset, and local
-library saving. Imports preserve edit history. Classic and Slim use their own UV
-regions; legacy 64 × 32 skins normalize to 64 × 64. Base-layer pixels remain
-opaque, while outer layers support transparency. Keyboard users can move the pixel
-cursor with arrow keys, paint with Space, and zoom with plus/minus. The compact
-icon toolbox has canvas shortcuts: B for brush, E for eraser, I for color picker,
-and H for pan. Tooltips and accessible names describe each tool.
+Skin Studio opens in **3D Paint** when OpenGL is available. Left-drag paints the
+model, right-drag rotates it, and scrolling zooms. **2D Texture** shows the PNG
+canvas beside the live preview. Both modes share the texture document, brush,
+color, model, and undo history. The native renderer maps picked faces to Classic
+or Slim texture regions. The body-part table exposes independent base and outer
+visibility for the head, torso, arms, and legs; hiding parts changes the view and
+which surfaces can be reached, without altering the PNG.
 
-The existing native OpenGL renderer supports orbit, zoom, view reset, body-part
-visibility, and base/outer-layer visibility. Texture changes are uploaded with the
-GL context current during painting. A QOpenGLWidget framebuffer keeps the preview
-inside Qt's regular composition and scrolling hierarchy. It resets GL state on
-each paint and restores edited textures when inline reparenting replaces a context.
-If OpenGL or shader initialization is
-unavailable, a front/back image preview keeps editing and export usable.
+An inline hue wheel and saturation/value square stay visible beside the canvas,
+with hexadecimal color entry, opacity, and palette swatches. Palette, body-part,
+and model controls scroll beneath the fixed color controls at compact sizes.
+The wheel also supports keyboard hue, brightness, and saturation changes. It does
+not open a color dialog.
+
+The editor retains PNG import/export, brush and eraser, color picking, brush size,
+body-region and layer selection, 2D grid, zoom/pan, undo/redo, reset, and local
+library saving. Imports preserve edit history. Legacy 64 × 32 skins normalize to
+64 × 64. Base pixels remain opaque; outer layers support transparency. In 2D,
+arrow keys move the pixel cursor, Space paints, and plus/minus zoom. Canvas
+shortcuts are B for brush, E for eraser, I for color picker, and H for pan/rotate.
+Alt-click picks a color. Tooltips and accessible names describe each tool.
+
+Texture changes are uploaded with the GL context current during painting. A
+QOpenGLWidget framebuffer keeps the preview inside Qt's regular composition and
+scrolling hierarchy. It resets GL state on each paint and restores edited textures
+when inline reparenting replaces a context. If OpenGL or shader initialization is
+unavailable, the editor selects 2D and shows a front/back image preview.
+
+The main window prepares Qt's OpenGL composition before its native window is
+created. A hidden, zero-size anchor keeps the first inline preview from replacing
+the launcher window after it is shown. The anchor does not paint or initialize
+its own GL context; headless and unsupported platforms keep the normal fallback.
 
 **Apply Skin** saves locally, validates a fixed PNG snapshot, refreshes sign-in when
 needed, and uses the existing Minecraft Services upload. The same bytes update the
@@ -162,8 +178,11 @@ ctest --test-dir .tools/build --output-on-failure -R '^(WindowChrome|ProjectMeta
 The new smoke coverage includes popup keyboard behavior and placement, native
 window flags, focus and scroll restoration, repeated wheel input and interruption,
 reduced motion, provider metadata/cache cancellation, account selection, and skin
-editor history/preview synchronization. Final run results are recorded separately
-from the baseline above.
+editor history/preview synchronization. Skin mode and color checks use a patterned
+synthetic texture to expose face mapping and transparent layer mistakes. They also
+check independent part visibility, color-wheel/hex/opacity synchronization, and
+compact panel bounds. Final run results are recorded separately from the baseline
+above.
 
 ## Initial modernization verification — 2026-09-28
 
@@ -190,9 +209,8 @@ Screenshots and synthetic profiles are under `.chroma-test/`; neither directory
 is part of the committed source.
 
 Run the development build with `./scripts/run-chroma.ps1` from the repository
-root. The script supplies the local Qt runtime paths. These changes are included
-on `main`; the existing redesign was preserved in a separate baseline checkpoint
-before the feature commits.
+root. The script supplies the local Qt runtime paths. The existing redesign was
+preserved in a separate baseline checkpoint before the feature commits.
 
 ## Skin and library refinement verification — 2026-09-28
 
@@ -213,6 +231,29 @@ before the feature commits.
 
 Logs are under `.tools/ui-refinements-*.log` and `.tools/ui-refinements-*.txt`.
 Screenshots and synthetic profiles are under `.chroma-test/ui-refinements-*`.
+
+## Skin Studio 3D painting verification — 2026-09-28
+
+- Windows Qt 6.5.3/MSVC build: passed.
+- CTest: **31/31 suites passed**, including SkinPicking and OpenGLComposition.
+- Native Windows UI: **42/42 cases passed** after the compact control adjustments.
+- Offscreen UI: **42/42 cases passed**, including fallback editing and compact
+  controls without horizontal overflow.
+- Geometry tests cover 144 Classic/Slim part, layer, and face combinations, plus
+  explicit face orientation, arm width, hidden layers, transparent outer pixels,
+  and occlusion by another visible body part.
+- Native renderer checks cover painting and undo per stroke, erasing and color
+  picking, rotation, interrupted strokes, and visible base/outer colors. The
+  first and repeated inline preview insertions preserve the launcher window and
+  render through Qt's composition.
+- UI workflows cover the default 3D mode, 2D switching, shared texture/history,
+  the inline wheel, hex and opacity synchronization, independent part visibility,
+  and a fixed color panel while the controls below it scroll.
+- The native 1280 × 820 and 680 × 640 captures were inspected, including the 2D
+  texture with its live preview. Screenshots use original synthetic skin artwork.
+
+Logs are under `.tools/skin-studio-*.log` and `.tools/skin-studio-*.txt`.
+Screenshots and isolated profiles are under `.chroma-test/skin-studio-3d-*`.
 
 ### Checks not executed here
 

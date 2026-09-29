@@ -16,6 +16,7 @@ The default main window is rebuilt in C++ and Qt Widgets:
 - Keyboard shortcuts, inline rename, native context menus, grouped drag and drop, and game status/progress indicators.
 - An inline workspace for launcher settings, instance editing, account management, and adding instances, with the header and sidebar always available.
 - A provider gallery for modpack discovery, followed by searchable cover grids and pack details with version selection.
+- A Skin Library with account switching, plus Skin Studio for direct 3D painting, 2D texture editing, layer visibility, and local PNG saving.
 
 The structure lives in `LauncherHome`, `MainWindow`, `InlineWorkspace`, and `InstanceView`. It is compiled into the launcher. The Chroma palette supplies colors to those native widgets; no external theme installation or web wrapper is involved. The workspace reuses Prism's existing configuration and instance pages, including their validation and task handling.
 
@@ -66,6 +67,38 @@ CurseForge requires an API key in **Settings → Services** or at build time. Im
 
 Read the [privacy guide](../PRIVACY.md) for local account storage, network connections, and controls over your data.
 
+## Skin Library and Skin Studio
+
+Open **Skins** in the sidebar. The account dropdown chooses whose skins and capes
+to manage without changing the default launch account. Select or import a skin,
+then choose **Edit Skin…** or double-click it. Local editing also works without
+an account.
+
+Skin Studio opens in **3D Paint** when OpenGL is available. Left-drag on the model
+to paint; right-drag to rotate and scroll to zoom. **Reset view** restores the
+camera. Switch to **2D Texture** to paint on the PNG beside a live 3D preview.
+The texture, selected color, brush size, model, and undo history stay shared
+between both modes. Without OpenGL, the 2D editor has a front/back image preview.
+
+- **Colors:** drag the visible wheel to choose hue, saturation, and brightness.
+  Enter `#RRGGBB` for an exact color or `#AARRGGBB` to include opacity. The opacity
+  slider and palette swatches use the same brush color.
+- **Layers:** select the layer to paint above the canvas. Base pixels stay opaque;
+  outer pixels support transparency and erasing. The body-part table has separate
+  **Base** and **Outer** visibility checkboxes for the head, torso, arms, and legs.
+  Hiding a part lets you reach surfaces behind it without changing the PNG.
+- **Tools:** with a canvas focused, press **B** for brush, **E** for eraser,
+  **I** for color picker, or **H** to rotate the model or pan the texture.
+  Alt-click samples a color. In 2D, arrow keys move the pixel cursor, **Space**
+  paints, and plus/minus zoom. Middle-drag pans the texture.
+- **Saving:** use undo/redo, import/export PNG, or **Save to Library**. Classic and
+  Slim models use their own texture regions; older 64 × 32 skins normalize to
+  64 × 64. **Apply Skin** saves locally and uploads to an eligible Microsoft
+  account with a Minecraft Java profile. Offline accounts can edit and export.
+
+The color wheel stays beside the canvas in compact windows; palette, layer, and
+model controls scroll beneath it when needed. Editing locally does not upload the skin.
+
 ## Home, pins, and navigation
 
 Scroll Home from **Jump back in** through the library using the page scrollbar or the mouse wheel over a card. The search, filters, and cards move with the page. **Library** in the sidebar opens the library without the recent section. Group collapse, sorting, search, keyboard selection, and drag and drop continue to use the native instance view.
@@ -115,7 +148,7 @@ CurseForge and Imgur credentials are empty by default, and upstream binary updat
 
 ### Native UI verification
 
-The optional Qt test harness exercises the real main window using synthetic instances in an isolated profile. It checks filtering, selection, action states, sorting, whole-page scrolling, sidebar pins, custom accent persistence, and direct profile use. Inline settings, instance editing, nested pickers, confirmations, and task cancellation are checked for correct navigation and dialog lifetimes. Catalog checks cover the provider gallery, populated card grids, keyboard selection, pack versions, instance options, search resets, and provider switching. Layout checks cover 1280×820, 800×820, and 680×640 and save screenshots. The harness does not open your installed Prism profile, sign in, or launch Minecraft.
+The optional Qt test harness exercises the real main window using synthetic instances in an isolated profile. It checks filtering, selection, action states, sorting, whole-page scrolling, sidebar pins, custom accent persistence, and direct profile use. Inline settings, instance editing, nested pickers, confirmations, and task cancellation are checked for correct navigation and dialog lifetimes. Catalog checks cover the provider gallery, populated card grids, keyboard selection, pack versions, instance options, search resets, and provider switching. Skin checks cover account selection, editing modes, shared history, the inline color wheel, opacity, and per-part layer visibility using original synthetic textures. Layout checks cover 1280×820, 800×820, and 680×640 and save screenshots. The harness does not open your installed Prism profile, sign in, or launch Minecraft.
 
 ```powershell
 . .\scripts\build-chroma.ps1 -Action Environment # Add your dependency path arguments here.

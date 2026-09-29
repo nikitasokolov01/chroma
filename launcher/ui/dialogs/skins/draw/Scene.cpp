@@ -28,55 +28,10 @@ namespace opengl {
 Scene::Scene(const QImage& skin, bool slim, const QImage& cape) : QOpenGLFunctions(), m_slim(slim), m_capeVisible(!cape.isNull())
 {
     initializeOpenGLFunctions();
-    m_staticComponents = {
-        // head
-        new opengl::BoxGeometry(QVector3D(8, 8, 8), QVector3D(0, 4, 0), QPoint(0, 0), QVector3D(8, 8, 8)),
-        // body
-        new opengl::BoxGeometry(QVector3D(8, 12, 4), QVector3D(0, -6, 0), QPoint(16, 16), QVector3D(8, 12, 4)),
-        // right leg
-        new opengl::BoxGeometry(QVector3D(4, 12, 4), QVector3D(-1.9, -18, -0.1), QPoint(0, 16), QVector3D(4, 12, 4)),
-        // left leg
-        new opengl::BoxGeometry(QVector3D(4, 12, 4), QVector3D(1.9, -18, -0.1), QPoint(16, 48), QVector3D(4, 12, 4)),
-    };
-
-    m_staticComponentsOverlay = {
-        // head
-        new opengl::BoxGeometry(QVector3D(9, 9, 9), QVector3D(0, 4, 0), QPoint(32, 0), QVector3D(8, 8, 8)),
-        // body
-        new opengl::BoxGeometry(QVector3D(8.5, 12.5, 4.5), QVector3D(0, -6, 0), QPoint(16, 32), QVector3D(8, 12, 4)),
-        // right leg
-        new opengl::BoxGeometry(QVector3D(4.5, 12.5, 4.5), QVector3D(-1.9, -18, -0.1), QPoint(0, 32), QVector3D(4, 12, 4)),
-        // left leg
-        new opengl::BoxGeometry(QVector3D(4.5, 12.5, 4.5), QVector3D(1.9, -18, -0.1), QPoint(0, 48), QVector3D(4, 12, 4)),
-    };
-
-    m_normalArms = {
-        // Right Arm
-        new opengl::BoxGeometry(QVector3D(4, 12, 4), QVector3D(-6, -6, 0), QPoint(40, 16), QVector3D(4, 12, 4)),
-        // Left Arm
-        new opengl::BoxGeometry(QVector3D(4, 12, 4), QVector3D(6, -6, 0), QPoint(32, 48), QVector3D(4, 12, 4)),
-    };
-
-    m_normalArmsOverlay = {
-        // Right Arm
-        new opengl::BoxGeometry(QVector3D(4.5, 12.5, 4.5), QVector3D(-6, -6, 0), QPoint(40, 32), QVector3D(4, 12, 4)),
-        // Left Arm
-        new opengl::BoxGeometry(QVector3D(4.5, 12.5, 4.5), QVector3D(6, -6, 0), QPoint(48, 48), QVector3D(4, 12, 4)),
-    };
-
-    m_slimArms = {
-        // Right Arm
-        new opengl::BoxGeometry(QVector3D(3, 12, 4), QVector3D(-5.5, -6, 0), QPoint(40, 16), QVector3D(3, 12, 4)),
-        // Left Arm
-        new opengl::BoxGeometry(QVector3D(3, 12, 4), QVector3D(5.5, -6, 0), QPoint(32, 48), QVector3D(3, 12, 4)),
-    };
-
-    m_slimArmsOverlay = {
-        // Right Arm
-        new opengl::BoxGeometry(QVector3D(3.5, 12.5, 4.5), QVector3D(-5.5, -6, 0), QPoint(40, 32), QVector3D(3, 12, 4)),
-        // Left Arm
-        new opengl::BoxGeometry(QVector3D(3.5, 12.5, 4.5), QVector3D(5.5, -6, 0), QPoint(48, 48), QVector3D(3, 12, 4)),
-    };
+    for (int model = 0; model < 2; ++model) {
+        for (const auto& box : skinBoxes(model == 1))
+            m_parts[model].append(new BoxGeometry(box.size, box.center, box.uv, box.textureSize));
+    }
 
     m_cape = new opengl::BoxGeometry(QVector3D(10, 16, 1), QVector3D(0, -8, 2.5), QPoint(0, 0), QVector3D(10, 16, 1), QSize(64, 32));
     m_cape->rotate(10.8, QVector3D(1, 0, 0));
@@ -108,12 +63,8 @@ Scene::Scene(const QImage& skin, bool slim, const QImage& cape) : QOpenGLFunctio
 }
 Scene::~Scene()
 {
-    for (auto array :
-         { m_staticComponents, m_normalArms, m_slimArms, m_elytra, m_staticComponentsOverlay, m_normalArmsOverlay, m_slimArmsOverlay }) {
-        for (auto g : array) {
-            delete g;
-        }
-    }
+    for (const auto& array : { m_parts[0], m_parts[1], m_elytra })
+        qDeleteAll(array);
     delete m_cape;
 
     m_skinTexture->destroy();
@@ -127,19 +78,11 @@ void Scene::draw(QOpenGLShaderProgram* program)
 {
     m_skinTexture->bind();
     program->setUniformValue("texture", 0);
-    auto drawParts = [this, program](const QList<BoxGeometry*>& parts, bool arms) {
-        const int ids[] = { 0, 1, 4, 5 };
-        for (int i = 0; i < parts.size(); ++i)
-            if (m_visibleParts & (1u << (arms ? i + 2 : ids[i])))
-                parts[i]->draw(program);
-    };
-    if (m_baseVisible) {
-        drawParts(m_staticComponents, false);
-        drawParts(m_slim ? m_slimArms : m_normalArms, true);
-    }
-    if (m_overlayVisible) {
-        drawParts(m_staticComponentsOverlay, false);
-        drawParts(m_slim ? m_slimArmsOverlay : m_normalArmsOverlay, true);
+    const auto& parts = m_parts[m_slim ? 1 : 0];
+    for (int i = 0; i < parts.size(); ++i) {
+        const bool base = i < 6;
+        if ((base ? m_baseVisible : m_overlayVisible) && ((base ? m_baseParts : m_outerParts) & (1u << (i % 6))))
+            parts[i]->draw(program);
     }
     m_skinTexture->release();
     if (m_capeVisible) {
@@ -200,11 +143,21 @@ void Scene::setLayersVisible(bool base, bool overlay)
 }
 void Scene::setPartVisible(int part, bool visible)
 {
+    setPartLayerVisible(part, SkinTextureDocument::Both, visible);
+}
+void Scene::setPartLayerVisible(int part, SkinTextureDocument::Layer layer, bool visible)
+{
     if (part < 0 || part > 5)
         return;
-    if (visible)
-        m_visibleParts |= (1u << part);
-    else
-        m_visibleParts &= ~(1u << part);
+    auto set = [part, visible](unsigned& mask) {
+        if (visible)
+            mask |= (1u << part);
+        else
+            mask &= ~(1u << part);
+    };
+    if (layer != SkinTextureDocument::Overlay)
+        set(m_baseParts);
+    if (layer != SkinTextureDocument::Base)
+        set(m_outerParts);
 }
 }  // namespace opengl

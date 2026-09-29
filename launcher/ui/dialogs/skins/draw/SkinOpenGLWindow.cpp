@@ -18,10 +18,14 @@
 
 #include "ui/dialogs/skins/draw/SkinOpenGLWindow.h"
 
+#include <QFocusEvent>
+#include <QHideEvent>
 #include <QKeyEvent>
+#include <QLineF>
 #include <QMouseEvent>
 #include <QOpenGLBuffer>
 #include <QOpenGLContext>
+#include <QSignalBlocker>
 #include <QVector2D>
 #include <QVector3D>
 #include <QtMath>
@@ -40,10 +44,12 @@ SkinOpenGLWindow::SkinOpenGLWindow(SkinProvider* provider, QColor color, QWidget
     setFormat(format);
     setUpdateBehavior(QOpenGLWidget::NoPartialUpdate);
     setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(true);
 }
 
 SkinOpenGLWindow::~SkinOpenGLWindow()
 {
+    finishStroke();
     cleanupGL();
 }
 
@@ -73,44 +79,214 @@ void SkinOpenGLWindow::cleanupGL()
     m_isFirstFrame = true;
 }
 
-void SkinOpenGLWindow::mousePressEvent(QMouseEvent* e)
+void SkinOpenGLWindow::setDocument(SkinTextureDocument* document)
 {
-    if (e->button() != Qt::LeftButton)
+    finishStroke();
+    disconnect(m_documentChanged);
+    m_document = document;
+    if (document) {
+        m_documentChanged = connect(document, &SkinTextureDocument::changed, this, [this] {
+            if (m_document)
+                setTexture(m_document->image(), m_document->model());
+        });
+        setTexture(document->image(), document->model());
+    }
+    updateCursor();
+}
+
+void SkinOpenGLWindow::setEditingEnabled(bool enabled)
+{
+    finishStroke();
+    m_rotateButton = Qt::NoButton;
+    m_editingEnabled = enabled;
+    updateCursor();
+}
+
+void SkinOpenGLWindow::setTool(SkinCanvas::Tool tool)
+{
+    if (m_tool == tool)
         return;
-    // Save mouse press position
-    m_mousePosition = QVector2D(e->pos());
-    m_isMousePressed = true;
+    finishStroke();
+    m_rotateButton = Qt::NoButton;
+    m_tool = tool;
+    updateCursor();
+    emit toolChanged(tool);
+}
+
+void SkinOpenGLWindow::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer)
+{
+    finishStroke();
+    m_part = part;
+    m_layer = layer;
+}
+
+void SkinOpenGLWindow::updateCursor()
+{
+    setCursor(m_rotateButton != Qt::NoButton                                  ? Qt::ClosedHandCursor
+              : !m_editingEnabled || !m_document || m_tool == SkinCanvas::Pan ? Qt::OpenHandCursor
+                                                                              : Qt::CrossCursor);
+}
+
+void SkinOpenGLWindow::finishStroke()
+{
+    const bool painting = m_painting;
+    m_painting = false;
+    m_lastPaintPick.reset();
+    if (painting && m_document)
+        m_document->endStroke();
+}
+
+QVector3D SkinOpenGLWindow::cameraEye() const
+{
+    const float yaw = qDegreesToRadians(m_yaw), pitch = qDegreesToRadians(m_pitch);
+    return QVector3D(m_distance * qCos(pitch) * qCos(yaw), m_distance * qSin(pitch) - 8, m_distance * qCos(pitch) * qSin(yaw));
+}
+
+std::optional<opengl::SkinPick> SkinOpenGLWindow::pickAt(QPointF position) const
+{
+    if (width() <= 0 || height() <= 0 || !QRectF(rect()).contains(position))
+        return {};
+    const auto eye = cameraEye();
+    const auto forward = (QVector3D(0, -8, 0) - eye).normalized();
+    const auto right = QVector3D::crossProduct(forward, QVector3D(0, 1, 0)).normalized();
+    const auto up = QVector3D::crossProduct(right, forward);
+    const float tangent = qTan(qDegreesToRadians(22.5f));
+    const float x = (2.f * position.x() / width() - 1.f) * float(width()) / height() * tangent;
+    const float y = (1.f - 2.f * position.y() / height()) * tangent;
+    return opengl::pickSkin(eye, forward + x * right + y * up, m_model == SkinModel::SLIM, m_baseVisible ? m_baseParts : 0,
+                            m_overlayVisible ? m_outerParts : 0, m_part, m_layer, m_document ? m_document->image() : m_pendingTexture);
+}
+
+void SkinOpenGLWindow::applyTool(QPointF position)
+{
+    if (!m_document)
+        return;
+    const auto pick = pickAt(position);
+    if (!pick) {
+        m_lastPaintPick.reset();
+        return;
+    }
+    emit pixelHovered(pick->pixel, m_document->image().pixelColor(pick->pixel));
+    if (m_tool == SkinCanvas::Eyedropper) {
+        emit colorPicked(m_document->image().pixelColor(pick->pixel));
+        return;
+    }
+    if (m_lastPaintPick && m_lastPaintPick->pixel == pick->pixel && m_lastPaintPick->faceRect == pick->faceRect)
+        return;
+    m_lastPaintPick = pick;
+    // Keep a face's brush square inside that face. Adjacent UV rectangles in
+    // the PNG are not necessarily adjacent surfaces on the 3D model.
+    const auto previousKey = m_document->image().cacheKey();
+    QSignalBlocker blocker(m_document);
+    const QRect brush(pick->pixel - QPoint((m_brushSize - 1) / 2, (m_brushSize - 1) / 2), QSize(m_brushSize, m_brushSize));
+    const auto pixels = brush.intersected(pick->faceRect);
+    for (int y = pixels.top(); y <= pixels.bottom(); ++y)
+        for (int x = pixels.left(); x <= pixels.right(); ++x)
+            m_document->paintPixel(QPoint(x, y), m_color, 1, pick->part, pick->layer, m_tool == SkinCanvas::Eraser);
+    blocker.unblock();
+    if (m_document->image().cacheKey() != previousKey)
+        emit m_document->changed();
+}
+
+void SkinOpenGLWindow::paintTo(QPointF position)
+{
+    // Interpolate on the screen, then pick each sample independently: never
+    // connect unrelated texture regions across a face seam or a model gap.
+    if (!m_document)
+        return;
+    const auto previousKey = m_document->image().cacheKey();
+    QSignalBlocker blocker(m_document);
+    const int steps = qMax(1, qCeil(QLineF(m_lastPaintPosition, position).length()));
+    for (int i = 1; i <= steps; ++i)
+        applyTool(m_lastPaintPosition + (position - m_lastPaintPosition) * (qreal(i) / steps));
+    m_lastPaintPosition = position;
+    blocker.unblock();
+    if (m_document->image().cacheKey() != previousKey)
+        emit m_document->changed();
+}
+
+void SkinOpenGLWindow::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() != Qt::LeftButton && event->button() != Qt::RightButton && event->button() != Qt::MiddleButton) {
+        QOpenGLWidget::mousePressEvent(event);
+        return;
+    }
+    setFocus(Qt::MouseFocusReason);
+    finishStroke();
+    if (event->button() != Qt::LeftButton || !m_editingEnabled || !m_document || m_tool == SkinCanvas::Pan) {
+        m_rotateButton = event->button();
+        m_mousePosition = QVector2D(event->position());
+        updateCursor();
+    } else {
+        m_rotateButton = Qt::NoButton;
+        m_lastPaintPosition = event->position();
+        if (event->modifiers() & Qt::AltModifier) {
+            const auto pick = pickAt(event->position());
+            if (pick)
+                emit colorPicked(m_document->image().pixelColor(pick->pixel));
+            event->accept();
+            return;
+        }
+        if (m_tool != SkinCanvas::Eyedropper) {
+            m_document->beginStroke();
+            m_painting = true;
+        }
+        applyTool(event->position());
+    }
+    event->accept();
 }
 
 void SkinOpenGLWindow::mouseMoveEvent(QMouseEvent* event)
 {
-    // Prevents mouse sticking on Wayland compositors
-    if (!(event->buttons() & Qt::MouseButton::LeftButton)) {
-        m_isMousePressed = false;
-        return;
+    if (m_painting && !(event->buttons() & Qt::LeftButton))
+        finishStroke();
+    if (m_rotateButton != Qt::NoButton && !(event->buttons() & m_rotateButton)) {
+        m_rotateButton = Qt::NoButton;
+        updateCursor();
     }
-
-    if (m_isMousePressed) {
-        int dx = event->position().x() - m_mousePosition.x();
-        int dy = event->position().y() - m_mousePosition.y();
-
-        m_yaw += dx * 0.5f;
-        m_pitch = qBound(-80.f, m_pitch + dy * 0.5f, 80.f);
-
-        // Normalize yaw to keep it manageable
-        if (m_yaw > 360.0f)
-            m_yaw -= 360.0f;
-        else if (m_yaw < 0.0f)
-            m_yaw += 360.0f;
-
-        m_mousePosition = QVector2D(event->pos());
-        update();  // Trigger a repaint
+    if (m_rotateButton != Qt::NoButton) {
+        const auto movement = QVector2D(event->position()) - m_mousePosition;
+        m_yaw = std::fmod(m_yaw + movement.x() * .5f + 360.f, 360.f);
+        m_pitch = qBound(-80.f, m_pitch + movement.y() * .5f, 80.f);
+        m_mousePosition = QVector2D(event->position());
+        update();
+    } else if (m_painting) {
+        paintTo(event->position());
+    } else if (m_editingEnabled && m_document) {
+        const auto pick = pickAt(event->position());
+        if (pick)
+            emit pixelHovered(pick->pixel, m_document->image().pixelColor(pick->pixel));
     }
+    event->accept();
 }
 
-void SkinOpenGLWindow::mouseReleaseEvent([[maybe_unused]] QMouseEvent* e)
+void SkinOpenGLWindow::mouseReleaseEvent(QMouseEvent* event)
 {
-    m_isMousePressed = false;
+    if (event->button() == Qt::LeftButton) {
+        if (m_painting)
+            paintTo(event->position());
+        finishStroke();
+    }
+    if (event->button() == m_rotateButton)
+        m_rotateButton = Qt::NoButton;
+    updateCursor();
+    event->accept();
+}
+
+void SkinOpenGLWindow::focusOutEvent(QFocusEvent* event)
+{
+    finishStroke();
+    m_rotateButton = Qt::NoButton;
+    updateCursor();
+    QOpenGLWidget::focusOutEvent(event);
+}
+
+void SkinOpenGLWindow::hideEvent(QHideEvent* event)
+{
+    finishStroke();
+    m_rotateButton = Qt::NoButton;
+    updateCursor();
+    QOpenGLWidget::hideEvent(event);
 }
 
 void SkinOpenGLWindow::initializeGL()
@@ -153,8 +329,10 @@ void SkinOpenGLWindow::initializeGL()
     m_scene = new opengl::Scene(skin, slim, cape);
     m_scene->setLayersVisible(m_baseVisible, m_overlayVisible);
     m_scene->setElytraVisible(m_elytraVisible);
-    for (int part = 0; part < 6; ++part)
-        m_scene->setPartVisible(part, m_visibleParts & (1u << part));
+    for (int part = 0; part < 6; ++part) {
+        m_scene->setPartLayerVisible(part, SkinTextureDocument::Base, m_baseParts & (1u << part));
+        m_scene->setPartLayerVisible(part, SkinTextureDocument::Overlay, m_outerParts & (1u << part));
+    }
     m_background = opengl::BoxGeometry::Plane();
     if (m_vertexArray.isCreated())
         m_vertexArray.release();
@@ -279,13 +457,7 @@ void SkinOpenGLWindow::paintGL()
 
     // Calculate model view transformation
     QMatrix4x4 matrix;
-    float yawRad = qDegreesToRadians(m_yaw);
-    float pitchRad = qDegreesToRadians(m_pitch);
-    matrix.lookAt(QVector3D(                                       //
-                      m_distance * qCos(pitchRad) * qCos(yawRad),  //
-                      m_distance * qSin(pitchRad) - 8,             //
-                      m_distance * qCos(pitchRad) * qSin(yawRad)),
-                  QVector3D(0, -8, 0), QVector3D(0, 1, 0));
+    matrix.lookAt(cameraEye(), QVector3D(0, -8, 0), QVector3D(0, 1, 0));
 
     // Set modelview-projection matrix
     m_modelProgram->bind();
@@ -379,11 +551,13 @@ void SkinOpenGLWindow::renderBackground()
 
 void SkinOpenGLWindow::wheelEvent(QWheelEvent* event)
 {
+    finishStroke();
     // Adjust distance based on scroll
     int delta = event->angleDelta().y();  // Positive for scroll up, negative for scroll down
     m_distance -= delta * 0.01f;          // Adjust sensitivity factor
     m_distance = qBound(28.f, m_distance, 120.f);
     update();  // Trigger a repaint
+    event->accept();
 }
 void SkinOpenGLWindow::setElytraVisible(bool visible)
 {
@@ -395,6 +569,7 @@ void SkinOpenGLWindow::setElytraVisible(bool visible)
 
 void SkinOpenGLWindow::resetView()
 {
+    finishStroke();
     m_distance = 48;
     m_yaw = 90;
     m_pitch = 0;
@@ -403,6 +578,7 @@ void SkinOpenGLWindow::resetView()
 
 void SkinOpenGLWindow::setLayersVisible(bool base, bool overlay)
 {
+    finishStroke();
     m_baseVisible = base;
     m_overlayVisible = overlay;
     if (m_scene)
@@ -412,19 +588,62 @@ void SkinOpenGLWindow::setLayersVisible(bool base, bool overlay)
 
 void SkinOpenGLWindow::setPartVisible(int part, bool visible)
 {
+    setPartLayerVisible(part, SkinTextureDocument::Both, visible);
+}
+
+void SkinOpenGLWindow::setPartLayerVisible(int part, SkinTextureDocument::Layer layer, bool visible)
+{
     if (part < 0 || part > 5)
         return;
-    if (visible)
-        m_visibleParts |= (1u << part);
-    else
-        m_visibleParts &= ~(1u << part);
+    finishStroke();
+    auto set = [part, visible](unsigned& mask) {
+        if (visible)
+            mask |= (1u << part);
+        else
+            mask &= ~(1u << part);
+    };
+    if (layer != SkinTextureDocument::Overlay)
+        set(m_baseParts);
+    if (layer != SkinTextureDocument::Base)
+        set(m_outerParts);
     if (m_scene)
-        m_scene->setPartVisible(part, visible);
+        m_scene->setPartLayerVisible(part, layer, visible);
     update();
+}
+
+bool SkinOpenGLWindow::partLayerVisible(int part, SkinTextureDocument::Layer layer) const
+{
+    if (part < 0 || part > 5)
+        return false;
+    return ((layer != SkinTextureDocument::Overlay ? m_baseParts : 0) | (layer != SkinTextureDocument::Base ? m_outerParts : 0)) &
+           (1u << part);
 }
 
 void SkinOpenGLWindow::keyPressEvent(QKeyEvent* event)
 {
+    if (m_editingEnabled && m_document && !(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
+        switch (event->key()) {
+            case Qt::Key_B:
+                setTool(SkinCanvas::Brush);
+                event->accept();
+                return;
+            case Qt::Key_E:
+                setTool(SkinCanvas::Eraser);
+                event->accept();
+                return;
+            case Qt::Key_I:
+                setTool(SkinCanvas::Eyedropper);
+                event->accept();
+                return;
+            case Qt::Key_H:
+                setTool(SkinCanvas::Pan);
+                event->accept();
+                return;
+            default:
+                break;
+        }
+    }
+    finishStroke();
     switch (event->key()) {
         case Qt::Key_Home:
         case Qt::Key_R:

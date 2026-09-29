@@ -36,7 +36,7 @@ Read the [release notes](https://github.com/nikitasokolov01/chroma/releases/tag/
 - **Organize instances.** Search grouped cards, open recent instances, or drag cards into a saved manual order. Name and last-played sorting remain available.
 - **Pin from the library.** Drop an instance onto the sidebar to pin it, then open its settings with one click.
 - **Manage skins from the sidebar.** Open **Skins**, switch accounts with the dropdown, and manage skins and capes without changing your default launch account. Local editing works before adding an account.
-- **Edit in Skin Studio.** Use compact brush, eraser, color-picker, and pan tools with keyboard shortcuts, a live 3D preview, Classic/Slim models, layers, undo/redo, and PNG import/export. Save locally or apply a skin to an eligible Microsoft account.
+- **Paint skins in 3D.** Skin Studio opens with direct painting on the Classic or Slim model. Switch to the 2D texture and live preview, choose colors from the always-visible wheel, and hide each body part's base or outer layer independently. Brush, eraser, color picker, undo/redo, and PNG import/export work with the same skin. Save locally or apply it to an eligible Microsoft account.
 - **Browse modpacks and project details.** Browse Modrinth, CurseForge, ATLauncher, Technic, and FTB Legacy. Modrinth and CurseForge share **About**, **Gallery**, and **Releases** views with cached project information for offline use. Available services depend on the build's API configuration.
 - **Work inside one window.** Instance editing, settings, accounts, and installation flows open inline. Smooth scrolling and restored scroll positions help with navigation; clickable cards and controls use hand cursors.
 - **Handle larger libraries.** Card painting visits visible rows, geometry is cached, and progress updates avoid full layouts. The library background stays still while idle. Regression coverage includes a 4,000-instance library.
@@ -57,12 +57,21 @@ Commands remain available from **Launcher menu (•••)**.
 
 | Choose an account and skin | Paint and preview |
 | --- | --- |
-| [![Skin Library with its account dropdown, Classic and Slim models, and cape selector](docs/screenshots/skin-library.png)](docs/screenshots/skin-library.png) | [![Skin Studio with compact icon tools, a texture canvas, and a live 3D preview](docs/screenshots/skin-studio.png)](docs/screenshots/skin-studio.png) |
+| [![Skin Library with its account dropdown, Classic and Slim models, and cape selector](docs/screenshots/skin-library.png)](docs/screenshots/skin-library.png) | [![Skin Studio with a 3D painting canvas, inline color wheel, and separate base and outer visibility for each body part](docs/screenshots/skin-studio.png)](docs/screenshots/skin-studio.png) |
 
 Open **Skins** in the sidebar, choose a skin, then select **Edit Skin…**. On the
-canvas, use **B** for brush, **E** for eraser, **I** for color picker, and **H** for
-pan. Applying a skin requires a Microsoft account with a Minecraft Java profile;
-editing and exporting can stay local.
+3D model, left-drag to paint, right-drag to rotate, and scroll to zoom. Switch
+**3D Paint → 2D Texture** to edit individual pixels alongside the live preview.
+The color wheel, hex value, and opacity stay visible beside the canvas. Use the
+**Base** and **Outer** checkboxes to hide individual body parts and reach covered
+surfaces.
+
+[View the 2D texture editor and live preview.](docs/screenshots/skin-studio-2d.png)
+
+Use **B** for brush, **E** for eraser, **I** for color picker, and **H** to rotate
+the model or pan the texture while a canvas is focused. Applying a skin requires
+a Microsoft account with a Minecraft Java profile; editing and exporting can
+stay local. Devices without OpenGL use the 2D editor and image preview.
 
 ### Browse, choose, install
 
