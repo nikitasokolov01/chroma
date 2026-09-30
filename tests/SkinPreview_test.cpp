@@ -503,13 +503,20 @@ class SkinPreviewTest : public QObject {
         const auto point = frontTexelPoint(preview, D::Head, D::Base, QPoint(12, 12));
         const auto sample = (QPointF(point) * preview.devicePixelRatioF()).toPoint();
         const auto normal = preview.grabFramebuffer();
+        preview.setPartLayerVisible(D::Head, D::Overlay, false);
+        const auto bodyOnly = preview.grabFramebuffer();
+        preview.setPartLayerVisible(D::Head, D::Overlay, true);
         preview.setBodyThroughOverlay(true);
         QVERIFY(preview.bodyThroughOverlay());
         QVERIFY(preview.pickAt(point));
         QCOMPARE(preview.pickAt(point)->layer, D::Base);
         const auto dimmed = preview.grabFramebuffer();
-        QVERIFY(dimmed.pixelColor(sample).red() > normal.pixelColor(sample).red() + 100);
-        QVERIFY(dimmed.pixelColor(sample).blue() < normal.pixelColor(sample).blue() - 100);
+        const auto expected = QColor((normal.pixelColor(sample).red() + bodyOnly.pixelColor(sample).red()) / 2,
+                                     (normal.pixelColor(sample).green() + bodyOnly.pixelColor(sample).green()) / 2,
+                                     (normal.pixelColor(sample).blue() + bodyOnly.pixelColor(sample).blue()) / 2);
+        QVERIFY(qAbs(dimmed.pixelColor(sample).red() - expected.red()) <= 3);
+        QVERIFY(qAbs(dimmed.pixelColor(sample).green() - expected.green()) <= 3);
+        QVERIFY(qAbs(dimmed.pixelColor(sample).blue() - expected.blue()) <= 3);
         QCOMPARE(document.image(), original);
         QVERIFY(!document.canUndo());
         preview.setColor(Qt::green);

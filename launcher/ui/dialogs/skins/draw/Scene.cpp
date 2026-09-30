@@ -91,7 +91,7 @@ void Scene::draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgra
         auto drawLayer = [&](QOpenGLShaderProgram* shader) {
             for (int part = 0; part < 6; ++part) {
                 if (mask & (1u << part)) {
-                    const float opacity = layer == 1 && bodyThroughOverlay && m_baseVisible && (m_baseParts & (1u << part)) ? .2f : 1.f;
+                    const float opacity = layer == 1 && bodyThroughOverlay && m_baseVisible && (m_baseParts & (1u << part)) ? .5f : 1.f;
                     if (shader == program)
                         shader->setUniformValue("layerOpacity", opacity);
                     else
