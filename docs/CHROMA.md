@@ -94,6 +94,10 @@ Read the [privacy guide](../PRIVACY.md) for local account storage, network conne
 
 ## Skin Library and Skin Studio
 
+For the tools being developed on `codex/skin-studio-tools`, see the
+[bucket, selection, effects, reference, and Skin Extras guide](SKIN-STUDIO-TOOLS.md).
+The published 0.3.0 controls are described below.
+
 Open **Skins** in the sidebar. The account dropdown chooses whose skins and capes
 to manage without changing the default launch account. Select or import a skin,
 then choose **Edit Skin…** or double-click it. Local editing also works without

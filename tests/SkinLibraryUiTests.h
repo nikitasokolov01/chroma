@@ -16,6 +16,7 @@
 #include <QSignalSpy>
 #include <QSlider>
 #include <QSpinBox>
+#include <QTabWidget>
 #include <QTest>
 #include <QToolButton>
 
@@ -190,7 +191,8 @@ inline void accountSwitching(MainWindow* window, const QString& root)
         QVERIFY(window->rect().contains(QRect(combo->mapTo(window, QPoint()), combo->size())));
         QVERIFY(window->rect().contains(QRect(manage->mapTo(window, QPoint()), manage->size())));
         for (auto* scroll : window->inlineWorkspace()->findChildren<QScrollArea*>())
-            QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
+            if (scroll->isVisible())
+                QCOMPARE(scroll->horizontalScrollBar()->maximum(), 0);
         QVERIFY(window->grab().save(QDir(root).filePath(QString("skin-accounts-%1.png").arg(size.width()))));
     }
     combo->setCurrentIndex(0);
@@ -221,15 +223,17 @@ inline void compactToolbox(MainWindow* window, const QString& root)
     auto* eraser = editor.findChild<QToolButton*>("skinToolEraser");
     auto* picker = editor.findChild<QToolButton*>("skinToolPicker");
     auto* pan = editor.findChild<QToolButton*>("skinToolPan");
+    auto* bucket = editor.findChild<QToolButton*>("skinToolBucket");
+    auto* select = editor.findChild<QToolButton*>("skinToolSelect");
     auto* mode = editor.findChild<QComboBox*>("skinEditMode");
     auto* outer = editor.findChild<QToolButton*>("skinShowOuter");
-    QVERIFY(document && canvas && brush && eraser && picker && pan && mode && outer);
+    QVERIFY(document && canvas && brush && eraser && picker && pan && bucket && select && mode && outer);
     auto discardEdits = qScopeGuard([&] { document->markSaved(); });
     mode->setCurrentIndex(1);
     outer->setChecked(false);
     QVERIFY(canvas->isVisible());
     QVERIFY(brush->isChecked());
-    for (auto* button : { brush, eraser, picker, pan }) {
+    for (auto* button : { brush, eraser, picker, pan, bucket, select }) {
         QVERIFY(!button->icon().isNull());
         QVERIFY(!button->accessibleName().isEmpty());
         QVERIFY(!button->toolTip().isEmpty());
@@ -275,15 +279,20 @@ inline void compactToolbox(MainWindow* window, const QString& root)
     QCOMPARE(canvas->cursor().shape(), Qt::CrossCursor);
     QTest::keyClick(canvas, Qt::Key_H, Qt::ControlModifier);
     QVERIFY(brush->isChecked());
+    QTest::keyClick(canvas, Qt::Key_G);
+    QVERIFY(bucket->isChecked());
+    QTest::keyClick(canvas, Qt::Key_M);
+    QVERIFY(select->isChecked());
     for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
         window->resize(size);
         QTest::qWait(80);
-        for (auto* button : { brush, eraser, picker, pan }) {
+        for (auto* button : { brush, eraser, picker, pan, bucket, select }) {
             QVERIFY(button->width() <= 36 && button->height() <= 36);
             QVERIFY(button->parentWidget()->rect().contains(button->geometry()));
         }
         for (auto* scroll : editor.findChildren<QScrollArea*>())
-            QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0, qPrintable(horizontalScrollDiagnostic(scroll, &editor, window)));
+            if (scroll->isVisible())
+                QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0, qPrintable(horizontalScrollDiagnostic(scroll, &editor, window)));
         QVERIFY(window->grab().save(QDir(root).filePath(QString("skin-tools-%1.png").arg(size.width()))));
     }
     document->markSaved();
@@ -482,7 +491,8 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
         const QRect canvasBounds(activeCanvas->mapTo(window, QPoint()), activeCanvas->size());
         QVERIFY(!wheelBounds.intersects(canvasBounds));
         for (auto* scroll : editor.findChildren<QScrollArea*>())
-            QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0, qPrintable(horizontalScrollDiagnostic(scroll, &editor, window)));
+            if (scroll->isVisible())
+                QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0, qPrintable(horizontalScrollDiagnostic(scroll, &editor, window)));
         auto* visibility = editor.findChild<QScrollArea*>("skinVisibilityScroll");
         QVERIFY(visibility);
         visibility->verticalScrollBar()->setValue(visibility->verticalScrollBar()->maximum());
@@ -510,6 +520,281 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
     QTest::qWait(80);
     QVERIFY(window->grab().save(QDir(root).filePath("skin-studio-2d.png")));
     QVERIFY(texture.save(QDir(root).filePath("skin-studio-synthetic.png")));
+    document->markSaved();
+    editor.reject();
+}
+inline void effectsRespectVisibilityAndSelection(MainWindow* window, const QString& root)
+{
+    QVERIFY(window->inlineWorkspace()->closeAllPages());
+    window->resize(1280, 820);
+    const auto texture = patternedSkin();
+    SkinEditorDialog editor(window, MinecraftAccountPtr(), SkinModel(texture));
+    window->openInlinePage(&editor, "Skin Studio");
+    auto* document = editor.findChild<SkinTextureDocument*>("skinEditingDocument");
+    auto* tabs = editor.findChild<QTabWidget*>("skinInspectorTabs");
+    auto* effect = editor.findChild<QComboBox*>("skinEffect");
+    auto* value = editor.findChild<QSpinBox*>("skinEffectValue");
+    auto* apply = editor.findChild<QPushButton*>("skinApplyEffect");
+    auto* outer = editor.findChild<QToolButton*>("skinShowOuter");
+    auto* head = editor.findChild<QToolButton*>("skinPart0");
+    auto* wheel = editor.findChild<SkinColorWheel*>("skinColorWheel");
+    QVERIFY(document && tabs && effect && value && apply && outer && head && wheel);
+    auto discardEdits = qScopeGuard([&] { document->markSaved(); });
+    QCOMPARE(tabs->count(), 3);
+    tabs->setCurrentIndex(1);
+    QCOMPARE(value->minimum(), -180);
+    QCOMPARE(value->maximum(), 180);
+    effect->setCurrentIndex(SkinTextureDocument::Brightness);
+    QCOMPARE(value->minimum(), -100);
+    QCOMPARE(value->maximum(), 100);
+    effect->setCurrentIndex(SkinTextureDocument::Invert);
+    QVERIFY(!value->isVisible());
+    outer->setChecked(false);
+    head->setChecked(false);
+    document->setSelection(QRegion(QRect(8, 8, 1, 1)) + QRegion(QRect(20, 20, 1, 1)) + QRegion(QRect(41, 8, 1, 1)));
+    const auto before = document->image();
+    apply->click();
+    const auto old = before.pixelColor(20, 20);
+    auto expected = before;
+    expected.setPixelColor(20, 20, QColor(255 - old.red(), 255 - old.green(), 255 - old.blue(), old.alpha()));
+    QCOMPARE(document->image(), expected);
+    QVERIFY(document->canUndo());
+    document->undo();
+    QCOMPARE(document->image(), before);
+    QVERIFY(!document->canUndo());
+    document->redo();
+    QCOMPARE(document->image(), expected);
+    for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
+        window->resize(size);
+        QTest::qWait(80);
+        for (int tab = 0; tab < tabs->count(); ++tab) {
+            tabs->setCurrentIndex(tab);
+            QTest::qWait(30);
+            QVERIFY(wheel->isVisible());
+            QVERIFY(window->rect().contains(QRect(wheel->mapTo(window, QPoint()), wheel->size())));
+            for (const QString& name : { QString("skinSave"), QString("skinApply"), QString("skinClose") }) {
+                auto* button = editor.findChild<QPushButton*>(name);
+                QVERIFY(button && button->isVisible());
+                QVERIFY(button->height() >= 28);
+                QVERIFY(window->rect().contains(QRect(button->mapTo(window, QPoint()), button->size())));
+            }
+            for (auto* scroll : editor.findChildren<QScrollArea*>())
+                if (scroll->isVisible())
+                    QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0,
+                             qPrintable(horizontalScrollDiagnostic(scroll, &editor, window)));
+            QVERIFY(window->grab().save(QDir(root).filePath(QString("skin-inspector-%1-%2.png").arg(tab).arg(size.width()))));
+        }
+    }
+    document->markSaved();
+    editor.reject();
+}
+
+inline void shiftPaintingResetsOutsideEditor(MainWindow* window, const QString&)
+{
+    QVERIFY(window->inlineWorkspace()->closeAllPages());
+    window->resize(1280, 820);
+    const auto texture = patternedSkin();
+    SkinEditorDialog editor(window, MinecraftAccountPtr(), SkinModel(texture));
+    window->openInlinePage(&editor, "Skin Studio");
+    auto* document = editor.findChild<SkinTextureDocument*>("skinEditingDocument");
+    auto* canvas = editor.findChild<SkinCanvas*>("skinCanvas");
+    auto* preview = editor.findChild<SkinOpenGLWindow*>("skin3DCanvas");
+    auto* mode = editor.findChild<QComboBox*>("skinEditMode");
+    auto* hex = editor.findChild<QLineEdit*>("skinColorHex");
+    auto* hint = editor.findChild<QLabel*>("skinPaintLayerHint");
+    QVERIFY(document && canvas && mode && hex && hint);
+    auto discardEdits = qScopeGuard([&] { document->markSaved(); });
+    mode->setCurrentIndex(1);
+    canvas->setFocus();
+    QTest::keyPress(canvas, Qt::Key_Shift);
+    QVERIFY(canvas->bodyThroughOverlay());
+    if (preview)
+        QVERIFY(preview->bodyThroughOverlay());
+    QVERIFY(hint->text().contains("Shift"));
+    QTest::keyClick(canvas, Qt::Key_Space, Qt::ShiftModifier);
+    QCOMPARE(document->image().pixelColor(8, 8), QColor(Qt::white));
+    QCOMPARE(document->image().pixelColor(40, 8), texture.pixelColor(40, 8));
+    QTest::keyRelease(window, Qt::Key_Shift);
+    QVERIFY(!canvas->bodyThroughOverlay());
+    if (preview)
+        QVERIFY(!preview->bodyThroughOverlay());
+    document->undo();
+    QCOMPARE(document->image(), texture);
+    hex->setFocus();
+    QTest::keyPress(hex, Qt::Key_Shift);
+    QVERIFY(canvas->bodyThroughOverlay());
+    QEvent deactivate(QEvent::WindowDeactivate);
+    QCoreApplication::sendEvent(window, &deactivate);
+    QVERIFY(!canvas->bodyThroughOverlay());
+    if (preview)
+        QVERIFY(!preview->bodyThroughOverlay());
+    QTest::keyRelease(hex, Qt::Key_Shift);
+    QTest::keyPress(hex, Qt::Key_Shift);
+    editor.setEnabled(false);
+    QVERIFY(!canvas->bodyThroughOverlay());
+    editor.setEnabled(true);
+    QTest::keyRelease(hex, Qt::Key_Shift);
+    QTest::keyPress(hex, Qt::Key_Shift);
+    editor.hide();
+    QVERIFY(!canvas->bodyThroughOverlay());
+    editor.show();
+    QTest::keyRelease(hex, Qt::Key_Shift);
+    QCOMPARE(document->image(), texture);
+    editor.reject();
+}
+
+inline void referenceCopyPasteStaysIndependent(MainWindow* window, const QString& root)
+{
+    QVERIFY(window->inlineWorkspace()->closeAllPages());
+    window->resize(1280, 820);
+    const auto texture = patternedSkin();
+    auto reference = patternedSkin(QColor("#e07bad"));
+    const auto referencePath = QDir(root).filePath("skin-reference-synthetic.png");
+    QVERIFY(reference.save(referencePath));
+    SkinEditorDialog editor(window, MinecraftAccountPtr(), SkinModel(texture));
+    window->openInlinePage(&editor, "Skin Studio");
+    auto* document = editor.findChild<SkinTextureDocument*>("skinEditingDocument");
+    auto* referenceDocument = editor.findChild<SkinTextureDocument*>("skinReferenceDocument");
+    auto* canvas = editor.findChild<SkinCanvas*>("skinCanvas");
+    auto* referenceCanvas = editor.findChild<SkinCanvas*>("skinReferenceCanvas");
+    auto* referencePreview = editor.findChild<SkinOpenGLWindow*>("skinReference3DCanvas");
+    auto* mode = editor.findChild<QComboBox*>("skinEditMode");
+    auto* referenceMode = editor.findChild<QComboBox*>("skinReferenceMode");
+    auto* region = editor.findChild<QComboBox*>("skinRegion");
+    auto* referenceWorkspace = editor.findChild<QComboBox*>("skinReferenceWorkspace");
+    auto* referenceModel = editor.findChild<QComboBox*>("skinReferenceModel");
+    auto* copy = editor.findChild<QPushButton*>("skinCopyReference");
+    auto* paste = editor.findChild<QPushButton*>("skinPasteSelection");
+    auto* toggle = editor.findChild<QToolButton*>("skinReferenceToggle");
+    auto* panel = editor.findChild<QWidget*>("skinReferencePanel");
+    auto* wheel = editor.findChild<SkinColorWheel*>("skinColorWheel");
+    auto* extrasSource = editor.findChild<QComboBox*>("skinExtraSource");
+    QVERIFY(document && referenceDocument && canvas && referenceCanvas && mode && referenceMode && region && referenceWorkspace &&
+            referenceModel && copy && paste && toggle && panel && wheel && extrasSource);
+    auto discardEdits = qScopeGuard([&] { document->markSaved(); });
+    QVERIFY(!toggle->isEnabled());
+    QVERIFY(editor.loadReference(referencePath));
+    QCOMPARE(document->image(), texture);
+    QVERIFY(!document->isDirty());
+    QVERIFY(!document->canUndo());
+    QCOMPARE(referenceDocument->image(), reference);
+    QCOMPARE(extrasSource->count(), 2);
+    QVERIFY(toggle->isChecked());
+    QVERIFY(panel->isVisible());
+    QVERIFY(referenceCanvas->isReadOnly());
+    if (referencePreview)
+        QVERIFY(referencePreview->isReadOnly());
+    referenceModel->setCurrentIndex(SkinModel::SLIM);
+    QCOMPARE(referenceDocument->model(), SkinModel::SLIM);
+    QCOMPARE(document->model(), SkinModel::CLASSIC);
+    QCOMPARE(document->image(), texture);
+    QVERIFY(!editor.loadReference(QDir(root).filePath("missing-reference.png")));
+    QCOMPARE(referenceDocument->image(), reference);
+    mode->setCurrentIndex(1);
+    referenceMode->setCurrentIndex(1);
+    referenceCanvas->setFocus();
+    QTest::keyClick(referenceCanvas, Qt::Key_B);
+    QTest::keyClick(referenceCanvas, Qt::Key_Space);
+    QCOMPARE(referenceDocument->image(), reference);
+    QTest::keyClick(referenceCanvas, Qt::Key_I);
+    QTest::keyClick(referenceCanvas, Qt::Key_Space);
+    QCOMPARE(wheel->color().rgba(), reference.pixelColor(8, 8).rgba());
+    QTest::keyClick(referenceCanvas, Qt::Key_M);
+    QTest::keyClick(referenceCanvas, Qt::Key_Space);
+    QCOMPARE(referenceDocument->selection(), QRegion(QRect(8, 8, 1, 1)));
+    QVERIFY(copy->isEnabled());
+    copy->click();
+    QCOMPARE(SkinTextureDocument::readClipboard().image.pixelColor(0, 0), reference.pixelColor(8, 8));
+    paste->click();
+    QVERIFY(canvas->pastePending());
+    for (int i = 0; i < 32; ++i)
+        QTest::keyClick(canvas, Qt::Key_Right);
+    QTest::keyClick(canvas, Qt::Key_Space);
+    QVERIFY(!canvas->pastePending());
+    auto expected = texture;
+    expected.setPixelColor(40, 8, reference.pixelColor(8, 8));
+    QCOMPARE(document->image(), expected);
+    QCOMPARE(referenceDocument->image(), reference);
+    QCOMPARE(QImage(referencePath), reference);
+    document->undo();
+    QCOMPARE(document->image(), texture);
+    QVERIFY(!document->canUndo());
+    QTest::keyClick(referenceCanvas, Qt::Key_C, Qt::ControlModifier);
+    QTest::keyClick(canvas, Qt::Key_V, Qt::ControlModifier);
+    QVERIFY(canvas->pastePending());
+    QTest::keyClick(canvas, Qt::Key_Escape);
+    QVERIFY(!canvas->pastePending());
+    QCOMPARE(document->image(), texture);
+    toggle->setChecked(false);
+    QVERIFY(!panel->isVisible());
+    QCOMPARE(referenceDocument->image(), reference);
+    toggle->setChecked(true);
+    region->setCurrentIndex(SkinTextureDocument::Head + 1);
+    for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
+        window->resize(size);
+        QTest::qWait(100);
+        if (size.width() < 800) {
+            QVERIFY(referenceWorkspace->isVisible());
+            referenceWorkspace->setCurrentIndex(1);
+            QTest::qWait(50);
+            QVERIFY(!canvas->isVisible());
+            QVERIFY(referenceCanvas->height() >= 120);
+        }
+        QVERIFY(panel->isVisible());
+        QVERIFY(wheel->isVisible());
+        QVERIFY(window->rect().contains(QRect(wheel->mapTo(window, QPoint()), wheel->size())));
+        QVERIFY(window->rect().contains(QRect(referenceCanvas->mapTo(window, QPoint()), referenceCanvas->size())));
+        if (canvas->isVisible())
+            QVERIFY(!QRect(referenceCanvas->mapTo(window, QPoint()), referenceCanvas->size())
+                         .intersects(QRect(canvas->mapTo(window, QPoint()), canvas->size())));
+        for (QWidget* control : { static_cast<QWidget*>(referenceMode), static_cast<QWidget*>(referenceModel),
+                                  editor.findChild<QWidget*>("skinReferenceTool"), static_cast<QWidget*>(copy) }) {
+            QVERIFY(control && control->isVisible());
+            QVERIFY(control->height() >= 24);
+            QVERIFY(window->rect().contains(QRect(control->mapTo(window, QPoint()), control->size())));
+            QVERIFY(panel->rect().contains(QRect(control->mapTo(panel, QPoint()), control->size())));
+        }
+        for (const QString& name : { QString("skinSave"), QString("skinApply"), QString("skinClose") }) {
+            auto* button = editor.findChild<QPushButton*>(name);
+            QVERIFY(button && button->isVisible());
+            QVERIFY(button->height() >= 28);
+            QVERIFY(window->rect().contains(QRect(button->mapTo(window, QPoint()), button->size())));
+        }
+        for (auto* scroll : editor.findChildren<QScrollArea*>())
+            if (scroll->isVisible())
+                QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0, qPrintable(horizontalScrollDiagnostic(scroll, &editor, window)));
+        QVERIFY(window->grab().save(QDir(root).filePath(QString("skin-reference-%1.png").arg(size.width()))));
+        if (size.width() < 800) {
+            paste->click();
+            QTest::qWait(50);
+            QCOMPARE(referenceWorkspace->currentIndex(), 0);
+            QVERIFY(!panel->isVisible());
+            QVERIFY(canvas->isVisible());
+            QVERIFY(canvas->height() >= 120);
+            QVERIFY(window->rect().contains(QRect(canvas->mapTo(window, QPoint()), canvas->size())));
+            QVERIFY(region->isVisible());
+            QCOMPARE(region->currentIndex(), int(SkinTextureDocument::Head + 1));
+            QVERIFY(region->height() >= 22);
+            QVERIFY(window->rect().contains(QRect(region->mapTo(window, QPoint()), region->size())));
+            QVERIFY(wheel->isVisible());
+            QTest::keyClick(canvas, Qt::Key_Escape);
+            region->setCurrentIndex(0);
+            QTest::keyClick(canvas, Qt::Key_B);
+            for (int i = 0; i < 64; ++i) {
+                QTest::keyClick(canvas, Qt::Key_Left);
+                QTest::keyClick(canvas, Qt::Key_Up);
+            }
+            for (int i = 0; i < 20; ++i)
+                QTest::keyClick(canvas, Qt::Key_Right);
+            for (int i = 0; i < 36; ++i)
+                QTest::keyClick(canvas, Qt::Key_Down);
+            QTest::keyClick(canvas, Qt::Key_Space);
+            QCOMPARE(document->image().pixelColor(20, 36).rgba(), reference.pixelColor(8, 8).rgba());
+            document->undo();
+            QCOMPARE(document->image(), texture);
+            QVERIFY(window->grab().save(QDir(root).filePath("skin-reference-editing-680.png")));
+        }
+    }
     document->markSaved();
     editor.reject();
 }

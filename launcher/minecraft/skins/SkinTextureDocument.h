@@ -16,6 +16,12 @@ class SkinTextureDocument : public QObject {
    public:
     enum Part { All = -1, Head, Body, RightArm, LeftArm, RightLeg, LeftLeg };
     enum Layer { Both, Base, Overlay };
+    enum Effect { Hue, Brightness, Grayscale, Invert };
+    struct PixelPatch {
+        QImage image;
+        QRegion mask;   // Coordinates relative to image; pixels outside this mask are not pasted.
+        QPoint origin;  // Original top-left position in the source texture.
+    };
 
     explicit SkinTextureDocument(QObject* parent = nullptr);
     const QImage& image() const { return m_state.image; }
@@ -23,6 +29,10 @@ class SkinTextureDocument : public QObject {
     bool isDirty() const;
     bool canUndo() const { return m_cursor > 0; }
     bool canRedo() const { return m_cursor + 1 < m_history.size(); }
+    QRegion selection() const { return m_selection; }
+    bool hasSelection() const { return !m_selection.isEmpty(); }
+    void setSelection(QRegion selection);
+    void clearSelection();
 
     static QImage readPng(const QString& path, QString* error = nullptr);
     static QRegion uvRegion(Part part, Layer layer, SkinModel::Model model);
@@ -34,6 +44,14 @@ class SkinTextureDocument : public QObject {
     void paintPixel(QPoint pixel, QColor color, int brushSize, Part part, Layer layer, bool erase = false);
     void endStroke();
     void setModel(SkinModel::Model model);
+    void floodFill(QPoint seed, QColor color, const QRegion& allowed);
+    void applyEffect(Effect effect, int amount, const QRegion& allowed);
+    PixelPatch copyPixels(const QRegion& allowed) const;
+    void pastePixels(const PixelPatch& patch, QPoint destination, const QRegion& allowed);
+    static QByteArray encodePatch(const PixelPatch& patch);
+    static PixelPatch decodePatch(const QByteArray& bytes);
+    static bool writeClipboard(const PixelPatch& patch);
+    static PixelPatch readClipboard();
 
    public slots:
     void undo();
@@ -42,6 +60,7 @@ class SkinTextureDocument : public QObject {
 
    signals:
     void changed();
+    void selectionChanged();
 
    private:
     struct State {
@@ -50,6 +69,8 @@ class SkinTextureDocument : public QObject {
         bool operator==(const State& other) const { return model == other.model && image == other.image; }
     };
     void record();
+    QRegion editableRegion(const QRegion& allowed) const;
+    QRegion m_selection;
     State m_state;
     State m_original;
     State m_saved;

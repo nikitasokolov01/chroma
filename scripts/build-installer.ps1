@@ -40,7 +40,7 @@ $installLines = [Collections.Generic.List[string]]::new()
 $uninstallLines = [Collections.Generic.List[string]]::new()
 $inventory = foreach ($file in $files) {
     $relative = $file.FullName.Substring($installedStage.Length + 1)
-    if ($relative -match '(^|\\)(profile\.json|prismlauncher\.cfg|chroma-ui\.cfg|accounts\.json|instances|logs|metacache)(\\|$)') { throw "Profile data in release staging: $relative" }
+    if ($relative -match '(^|\\)(profile\.json|prismlauncher\.cfg|chroma-ui\.cfg|chroma-updates\.ini|accounts\.json|instances|logs|metacache|skins|skin-extras)(\\|$)') { throw "Profile data in release staging: $relative" }
     $directory = Split-Path -Parent $relative
     $installLines.Add('SetOutPath "$INSTDIR' + $(if ($directory) { '\' + (ConvertTo-NsisLiteral $directory) }) + '"')
     $installLines.Add('File "' + (ConvertTo-NsisLiteral $file.FullName) + '"')

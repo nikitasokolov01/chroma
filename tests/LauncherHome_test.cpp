@@ -26,6 +26,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -1286,6 +1287,82 @@ class LauncherHomeTest : public QObject {
 
     void skinEditorModesAndVisibility() { SkinLibraryUiTests::editorModesAndVisibility(m_window, m_root); }
 
+    void skinEffectsRespectVisibilityAndSelection() { SkinLibraryUiTests::effectsRespectVisibilityAndSelection(m_window, m_root); }
+
+    void skinShiftPaintingResetsOutsideEditor() { SkinLibraryUiTests::shiftPaintingResetsOutsideEditor(m_window, m_root); }
+
+    void skinReferenceCopyPasteStaysIndependent() { SkinLibraryUiTests::referenceCopyPasteStaysIndependent(m_window, m_root); }
+
+    void skinExtrasPersistBetweenEditingSessions()
+    {
+        using D = SkinTextureDocument;
+        QVERIFY(m_window->inlineWorkspace()->closeAllPages());
+        m_window->resize(1280, 820);
+        const auto source = SkinLibraryUiTests::patternedSkin();
+        {
+            SkinEditorDialog editor(m_window, MinecraftAccountPtr(), SkinModel(source));
+            m_window->openInlinePage(&editor, "Skin Studio");
+            auto* tabs = editor.findChild<QTabWidget*>("skinInspectorTabs");
+            auto* part = editor.findChild<QComboBox*>("skinExtraPart");
+            auto* layer = editor.findChild<QComboBox*>("skinExtraLayer");
+            auto* name = editor.findChild<QLineEdit*>("skinExtraName");
+            auto* save = editor.findChild<QPushButton*>("skinExtraSave");
+            auto* inventory = editor.findChild<QListWidget*>("skinExtraInventory");
+            auto* document = editor.findChild<D*>("skinEditingDocument");
+            auto* saveToggle = editor.findChild<QToolButton*>("skinExtraSaveToggle");
+            auto* scroll = editor.findChild<QScrollArea*>("skinExtrasScroll");
+            QVERIFY(tabs && part && layer && name && save && inventory && document && saveToggle && scroll);
+            tabs->setCurrentIndex(2);
+            saveToggle->setChecked(true);
+            part->setCurrentIndex(part->findData(int(D::Head)));
+            layer->setCurrentIndex(layer->findData(int(D::Overlay)));
+            name->setText("Helmet");
+            const int previousCount = inventory->count();
+            scroll->ensureWidgetVisible(save);
+            QTest::qWait(30);
+            QTest::mouseClick(save, Qt::LeftButton);
+            QCOMPARE(inventory->count(), previousCount + 1);
+            QVERIFY(!document->isDirty());
+            QTest::qWait(80);
+            QVERIFY(!saveToggle->isChecked());
+            auto* apply = editor.findChild<QPushButton*>("skinExtraApply");
+            QVERIFY(apply && apply->height() >= 24);
+            QVERIFY(m_window->grab().save(QDir(m_root).filePath("skin-extras-inventory.png")));
+            QVERIFY(scroll->viewport()->rect().contains(QRect(apply->mapTo(scroll->viewport(), QPoint()), apply->size())));
+            QVERIFY(scroll->viewport()->rect().contains(QRect(inventory->mapTo(scroll->viewport(), QPoint()), inventory->size())));
+            editor.reject();
+        }
+        QImage base(64, 64, QImage::Format_ARGB32);
+        base.fill(QColor(40, 60, 80));
+        SkinEditorDialog editor(m_window, MinecraftAccountPtr(), SkinModel(base));
+        m_window->openInlinePage(&editor, "Skin Studio");
+        auto* document = editor.findChild<D*>("skinEditingDocument");
+        auto* tabs = editor.findChild<QTabWidget*>("skinInspectorTabs");
+        auto* inventory = editor.findChild<QListWidget*>("skinExtraInventory");
+        auto* apply = editor.findChild<QPushButton*>("skinExtraApply");
+        QVERIFY(document && tabs && inventory && apply);
+        auto discardEdits = qScopeGuard([&] { document->markSaved(); });
+        tabs->setCurrentIndex(2);
+        const auto helmets = inventory->findItems("Helmet", Qt::MatchExactly);
+        QVERIFY(!helmets.isEmpty());
+        inventory->setCurrentItem(helmets.first());
+        const auto before = document->image();
+        auto expected = before;
+        const auto helmetRegion = D::uvRegion(D::Head, D::Overlay, document->model());
+        for (const auto& rect : helmetRegion)
+            for (int y = rect.top(); y <= rect.bottom(); ++y)
+                for (int x = rect.left(); x <= rect.right(); ++x)
+                    if (source.pixelColor(x, y).alpha())
+                        expected.setPixelColor(x, y, source.pixelColor(x, y));
+        QVERIFY(expected != before);
+        apply->click();
+        QCOMPARE(document->image(), expected);
+        document->undo();
+        QCOMPARE(document->image(), before);
+        QVERIFY(!document->canUndo());
+        editor.reject();
+    }
+
     void updaterPreservesUnsavedEditorDuringVerifiedDownload() { ChromaUpdateUiTests::verifiedDownload(m_window, m_root); }
 
     void libraryCanvasDoesNotRepaintWhenIdle()
@@ -1429,7 +1506,7 @@ class LauncherHomeTest : public QObject {
         QTest::qWait(100);
         if (QGuiApplication::platformName() == "windows" && SkinOpenGLWindow::hasOpenGL()) {
             mode->setCurrentIndex(0);
-            auto* preview = editor.findChild<SkinOpenGLWindow*>();
+            auto* preview = editor.findChild<SkinOpenGLWindow*>("skin3DCanvas");
             QVERIFY(preview);
             QTRY_VERIFY(preview->isValid());
             const auto slimFrame = preview->grabFramebuffer();
@@ -1451,7 +1528,7 @@ class LauncherHomeTest : public QObject {
         QCOMPARE(m_window->size(), QSize(680, 640));
         QVERIFY(m_window->grab().save(QDir(m_root).filePath("skin-editor-compact.png")));
         for (auto* scroll : editor.findChildren<QScrollArea*>())
-            QVERIFY2(scroll->horizontalScrollBar()->maximum() == 0,
+            QVERIFY2(!scroll->isVisible() || scroll->horizontalScrollBar()->maximum() == 0,
                      qPrintable(SkinLibraryUiTests::horizontalScrollDiagnostic(scroll, &editor, m_window)));
         const auto oldDirectory = APPLICATION->settings()->get("SkinsDir");
         auto restoreDirectory = qScopeGuard([&] { APPLICATION->settings()->set("SkinsDir", oldDirectory); });
@@ -2270,7 +2347,8 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "Native UI smoke timed out; an inline dialog event loop did not return.\n");
         std::exit(2);
     });
-    watchdog.start(60000);
+    // The suite includes native rendering, reference views, and profile reloads.
+    watchdog.start(120000);
     const int result = QTest::qExec(&test, argc, argv);
     window->hide();
     return result;

@@ -27,6 +27,16 @@ Chroma rebuilds Prism Launcher's default interface around a card library, a pers
 
 Read the [v0.3.0 release notes](docs/releases/0.3.0.md) for requirements and verification results. **Upgrading from 0.2.0 requires this manual download once.** From 0.3.0, Chroma checks its GitHub releases automatically, including preview releases. You choose **Download update**, then **Install and restart** after checksum verification. Automatic checks can be disabled in **Settings → Launcher → Updater**. See [updating Chroma](docs/CHROMA.md#updating-chroma).
 
+## Skin Studio work in development
+
+The `codex/skin-studio-tools` branch adds bucket fill, a marquee selection, Shift
+painting through the outer layer, color effects, reference skins with copy/paste,
+and a named **Skin Extras** inventory for reusable pieces such as helmets or
+whole outer layers. See the [tools guide](docs/SKIN-STUDIO-TOOLS.md). These changes
+are separate from the published 0.3.0 download and await merging to `main`.
+
+![Skin Extras inventory in the development build](docs/screenshots/skin-extras-development.png)
+
 ## New in v0.3.0: clearer Skin Studio controls
 
 Paint directly on a Classic or Slim 3D model, or switch to the 2D texture beside

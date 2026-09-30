@@ -390,6 +390,8 @@ set(MINECRAFT_SOURCES
     minecraft/skins/SkinModel.h
     minecraft/skins/SkinTextureDocument.cpp
     minecraft/skins/SkinTextureDocument.h
+    minecraft/skins/SkinExtrasLibrary.cpp
+    minecraft/skins/SkinExtrasLibrary.h
     minecraft/skins/SkinApplyTask.cpp
     minecraft/skins/SkinApplyTask.h
     minecraft/skins/SkinList.cpp
@@ -1137,6 +1139,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/skins/SkinManageDialog.h
     ui/dialogs/skins/SkinCanvas.cpp
     ui/dialogs/skins/SkinCanvas.h
+    ui/dialogs/skins/SkinExtrasPanel.cpp
+    ui/dialogs/skins/SkinExtrasPanel.h
     ui/dialogs/skins/SkinColorWheel.cpp
     ui/dialogs/skins/SkinColorWheel.h
     ui/dialogs/skins/SkinEditorDialog.cpp

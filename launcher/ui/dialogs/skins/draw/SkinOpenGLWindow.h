@@ -57,6 +57,14 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     bool partLayerVisible(int part, SkinTextureDocument::Layer layer) const;
     void setDocument(SkinTextureDocument* document);
     void setEditingEnabled(bool enabled);
+    void setReadOnly(bool readOnly);
+    bool isReadOnly() const { return m_readOnly; }
+    void setBodyThroughOverlay(bool enabled);
+    bool bodyThroughOverlay() const { return m_bodyThroughOverlay || m_shiftHeld; }
+    bool copySelection();
+    bool beginPaste();
+    void cancelPaste();
+    bool pastePending() const { return !m_paste.image.isNull(); }
     void setTool(SkinCanvas::Tool tool);
     void setGridVisible(bool visible);
     bool gridVisible() const { return m_gridVisible; }
@@ -82,6 +90,7 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void mouseMoveEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
     void hideEvent(QHideEvent* event) override;
 
@@ -101,6 +110,10 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void updateCursor();
     void paintTo(QPointF position);
     void applyTool(QPointF position);
+    void updateModifiers(Qt::KeyboardModifiers modifiers);
+    QRegion editableRegion() const;
+    QRegion selectionIn(QRectF rectangle) const;
+    void selectTo(QPointF position);
     QMetaObject::Connection m_contextCleanup;
     QOpenGLVertexArrayObject m_vertexArray;
     QOpenGLShaderProgram* m_modelProgram = nullptr;
@@ -115,8 +128,17 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     Qt::MouseButton m_rotateButton = Qt::NoButton;
     QPointer<SkinTextureDocument> m_document;
     QMetaObject::Connection m_documentChanged;
+    QMetaObject::Connection m_selectionChanged;
     bool m_editingEnabled = false;
     bool m_painting = false;
+    bool m_readOnly = false;
+    bool m_bodyThroughOverlay = false;
+    bool m_shiftHeld = false;
+    bool m_selecting = false;
+    bool m_selectionDirty = true;
+    QPointF m_selectionStart;
+    QRectF m_marquee;
+    SkinTextureDocument::PixelPatch m_paste;
     SkinCanvas::Tool m_tool = SkinCanvas::Brush;
     QColor m_color = Qt::white;
     int m_brushSize = 1;

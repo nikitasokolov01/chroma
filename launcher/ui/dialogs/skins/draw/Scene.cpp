@@ -60,6 +60,10 @@ Scene::Scene(const QImage& skin, bool slim, const QImage& cape) : QOpenGLFunctio
     m_capeTexture = new QOpenGLTexture(cape.isNull() ? emptyTexture : cape.mirrored());
     m_capeTexture->setMinificationFilter(QOpenGLTexture::Nearest);
     m_capeTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
+    emptyTexture.fill(Qt::black);
+    m_selectionTexture = new QOpenGLTexture(emptyTexture);
+    m_selectionTexture->setMinificationFilter(QOpenGLTexture::Nearest);
+    m_selectionTexture->setMagnificationFilter(QOpenGLTexture::Nearest);
 }
 Scene::~Scene()
 {
@@ -72,23 +76,34 @@ Scene::~Scene()
 
     m_capeTexture->destroy();
     delete m_capeTexture;
+    delete m_selectionTexture;
 }
 
-void Scene::draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgram)
+void Scene::draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgram, bool bodyThroughOverlay)
 {
-    m_skinTexture->bind();
+    m_selectionTexture->bind(1);
+    m_skinTexture->bind(0);
     const auto& parts = m_parts[m_slim ? 1 : 0];
     for (int layer = 0; layer < 2; ++layer) {
         if (!(layer == 0 ? m_baseVisible : m_overlayVisible))
             continue;
         const unsigned mask = layer == 0 ? m_baseParts : m_outerParts;
         auto drawLayer = [&](QOpenGLShaderProgram* shader) {
-            for (int part = 0; part < 6; ++part)
-                if (mask & (1u << part))
+            for (int part = 0; part < 6; ++part) {
+                if (mask & (1u << part)) {
+                    const float opacity = layer == 1 && bodyThroughOverlay && m_baseVisible && (m_baseParts & (1u << part)) ? .2f : 1.f;
+                    if (shader == program)
+                        shader->setUniformValue("layerOpacity", opacity);
+                    else
+                        shader->setUniformValue("gridOpacity", (layer == 0 ? .48f : .68f) * opacity);
                     parts[layer * 6 + part]->draw(shader);
+                }
+            }
         };
         program->bind();
         program->setUniformValue("texture", 0);
+        program->setUniformValue("selectedPixels", 1);
+        program->setUniformValue("showSelection", 1.f);
         drawLayer(program);
         if (gridProgram) {
             // Draw each grid after its own texture, so translucent Outer pixels
@@ -97,7 +112,6 @@ void Scene::draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgra
             // Classic/Slim texel boundaries, including empty outer surfaces.
             gridProgram->bind();
             gridProgram->setUniformValue("texture", 0);
-            gridProgram->setUniformValue("gridOpacity", layer == 0 ? .48f : .68f);
             glDepthMask(GL_FALSE);
             glDepthFunc(GL_LEQUAL);
             glEnable(GL_POLYGON_OFFSET_FILL);
@@ -110,6 +124,10 @@ void Scene::draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgra
         }
     }
     program->bind();
+    program->setUniformValue("layerOpacity", 1.f);
+    program->setUniformValue("showSelection", 0.f);
+    m_selectionTexture->release(1);
+    glActiveTexture(GL_TEXTURE0);
     m_skinTexture->release();
     if (m_capeVisible) {
         m_capeTexture->bind();
@@ -144,6 +162,17 @@ void updateTexture(QOpenGLTexture* texture, const QImage& img)
 void Scene::setSkin(const QImage& skin)
 {
     updateTexture(m_skinTexture, skin.mirrored());
+}
+
+void Scene::setSelection(const QRegion& selection)
+{
+    QImage mask(64, 64, QImage::Format_RGBA8888);
+    mask.fill(Qt::black);
+    for (const auto& rect : selection.intersected(mask.rect()))
+        for (int y = rect.top(); y <= rect.bottom(); ++y)
+            for (int x = rect.left(); x <= rect.right(); ++x)
+                mask.setPixelColor(x, y, Qt::white);
+    updateTexture(m_selectionTexture, mask.mirrored());
 }
 
 void Scene::setMode(bool slim)

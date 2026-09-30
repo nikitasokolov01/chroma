@@ -28,7 +28,8 @@ class Scene : protected QOpenGLFunctions {
     Scene(const QImage& skin, bool slim, const QImage& cape);
     virtual ~Scene();
 
-    void draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgram = nullptr);
+    void draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgram = nullptr, bool bodyThroughOverlay = false);
+    void setSelection(const QRegion& selection);
     void setSkin(const QImage& skin);
     void setCape(const QImage& cape);
     void setMode(bool slim);
@@ -44,6 +45,7 @@ class Scene : protected QOpenGLFunctions {
     QList<BoxGeometry*> m_elytra;
     QOpenGLTexture* m_skinTexture = nullptr;
     QOpenGLTexture* m_capeTexture = nullptr;
+    QOpenGLTexture* m_selectionTexture = nullptr;
     bool m_slim = false;
     bool m_capeVisible = false;
     bool m_elytraVisible = false;

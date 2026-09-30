@@ -2,6 +2,7 @@
 #pragma once
 
 #include <QDialog>
+#include <memory>
 
 #include "minecraft/auth/MinecraftAccount.h"
 #include "minecraft/skins/SkinApplyTask.h"
@@ -20,6 +21,9 @@ class SkinCanvas;
 class SkinColorWheel;
 class QLineEdit;
 class QSlider;
+class QSpinBox;
+class QTabWidget;
+class SkinExtrasPanel;
 
 class SkinEditorDialog : public QDialog, public SkinProvider {
     Q_OBJECT
@@ -28,6 +32,7 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     ~SkinEditorDialog() override;
     SkinModel* getSelectedSkin() override { return &m_previewModel; }
     QHash<QString, QImage> capes() override { return {}; }
+    bool loadReference(const QString& path);
 
    public slots:
     void reject() override;
@@ -39,6 +44,8 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     void changeEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
    private:
     void synchronize();
@@ -54,24 +61,51 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     void updateToolIcons();
     void updateEditingMode();
     void updateVisibility();
+    void setBodyThroughOverlay(bool enabled);
+    void updateLayerHint();
+    void applyEffect();
+    void importReference();
+    void updateReferenceView();
+    void copyMainSelection();
+    void pasteMainSelection();
+    QRegion effectRegion() const;
 
     MinecraftAccountPtr m_account;
     SkinTextureDocument m_document;
     SkinModel m_previewModel;
-    SkinCanvas* m_canvas;
+    SkinTextureDocument m_referenceDocument;
+    SkinModel m_referenceModel;
+    std::unique_ptr<SkinProvider> m_referenceProvider;
+    SkinCanvas* m_canvas = nullptr;
     SkinOpenGLWindow* m_preview = nullptr;
     QWidget* m_previewContainer = nullptr;
-    QLabel* m_fallback;
+    QLabel* m_fallback = nullptr;
     QLabel* m_status = nullptr;
     QLabel* m_position = nullptr;
     QLabel* m_heading = nullptr;
     QLabel* m_subtitle = nullptr;
-    QWidget* m_editorControls;
+    QWidget* m_editorControls = nullptr;
     QSplitter* m_split = nullptr;
+    QSplitter* m_referenceSplit = nullptr;
+    QWidget* m_referencePanel = nullptr;
+    SkinCanvas* m_referenceCanvas = nullptr;
+    SkinOpenGLWindow* m_referencePreview = nullptr;
+    QComboBox* m_referenceMode = nullptr;
+    QComboBox* m_referenceWorkspace = nullptr;
+    QComboBox* m_referenceModelChoice = nullptr;
+    QToolButton* m_referenceToggle = nullptr;
+    QTabWidget* m_inspectorTabs = nullptr;
+    SkinExtrasPanel* m_extras = nullptr;
+    QComboBox* m_effect = nullptr;
+    QSlider* m_effectAmount = nullptr;
+    QSpinBox* m_effectValue = nullptr;
     QGridLayout* m_fileLayout = nullptr;
     QGridLayout* m_paletteLayout = nullptr;
     QList<QToolButton*> m_swatches;
     QWidget* m_canvasPanel = nullptr;
+    QWidget* m_paintControls = nullptr;
+    QWidget* m_previewPanel = nullptr;
+    QList<QPushButton*> m_zoomButtons;
     QWidget* m_inspector = nullptr;
     QComboBox* m_editMode = nullptr;
     QComboBox* m_region = nullptr;
@@ -97,4 +131,7 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     shared_qobject_ptr<SkinApplyTask> m_applyTask;
     bool m_applying = false;
     bool m_previewFailed = false;
+    bool m_referenceFailed = false;
+    bool m_referenceLoaded = false;
+    bool m_bodyThroughOverlay = false;
 };
