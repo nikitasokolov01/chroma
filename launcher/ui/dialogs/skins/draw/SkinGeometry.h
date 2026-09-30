@@ -41,7 +41,5 @@ std::optional<SkinPick> pickSkin(QVector3D origin,
                                  bool slim,
                                  unsigned baseParts,
                                  unsigned outerParts,
-                                 SkinTextureDocument::Part part = SkinTextureDocument::All,
-                                 SkinTextureDocument::Layer layer = SkinTextureDocument::Both,
-                                 const QImage& texture = {});
+                                 SkinTextureDocument::Part part = SkinTextureDocument::All);
 }  // namespace opengl

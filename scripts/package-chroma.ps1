@@ -30,6 +30,9 @@ if ($builtVersion -ne "$releaseVersion.0") {
     throw "Built executable version $builtVersion differs from $releaseVersion.0. Rebuild before packaging."
 }
 New-Item -ItemType Directory -Force -Path $packageRoot | Out-Null
+$updateDirectory = Join-Path $packageRoot 'update'
+New-Item -ItemType Directory -Force -Path $updateDirectory | Out-Null
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'apply-chroma-update.ps1') -Destination $updateDirectory
 & cmake --install $buildRoot --component Runtime --prefix $packageRoot
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Get-ChildItem -LiteralPath $buildRoot -Filter '*.dll' -File | Copy-Item -Destination $packageRoot -Force
@@ -64,7 +67,7 @@ Chroma is an independent native UI fork of Prism Launcher 10.0.5. It is not
 an official Prism Launcher or Modrinth release and is not affiliated with or
 endorsed by either project. Original contributor credits and licensing remain.
 
-Run chroma.exe and keep the entire folder together. Choose Launcher menu >
+Run chroma.exe and keep the entire folder together. Choose the Chroma header menu >
 Use Prism folder... and select the folder containing prismlauncher.cfg.
 Chroma restarts once and remembers the folder. Instances, worlds, accounts,
 and launch settings are shared directly. Close Prism while using this profile.
@@ -78,8 +81,10 @@ to Microsoft's runtime DLLs; Chroma and other open-source components retain
 their own licenses. The installer presents these Microsoft terms separately.
 
 This preview retains Prism's public Microsoft OAuth client ID for sign-in.
-CurseForge and Imgur credentials are not included. Upstream automatic binary
-updates are disabled. Java and Minecraft are not bundled.
+CurseForge and Imgur credentials are not included. Chroma checks its GitHub
+releases automatically, including previews. Choose when to download and restart;
+update preferences and a manual check are available in Settings > Launcher.
+Java and Minecraft are not bundled.
 
 Source and build instructions: https://github.com/nikitasokolov01/chroma
 Matching application, dependency, and Qt source archives accompany this release:

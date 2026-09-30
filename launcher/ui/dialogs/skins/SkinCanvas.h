@@ -14,6 +14,8 @@ class SkinCanvas : public QWidget {
     void setColor(QColor color) { m_color = color; }
     void setBrushSize(int size) { m_brushSize = size; }
     void setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer);
+    void setLayerVisibility(bool body, bool outer);
+    void setPartVisible(int part, bool visible);
     void setGridVisible(bool visible)
     {
         m_grid = visible;
@@ -41,6 +43,8 @@ class SkinCanvas : public QWidget {
     QPointF origin() const;
     QPoint pixelAt(QPointF point) const;
     void paintTo(QPoint pixel);
+    void paintPixel(QPoint pixel);
+    QRegion visibleRegion(SkinTextureDocument::Layer layer) const;
     void zoomAt(qreal factor, QPointF anchor);
     SkinTextureDocument* m_document;
     SkinTextureDocument::Part m_part = SkinTextureDocument::All;
@@ -57,4 +61,7 @@ class SkinCanvas : public QWidget {
     bool m_panning = false;
     bool m_grid = true;
     bool m_fit = true;
+    bool m_bodyVisible = true;
+    bool m_outerVisible = true;
+    unsigned m_visibleParts = 0x3f;
 };

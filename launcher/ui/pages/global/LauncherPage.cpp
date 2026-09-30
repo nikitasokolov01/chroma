@@ -53,6 +53,7 @@
 #include "ui/themes/ITheme.h"
 #include "ui/themes/ThemeManager.h"
 #include "updater/ExternalUpdater.h"
+#include "updater/ChromaUpdater.h"
 
 #include <QApplication>
 #include <QProcess>
@@ -77,6 +78,19 @@ LauncherPage::LauncherPage(QWidget* parent) : QWidget(parent), ui(new Ui::Launch
     loadSettings();
 
     ui->updateSettingsBox->setHidden(!APPLICATION->updater());
+    if (auto updater = APPLICATION->updater()) {
+        connect(ui->checkUpdatesButton, &QPushButton::clicked, this, [this, updater] {
+            updater->setBetaAllowed(ui->prereleaseUpdateCheckBox->isChecked());
+            updater->checkForUpdates();
+        });
+        connect(updater.get(), &ExternalUpdater::canCheckForUpdatesChanged, ui->checkUpdatesButton, &QPushButton::setEnabled);
+        if (auto* chroma = qobject_cast<ChromaUpdater*>(updater.get())) {
+            ui->checkUpdatesButton->setEnabled(chroma->canCheckForUpdates());
+            if (!chroma->status().isEmpty())
+                ui->updateStatusLabel->setText(chroma->status());
+            connect(chroma, &ChromaUpdater::statusChanged, ui->updateStatusLabel, &QLabel::setText);
+        }
+    }
 }
 
 LauncherPage::~LauncherPage()
@@ -199,6 +213,7 @@ void LauncherPage::applySettings()
     if (APPLICATION->updater()) {
         APPLICATION->updater()->setAutomaticallyChecksForUpdates(ui->autoUpdateCheckBox->isChecked());
         APPLICATION->updater()->setUpdateCheckInterval(ui->updateIntervalSpinBox->value() * 3600);
+        APPLICATION->updater()->setBetaAllowed(ui->prereleaseUpdateCheckBox->isChecked());
     }
 
     s->set("MenuBarInsteadOfToolBar", ui->preferMenuBarCheckBox->isChecked());
@@ -258,6 +273,7 @@ void LauncherPage::loadSettings()
     if (APPLICATION->updater()) {
         ui->autoUpdateCheckBox->setChecked(APPLICATION->updater()->getAutomaticallyChecksForUpdates());
         ui->updateIntervalSpinBox->setValue(APPLICATION->updater()->getUpdateCheckInterval() / 3600);
+        ui->prereleaseUpdateCheckBox->setChecked(APPLICATION->updater()->getBetaAllowed());
     }
 
     ui->preferMenuBarCheckBox->setChecked(s->get("MenuBarInsteadOfToolBar").toBool());

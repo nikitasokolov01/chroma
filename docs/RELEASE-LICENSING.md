@@ -1,6 +1,6 @@
 # Release licensing and source availability
 
-This records the Chroma 0.2.0 Windows release preparation on **2026-09-28**.
+This records the Chroma 0.3.0 Windows release preparation on **2026-09-29**.
 It is a distribution record and maintainer guide, not a legal guarantee.
 The controlling texts are [LICENSE](../LICENSE), [COPYING.md](../COPYING.md),
 [program_info/LICENSE](../program_info/LICENSE) and the retained component licenses.
@@ -10,11 +10,11 @@ notice, component inventory and recipient source instructions.
 ## Corresponding source
 
 Publish all three source assets with the installer and portable ZIP on the
-[same release page](https://github.com/nikitasokolov01/chroma/releases/tag/v0.2.0):
+[same release page](https://github.com/nikitasokolov01/chroma/releases/tag/v0.3.0):
 
-1. `Chroma-0.2.0-source.tar.gz`: created by `scripts/archive-chroma-source.py` from
+1. `Chroma-0.3.0-source.tar.gz`: created by `scripts/archive-chroma-source.py` from
    the released Git revision, with submodule contents and `SOURCE-REVISION.txt`.
-2. `Chroma-0.2.0-dependency-sources.tar.gz`: exact dependency archives and matching
+2. `Chroma-0.3.0-dependency-sources.tar.gz`: exact dependency archives and matching
    vcpkg port files, patches, build scripts and provenance from the release build.
 3. `qt-everywhere-src-6.5.3.tar.xz`: the complete official Qt source archive. SHA-256:
    `7cda4d119aad27a3887329cfc285f2aba5da85601212bcb0aea27bd6b7b544cb`.

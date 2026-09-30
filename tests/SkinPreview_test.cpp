@@ -13,6 +13,7 @@
 #include <QTest>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QtMath>
 #include <memory>
 
 #include "ui/dialogs/skins/draw/SkinOpenGLWindow.h"
@@ -67,6 +68,28 @@ void dragMove(SkinOpenGLWindow& preview, QPoint position, Qt::MouseButtons butto
 {
     QMouseEvent event(QEvent::MouseMove, QPointF(position), QPointF(preview.mapToGlobal(position)), Qt::NoButton, buttons, Qt::NoModifier);
     QApplication::sendEvent(&preview, &event);
+}
+
+QPoint projectedPixel(const SkinOpenGLWindow& preview, QVector3D world)
+{
+    // Default camera: (0,-8,48), vertical field of view 45 degrees.
+    const float scale = preview.height() / (2.f * qTan(qDegreesToRadians(22.5f)) * (48.f - world.z()));
+    return (QPointF(preview.width() / 2.f + world.x() * scale, preview.height() / 2.f - (world.y() + 8) * scale) *
+            preview.devicePixelRatioF())
+        .toPoint();
+}
+
+int differenceNear(const QImage& first, const QImage& second, QPoint point, int radius = 1)
+{
+    int difference = 0;
+    for (int y = point.y() - radius; y <= point.y() + radius; ++y)
+        for (int x = point.x() - radius; x <= point.x() + radius; ++x) {
+            if (!first.rect().contains(x, y))
+                continue;
+            const auto a = first.pixelColor(x, y), b = second.pixelColor(x, y);
+            difference = qMax(difference, qMax(qAbs(a.red() - b.red()), qMax(qAbs(a.green() - b.green()), qAbs(a.blue() - b.blue()))));
+        }
+    return difference;
 }
 
 }  // namespace
@@ -257,7 +280,8 @@ class SkinPreviewTest : public QObject {
         preview.setPartLayerVisible(D::Body, D::Overlay, false);
         QVERIFY(preview.partLayerVisible(D::Body, D::Base));
         QVERIFY(!preview.partLayerVisible(D::Body, D::Overlay));
-        QVERIFY(!preview.pickAt(point));
+        QVERIFY(preview.pickAt(point));
+        QCOMPARE(preview.pickAt(point)->layer, D::Base);
         const auto beforeHiddenClick = document.image();
         QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, point);
         QCOMPARE(document.image(), beforeHiddenClick);
@@ -283,6 +307,7 @@ class SkinPreviewTest : public QObject {
         QVERIFY(document.load(texture));
         SkinOpenGLWindow preview(&provider, QColor(225, 225, 235));
         preview.setDocument(&document);
+        preview.setGridVisible(false);
         preview.setRegion(D::All, D::Both);
         preview.resize(440, 480);
         preview.show();
@@ -309,6 +334,129 @@ class SkinPreviewTest : public QObject {
         QVERIFY(hit);
         QCOMPARE(hit->layer, D::Overlay);
         QCOMPARE(preview.grabFramebuffer().pixelColor(pixel), outer);
+    }
+
+    void transparentOuterReceivesPaintUntilHidden()
+    {
+        using D = SkinTextureDocument;
+        PreviewProvider provider;
+        QImage empty(64, 64, QImage::Format_ARGB32);
+        empty.fill(Qt::transparent);
+        D document;
+        QVERIFY(document.load(empty));
+        SkinOpenGLWindow preview(&provider, QColor(225, 225, 235));
+        preview.setDocument(&document);
+        preview.setEditingEnabled(true);
+        preview.setRegion(D::All, D::Base);  // A stale 2D hint must not paint under visible Outer.
+        preview.resize(440, 480);
+        preview.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&preview));
+        QTRY_VERIFY(preview.isValid());
+        const auto initial = document.image();
+        const auto outerPoint = pointForPixel(preview, D::Body, QPoint(23, 41));
+        QVERIFY(outerPoint.x() >= 0);
+        preview.setColor(Qt::red);
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, outerPoint);
+        QCOMPARE(document.image().pixelColor(23, 41), QColor(Qt::red));
+        for (const auto& region : D::uvRegion(D::All, D::Base, document.model()))
+            for (int y = region.top(); y <= region.bottom(); ++y)
+                for (int x = region.left(); x <= region.right(); ++x)
+                    QCOMPARE(document.image().pixel(x, y), initial.pixel(x, y));
+        document.undo();
+        QCOMPARE(document.image(), initial);
+        preview.setPartLayerVisible(D::Body, D::Overlay, false);
+        preview.setRegion(D::All, D::Overlay);  // Hidden Outer must not block the visible Base target.
+        const auto basePoint = pointForPixel(preview, D::Body, QPoint(23, 25));
+        QVERIFY(basePoint.x() >= 0);
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, basePoint);
+        QCOMPARE(document.image().pixelColor(23, 25), QColor(Qt::red));
+        QCOMPARE(document.image().pixelColor(23, 41), initial.pixelColor(23, 41));
+        preview.setPartLayerVisible(D::Body, D::Base, false);
+        const auto beforeHiddenClick = document.image();
+        QVERIFY(!preview.pickAt(basePoint));
+        QTest::mouseClick(&preview, Qt::LeftButton, Qt::NoModifier, basePoint);
+        QCOMPARE(document.image(), beforeHiddenClick);
+    }
+
+    void gridShowsBothSurfacesAndRespectsPartVisibility()
+    {
+        using D = SkinTextureDocument;
+        PreviewProvider provider;
+        QImage skin(64, 64, QImage::Format_ARGB32);
+        skin.fill(Qt::transparent);
+        for (const auto& region : D::uvRegion(D::All, D::Base, SkinModel::CLASSIC))
+            for (int y = region.top(); y <= region.bottom(); ++y)
+                for (int x = region.left(); x <= region.right(); ++x)
+                    skin.setPixelColor(x, y, QColor(190, 180, 165));
+        D document;
+        QVERIFY(document.load(skin));
+        const auto initial = document.image();
+        SkinOpenGLWindow preview(&provider, QColor(225, 225, 235));
+        preview.setDocument(&document);
+        for (int part = 1; part < 6; ++part)
+            preview.setPartVisible(part, false);
+        preview.resize(440, 480);
+        preview.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&preview));
+        QTRY_VERIFY(preview.isValid());
+        QVERIFY(preview.gridVisible());
+        const auto withBothGrids = preview.grabFramebuffer();
+        preview.setGridVisible(false);
+        const auto withoutGrid = preview.grabFramebuffer();
+        // These boundaries are separated by several screen pixels: one is
+        // on the 8-wide Base head, the other on its transparent 9-wide shell.
+        const auto baseLine = projectedPixel(preview, QVector3D(-3, 4.5f, 4));
+        const auto outerLine = projectedPixel(preview, QVector3D(-3.375f, 4.5f, 4.5f));
+        QVERIFY(differenceNear(withBothGrids, withoutGrid, baseLine) > 15);
+        QVERIFY(differenceNear(withBothGrids, withoutGrid, outerLine) > 15);
+        preview.setPartLayerVisible(D::Head, D::Overlay, false);
+        preview.setGridVisible(true);
+        const auto baseGridOnly = preview.grabFramebuffer();
+        QVERIFY(differenceNear(baseGridOnly, withoutGrid, baseLine) > 15);
+        QCOMPARE(differenceNear(baseGridOnly, withoutGrid, outerLine, 0), 0);
+        preview.setPartLayerVisible(D::Head, D::Base, false);
+        const auto hiddenWithGrid = preview.grabFramebuffer();
+        preview.setGridVisible(false);
+        QCOMPARE(preview.grabFramebuffer(), hiddenWithGrid);
+        preview.setPartLayerVisible(D::Head, D::Overlay, true);
+        const auto emptyShellWithoutGrid = preview.grabFramebuffer();
+        preview.setGridVisible(true);
+        const auto emptyShellGrid = preview.grabFramebuffer();
+        QVERIFY(differenceNear(emptyShellGrid, emptyShellWithoutGrid, outerLine) > 15);
+        // A back-facing grid line must not leak through the transparent shell.
+        const auto backLine = projectedPixel(preview, QVector3D(-3.375f, 4.5f, -4.5f));
+        QCOMPARE(differenceNear(emptyShellGrid, emptyShellWithoutGrid, backLine, 0), 0);
+        QCOMPARE(document.image(), initial);
+        QVERIFY(!document.canUndo());
+    }
+
+    void gridTracksClassicAndSlimArmTexels()
+    {
+        using D = SkinTextureDocument;
+        PreviewProvider provider;
+        D document;
+        QImage skin(64, 64, QImage::Format_ARGB32);
+        skin.fill(QColor(190, 180, 165));
+        QVERIFY(document.load(skin));
+        SkinOpenGLWindow preview(&provider, QColor(225, 225, 235));
+        preview.setDocument(&document);
+        preview.setLayersVisible(true, false);
+        for (int part = 0; part < 6; ++part)
+            preview.setPartVisible(part, part == D::RightArm);
+        preview.resize(440, 480);
+        preview.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&preview));
+        QTRY_VERIFY(preview.isValid());
+        for (const auto model : { SkinModel::CLASSIC, SkinModel::SLIM }) {
+            document.setModel(model);
+            preview.setGridVisible(false);
+            const auto plain = preview.grabFramebuffer();
+            preview.setGridVisible(true);
+            const auto grid = preview.grabFramebuffer();
+            const float x = model == SkinModel::SLIM ? -6.f : -7.f;
+            QVERIFY(differenceNear(grid, plain, projectedPixel(preview, QVector3D(x, -5.5f, 2))) > 15);
+            QCOMPARE(differenceNear(grid, plain, projectedPixel(preview, QVector3D(x + .5f, -5.5f, 2)), 0), 0);
+        }
     }
 
     void rotationZoomAndInterruptedStrokesKeepHistoryConsistent()

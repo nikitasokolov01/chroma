@@ -222,11 +222,11 @@ inline void compactToolbox(MainWindow* window, const QString& root)
     auto* picker = editor.findChild<QToolButton*>("skinToolPicker");
     auto* pan = editor.findChild<QToolButton*>("skinToolPan");
     auto* mode = editor.findChild<QComboBox*>("skinEditMode");
-    auto* layer = editor.findChild<QComboBox*>("skinLayer");
-    QVERIFY(document && canvas && brush && eraser && picker && pan && mode && layer);
+    auto* outer = editor.findChild<QToolButton*>("skinShowOuter");
+    QVERIFY(document && canvas && brush && eraser && picker && pan && mode && outer);
     auto discardEdits = qScopeGuard([&] { document->markSaved(); });
     mode->setCurrentIndex(1);
-    layer->setCurrentIndex(0);
+    outer->setChecked(false);
     QVERIFY(canvas->isVisible());
     QVERIFY(brush->isChecked());
     for (auto* button : { brush, eraser, picker, pan }) {
@@ -255,6 +255,7 @@ inline void compactToolbox(MainWindow* window, const QString& root)
     QCOMPARE(document->image().pixelColor(8, 8).alpha(), 255);
     for (int i = 0; i < 32; ++i)
         QTest::keyClick(canvas, Qt::Key_Right);
+    outer->setChecked(true);
     QTest::keyClick(canvas, Qt::Key_Space);
     QCOMPARE(document->image().pixelColor(40, 8).alpha(), 0);
     QTest::keyClick(canvas, Qt::Key_H);
@@ -301,22 +302,26 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
     auto* canvas = editor.findChild<SkinCanvas*>("skinCanvas");
     auto* preview = editor.findChild<SkinOpenGLWindow*>("skin3DCanvas");
     auto* mode = editor.findChild<QComboBox*>("skinEditMode");
-    auto* layer = editor.findChild<QComboBox*>("skinLayer");
     auto* model = editor.findChild<QComboBox*>("skinModel");
     auto* wheel = editor.findChild<SkinColorWheel*>("skinColorWheel");
     auto* hex = editor.findChild<QLineEdit*>("skinColorHex");
     auto* opacity = editor.findChild<QSlider*>("skinOpacity");
     auto* brushSize = editor.findChild<QSpinBox*>("skinBrushSize");
-    auto* showBase = editor.findChild<QCheckBox*>("skinShowBase");
-    auto* showOuter = editor.findChild<QCheckBox*>("skinShowOuter");
-    QVERIFY(document && canvas && mode && layer && model && wheel && hex && opacity && brushSize && showBase && showOuter);
+    auto* showBase = editor.findChild<QToolButton*>("skinShowBase");
+    auto* showOuter = editor.findChild<QToolButton*>("skinShowOuter");
+    auto* diagram = editor.findChild<QWidget*>("skinBodySelector");
+    auto* grid = editor.findChild<QCheckBox*>("skinGrid");
+    QVERIFY(document && canvas && mode && model && wheel && hex && opacity && brushSize && showBase && showOuter && diagram && grid);
+    QVERIFY(!editor.findChild<QComboBox*>("skinLayer"));
+    QVERIFY(showBase->isChecked() && showOuter->isChecked());
+    QCOMPARE(showBase->text(), QString("Body"));
+    QCOMPARE(showOuter->text(), QString("Outer layer"));
     auto discardEdits = qScopeGuard([&] { document->markSaved(); });
     const bool native = QGuiApplication::platformName() == "windows" && SkinOpenGLWindow::hasOpenGL();
     if (native) {
         QVERIFY(preview);
         QTRY_VERIFY(preview->isValid());
         QCOMPARE(mode->currentIndex(), 0);
-        QCOMPARE(layer->currentIndex(), int(SkinTextureDocument::Base));
         QVERIFY(preview->isVisible());
         QVERIFY(!canvas->isVisible());
     } else {
@@ -330,21 +335,20 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
     QCOMPARE(opacity->value(), 255);
 
     for (int part = 0; part < 6; ++part) {
-        auto* base = editor.findChild<QCheckBox*>(QString("skinPartBase%1").arg(part));
-        auto* outer = editor.findChild<QCheckBox*>(QString("skinPartOuter%1").arg(part));
-        QVERIFY(base && outer);
-        QVERIFY(base->isChecked() && outer->isChecked());
-        QVERIFY(!base->accessibleName().isEmpty());
-        QVERIFY(!outer->accessibleName().isEmpty());
+        auto* button = editor.findChild<QToolButton*>(QString("skinPart%1").arg(part));
+        QVERIFY(button && button->isChecked());
+        QVERIFY(!button->accessibleName().isEmpty());
+        QVERIFY(!button->accessibleDescription().isEmpty());
+        QVERIFY(button->focusPolicy() == Qt::StrongFocus);
+        button->setFocus();
+        QTest::keyClick(button, Qt::Key_Space);
+        QVERIFY(!button->isChecked());
         if (native) {
-            base->click();
             QVERIFY(!preview->partLayerVisible(part, SkinTextureDocument::Base));
-            QVERIFY(preview->partLayerVisible(part, SkinTextureDocument::Overlay));
-            outer->click();
             QVERIFY(!preview->partLayerVisible(part, SkinTextureDocument::Overlay));
-            base->click();
-            outer->click();
         }
+        QTest::keyClick(button, Qt::Key_Space);
+        QVERIFY(button->isChecked());
     }
     if (native) {
         showBase->click();
@@ -354,6 +358,10 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
         }
         showBase->click();
         showOuter->click();
+        QVERIFY(preview->gridVisible());
+        grid->click();
+        QVERIFY(!preview->gridVisible());
+        grid->click();
         for (int part = 0; part < 6; ++part) {
             QVERIFY(preview->partLayerVisible(part, SkinTextureDocument::Base));
             QVERIFY(!preview->partLayerVisible(part, SkinTextureDocument::Overlay));
@@ -363,6 +371,46 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
     // Visibility and brush choices must not alter the texture or its history.
     QCOMPARE(document->image(), texture);
     QVERIFY(!document->canUndo());
+
+    // The outer layer owns painting while visible, even when its texel is
+    // transparent. Hidden parts and layers cannot be changed in the 2D view.
+    mode->setCurrentIndex(1);
+    canvas->setFocus();
+    QTest::keyClick(canvas, Qt::Key_Space);
+    QCOMPARE(document->image(), texture);
+    QVERIFY(!document->canUndo());
+    for (int i = 0; i < 32; ++i)
+        QTest::keyClick(canvas, Qt::Key_Right);
+    QTest::keyClick(canvas, Qt::Key_Space);
+    QCOMPARE(document->image().pixelColor(40, 8), QColor(Qt::white));
+    QCOMPARE(document->image().pixelColor(8, 8), texture.pixelColor(8, 8));
+    showOuter->setChecked(false);
+    canvas->setColor(Qt::red);
+    QTest::keyClick(canvas, Qt::Key_Space);
+    QCOMPARE(document->image().pixelColor(40, 8), QColor(Qt::white));
+    for (int i = 0; i < 32; ++i)
+        QTest::keyClick(canvas, Qt::Key_Left);
+    QTest::keyClick(canvas, Qt::Key_Space);
+    QCOMPARE(document->image().pixelColor(8, 8), QColor(Qt::red));
+    auto* head = editor.findChild<QToolButton*>("skinPart0");
+    QVERIFY(head);
+    head->setChecked(false);
+    canvas->setColor(Qt::black);
+    const auto beforeHidden = document->image();
+    QTest::keyClick(canvas, Qt::Key_Space);
+    QCOMPARE(document->image(), beforeHidden);
+    showBase->setChecked(false);
+    head->setChecked(true);
+    QTest::keyClick(canvas, Qt::Key_Space);
+    QCOMPARE(document->image(), beforeHidden);
+    showBase->setChecked(true);
+    showOuter->setChecked(true);
+    canvas->setColor(Qt::white);
+    document->undo();
+    document->undo();
+    QCOMPARE(document->image(), texture);
+    QVERIFY(!document->canUndo());
+
     hex->setFocus();
     hex->setText("#b75cde");
     QTest::keyClick(hex, Qt::Key_Return);
@@ -386,6 +434,7 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
     opacity->setValue(255);
     brushSize->setValue(2);
     mode->setCurrentIndex(1);
+    showOuter->setChecked(false);
     QVERIFY(canvas->isVisible());
     if (preview)
         QVERIFY(preview->isVisible());
@@ -398,21 +447,21 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
     QCOMPARE(document->model(), SkinModel::SLIM);
     const auto selectedColor = wheel->color();
     if (native) {
-        auto* headBase = editor.findChild<QCheckBox*>("skinPartBase0");
-        headBase->click();
+        showOuter->setChecked(true);
+        head->click();
         for (int i = 0; i < 3; ++i) {
             mode->setCurrentIndex(0);
             QVERIFY(preview->isVisible());
             QVERIFY(!canvas->isVisible());
             QVERIFY(!preview->partLayerVisible(0, SkinTextureDocument::Base));
-            QVERIFY(preview->partLayerVisible(0, SkinTextureDocument::Overlay));
+            QVERIFY(!preview->partLayerVisible(0, SkinTextureDocument::Overlay));
             QCOMPARE(document->image(), edited);
             QCOMPARE(document->model(), SkinModel::SLIM);
             QCOMPARE(wheel->color().rgba(), selectedColor.rgba());
             QCOMPARE(brushSize->value(), 2);
             mode->setCurrentIndex(1);
         }
-        headBase->click();
+        head->click();
     }
     document->undo();
     QCOMPARE(document->model(), SkinModel::CLASSIC);
@@ -439,6 +488,20 @@ inline void editorModesAndVisibility(MainWindow* window, const QString& root)
         visibility->verticalScrollBar()->setValue(visibility->verticalScrollBar()->maximum());
         QCOMPARE(QRect(wheel->mapTo(window, QPoint()), wheel->size()), wheelBounds);
         visibility->verticalScrollBar()->setValue(0);
+        QCOMPARE(diagram->size(), QSize(104, 148));
+        for (int part = 0; part < 6; ++part) {
+            auto* button = editor.findChild<QToolButton*>(QString("skinPart%1").arg(part));
+            QVERIFY(button);
+            QCOMPARE(button->size(), QSize(part < 2 ? 44 : 22, part == 0 ? 44 : 52));
+            QVERIFY(diagram->rect().contains(button->geometry()));
+        }
+        auto* torso = editor.findChild<QToolButton*>("skinPart1");
+        auto* rightArm = editor.findChild<QToolButton*>("skinPart2");
+        auto* leftArm = editor.findChild<QToolButton*>("skinPart3");
+        QVERIFY(torso && rightArm && leftArm);
+        QVERIFY(head->geometry().bottom() <= torso->geometry().top());
+        QVERIFY(rightArm->geometry().right() <= torso->geometry().left());
+        QVERIFY(leftArm->geometry().left() >= torso->geometry().right());
         QVERIFY(
             window->grab().save(QDir(root).filePath(QString("skin-studio-%1-%2.png").arg(native ? "3d" : "fallback").arg(size.width()))));
     }

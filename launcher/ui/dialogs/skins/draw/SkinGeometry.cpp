@@ -59,16 +59,13 @@ std::optional<SkinPick> pickSkin(QVector3D origin,
                                  bool slim,
                                  unsigned baseParts,
                                  unsigned outerParts,
-                                 SkinTextureDocument::Part part,
-                                 SkinTextureDocument::Layer layer,
-                                 const QImage& texture)
+                                 SkinTextureDocument::Part part)
 {
     using D = SkinTextureDocument;
     if (direction.lengthSquared() < 1e-12f)
         return {};
     direction.normalize();
     std::optional<SkinPick> closest;
-    QList<SkinPick> visibleHits;
     for (const auto& box : skinBoxes(slim)) {
         if (!((box.layer == D::Base ? baseParts : outerParts) & (1u << box.part)))
             continue;
@@ -93,24 +90,17 @@ std::optional<SkinPick> pickSkin(QVector3D origin,
             const QPoint pixel(qBound(face.pixels.left(), int(std::floor(uv.x())), face.pixels.right()),
                                qBound(face.pixels.top(), int(std::floor(uv.y())), face.pixels.bottom()));
             const SkinPick hit{ box.part, box.layer, pixel, face.pixels, position, distance, i };
-            // Match the fragment shader's alpha discard. A transparent outer
-            // texel is still an editable target when Outer is explicit.
-            const bool visible = box.layer == D::Base || !texture.rect().contains(pixel) || texture.pixelColor(pixel).alpha() >= 26;
-            if (visible)
-                visibleHits.append(hit);
-            if ((layer == D::Both ? visible : layer == box.layer) && (!closest || distance < closest->distance))
+            // The outer shell is editable even where its PNG texels are
+            // transparent. Visibility controls, not alpha or a stale layer
+            // selector, decide which surface receives a stroke.
+            if (!closest || distance < closest->distance)
                 closest = hit;
         }
     }
-    // An explicit Base target may be under its own Outer shell. Other visible
-    // body parts still occlude it, even when their target layer is hidden.
-    if (closest) {
-        for (const auto& visible : visibleHits)
-            if (visible.part != closest->part && visible.distance < closest->distance - 1e-4f)
-                return {};
-        if (part != D::All && closest->part != part)
-            return {};
-    }
+    // Restrict the part after depth selection so a selected far arm cannot
+    // be painted through a nearer enabled body part or transparent shell.
+    if (closest && part != D::All && closest->part != part)
+        return {};
     return closest;
 }
 }  // namespace opengl

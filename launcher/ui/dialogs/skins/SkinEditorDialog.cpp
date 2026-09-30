@@ -32,12 +32,32 @@
 #include "ui/widgets/ClayWidgets.h"
 
 namespace {
-class LayerCheckBox : public QCheckBox {
+class BodyPartButton : public QToolButton {
    public:
-    using QCheckBox::QCheckBox;
+    using QToolButton::QToolButton;
 
    protected:
-    void nextCheckState() override { setCheckState(checkState() == Qt::Checked ? Qt::Unchecked : Qt::Checked); }
+    void paintEvent(QPaintEvent*) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const auto bounds = QRectF(rect()).adjusted(2, 2, -2, -2);
+        QColor fill = palette().color(isChecked() ? QPalette::Highlight : QPalette::AlternateBase);
+        if (underMouse() || isDown())
+            fill = fill.lighter(115);
+        painter.setBrush(fill);
+        painter.setPen(QPen(palette().color(isChecked() ? QPalette::Highlight : QPalette::Mid), 1.5));
+        painter.drawRoundedRect(bounds, 4, 4);
+        if (!isChecked()) {
+            painter.setPen(QPen(palette().color(QPalette::Mid), 1.5));
+            painter.drawLine(bounds.topLeft() + QPointF(5, 5), bounds.bottomRight() - QPointF(5, 5));
+        }
+        if (hasFocus()) {
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(palette().color(isChecked() ? QPalette::HighlightedText : QPalette::Text), 1.5, Qt::DashLine));
+            painter.drawRoundedRect(bounds.adjusted(3, 3, -3, -3), 2, 2);
+        }
+    }
 };
 
 QPixmap toolPixmap(SkinCanvas::Tool tool, QColor color)
@@ -233,17 +253,13 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     m_editMode->setMinimumWidth(0);
     m_editMode->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     m_editMode->setFixedHeight(32);
-    auto* layer = new QComboBox(drawing);
-    layer->setObjectName("skinLayer");
-    layer->setAccessibleName(tr("Skin layer to edit"));
-    layer->addItems({ tr("Both layers"), tr("Base layer"), tr("Outer layer") });
-    layer->setCurrentIndex(1);
-    layer->setMinimumWidth(0);
-    layer->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-    layer->setFixedHeight(32);
-    layer->setToolTip(tr("Choose the layer to paint. Hide a part below to reach surfaces behind it."));
+    auto* grid = new QCheckBox(tr("Grid"), drawing);
+    grid->setObjectName("skinGrid");
+    grid->setAccessibleName(tr("Show pixel grid"));
+    grid->setToolTip(tr("Show the pixel grid on every visible skin layer."));
+    grid->setChecked(true);
     modes->addWidget(m_editMode, 1);
-    modes->addWidget(layer, 1);
+    modes->addWidget(grid);
     drawingLayout->addLayout(modes);
 
     auto* split = m_split = new QSplitter(Qt::Horizontal, drawing);
@@ -253,7 +269,7 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     auto* canvasLayout = new QVBoxLayout(m_canvasPanel);
     canvasLayout->setContentsMargins(0, 0, 0, 0);
     canvasLayout->setSpacing(4);
-    auto* part = new QComboBox(m_canvasPanel);
+    auto* part = m_region = new QComboBox(m_canvasPanel);
     part->setObjectName("skinRegion");
     part->setAccessibleName(tr("Body region to edit"));
     part->addItems({ tr("All body regions"), tr("Head"), tr("Torso"), tr("Right arm"), tr("Left arm"), tr("Right leg"), tr("Left leg") });
@@ -279,12 +295,9 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     fit->setFixedSize(42, 26);
     fit->setAutoDefault(false);
     fit->setAccessibleName(tr("Fit texture"));
-    auto* grid = new QCheckBox(tr("Grid"), m_canvasPanel);
-    grid->setChecked(true);
     zoom->addWidget(zoomOut);
     zoom->addWidget(zoomIn);
     zoom->addWidget(fit);
-    zoom->addWidget(grid);
     zoom->addStretch();
     canvasLayout->addLayout(zoom);
     connect(zoomOut, &QPushButton::clicked, this, [this] { m_canvas->zoomBy(0.8); });
@@ -326,10 +339,10 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
             Qt::QueuedConnection);
         connect(m_preview, &SkinOpenGLWindow::colorPicked, this, &SkinEditorDialog::setColor);
         connect(m_preview, &SkinOpenGLWindow::toolChanged, m_canvas, &SkinCanvas::setTool);
+        connect(grid, &QCheckBox::toggled, m_preview, &SkinOpenGLWindow::setGridVisible);
     } else {
         m_editMode->setCurrentIndex(1);
         m_editMode->setEnabled(false);
-        layer->setCurrentIndex(0);
     }
     connect(group, &QButtonGroup::idClicked, this, [this](int id) {
         m_canvas->setTool(SkinCanvas::Tool(id));
@@ -349,22 +362,11 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
         if (m_preview)
             m_preview->setBrushSize(size);
     });
-    auto regionChanged = [this, part, layer] {
-        const auto region = SkinTextureDocument::Part(part->currentIndex() - 1);
-        const auto target = SkinTextureDocument::Layer(layer->currentIndex());
-        m_document.endStroke();
-        m_canvas->setRegion(region, target);
-        if (m_preview)
-            m_preview->setRegion(m_editMode->currentIndex() == 0 ? SkinTextureDocument::All : region, target);
-    };
-    connect(part, &QComboBox::currentIndexChanged, this, regionChanged);
-    connect(layer, &QComboBox::currentIndexChanged, this, regionChanged);
-    connect(m_editMode, &QComboBox::currentIndexChanged, this, [this, regionChanged] {
+    connect(part, &QComboBox::currentIndexChanged, this, &SkinEditorDialog::updateVisibility);
+    connect(m_editMode, &QComboBox::currentIndexChanged, this, [this] {
         m_document.endStroke();
         updateEditingMode();
-        regionChanged();
     });
-    regionChanged();
     split->setStretchFactor(0, 3);
     split->setStretchFactor(1, 2);
 
@@ -446,52 +448,77 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     visibilityGrid->setContentsMargins(0, 2, 0, 2);
     visibilityGrid->setVerticalSpacing(3);
     visibilityGrid->setHorizontalSpacing(3);
-    auto* base = new LayerCheckBox(tr("Base"), visibility);
-    base->setObjectName("skinShowBase");
-    auto* outer = new LayerCheckBox(tr("Outer"), visibility);
-    outer->setObjectName("skinShowOuter");
-    visibilityGrid->addLayout(swatches, 0, 0, 1, 3);
-    visibilityGrid->addWidget(base, 1, 1);
-    visibilityGrid->addWidget(outer, 1, 2);
-    base->setChecked(true);
-    outer->setChecked(true);
-    base->setTristate(true);
-    outer->setTristate(true);
-    const QStringList parts{ tr("Head"), tr("Torso"), tr("R. arm"), tr("L. arm"), tr("R. leg"), tr("L. leg") };
-    for (int i = 0; i < parts.size(); ++i) {
-        visibilityGrid->addWidget(new QLabel(parts[i], visibility), i + 2, 0);
-        for (int column = 0; column < 2; ++column) {
-            auto* check = new QCheckBox(visibility);
-            check->setObjectName(QString(column ? "skinPartOuter%1" : "skinPartBase%1").arg(i));
-            check->setAccessibleName(tr("Show %1 %2 layer").arg(parts[i], column ? tr("outer") : tr("base")));
-            check->setToolTip(check->accessibleName());
-            check->setChecked(true);
-            check->setEnabled(m_preview != nullptr);
-            visibilityGrid->addWidget(check, i + 2, column + 1, Qt::AlignCenter);
-            connect(check, &QCheckBox::toggled, this, [this, i, column](bool checked) {
-                if (m_preview)
-                    m_preview->setPartLayerVisible(i, column ? SkinTextureDocument::Overlay : SkinTextureDocument::Base, checked);
-            });
-            auto* all = column ? outer : base;
-            connect(all, &QCheckBox::stateChanged, check, [check](int state) {
-                if (state != Qt::PartiallyChecked)
-                    check->setChecked(state == Qt::Checked);
-            });
-            connect(check, &QCheckBox::toggled, this, [visibility, all, column] {
-                int visible = 0;
-                for (int part = 0; part < 6; ++part) {
-                    auto* toggle = visibility->findChild<QCheckBox*>(QString(column ? "skinPartOuter%1" : "skinPartBase%1").arg(part));
-                    if (toggle && toggle->isChecked())
-                        ++visible;
-                }
-                const QSignalBlocker blocker(all);
-                all->setCheckState(visible == 6 ? Qt::Checked : visible == 0 ? Qt::Unchecked : Qt::PartiallyChecked);
-            });
-        }
+    visibilityGrid->addLayout(swatches, 0, 0);
+    auto* layers = new QHBoxLayout;
+    layers->setSpacing(4);
+    m_showBody = new QToolButton(visibility);
+    m_showBody->setObjectName("skinShowBase");
+    m_showBody->setText(tr("Body"));
+    m_showBody->setToolTip(tr("Show the body layer. Hide Outer layer to paint the body."));
+    m_showOuter = new QToolButton(visibility);
+    m_showOuter->setObjectName("skinShowOuter");
+    m_showOuter->setText(tr("Outer layer"));
+    m_showOuter->setToolTip(tr("Show the outer layer. While visible, painting only changes the outer layer."));
+    for (auto* button : { m_showBody, m_showOuter }) {
+        button->setCheckable(true);
+        button->setChecked(true);
+        button->setFocusPolicy(Qt::StrongFocus);
+        button->setAccessibleName(button->text());
+        button->setAccessibleDescription(button->toolTip());
+        button->setToolButtonStyle(Qt::ToolButtonTextOnly);
+        button->setFixedHeight(30);
+        button->setMinimumWidth(0);
+        button->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+        button->setStyleSheet(QString("QToolButton#%1 { padding: 0 3px; min-width: 0; border: 1px solid palette(mid); "
+                                      "border-radius: 7px; background: palette(button); color: palette(button-text); } "
+                                      "QToolButton#%1:checked { background: palette(highlight); color: palette(highlighted-text); "
+                                      "border-color: palette(highlight); } QToolButton#%1:hover { border-color: palette(text); } "
+                                      "QToolButton#%1:focus { border: 2px solid palette(text); }")
+                                  .arg(button->objectName()));
+        layers->addWidget(button, button == m_showBody ? 2 : 3);
+        connect(button, &QToolButton::toggled, this, &SkinEditorDialog::updateVisibility);
     }
+    visibilityGrid->addLayout(layers, 1, 0);
+    m_layerHint = new QLabel(visibility);
+    m_layerHint->setObjectName("skinPaintLayerHint");
+    m_layerHint->setWordWrap(true);
+    m_layerHint->setAlignment(Qt::AlignCenter);
+    visibilityGrid->addWidget(m_layerHint, 2, 0);
 
-    base->setEnabled(m_preview != nullptr);
-    outer->setEnabled(m_preview != nullptr);
+    auto* body = new QWidget(visibility);
+    body->setObjectName("skinBodySelector");
+    body->setAccessibleName(tr("Visible body parts"));
+    body->setFixedSize(104, 148);
+    auto* bodyLayout = new QGridLayout(body);
+    bodyLayout->setContentsMargins(8, 0, 8, 0);
+    bodyLayout->setSpacing(0);
+    // Front view: the character's right arm and leg are on the viewer's left.
+    const QStringList parts{ tr("Head"), tr("Torso"), tr("Right arm"), tr("Left arm"), tr("Right leg"), tr("Left leg") };
+    const QList<QRect> cells{ { 1, 0, 2, 1 }, { 1, 1, 2, 1 }, { 0, 1, 1, 1 }, { 3, 1, 1, 1 }, { 1, 2, 1, 1 }, { 2, 2, 1, 1 } };
+    for (int i = 0; i < parts.size(); ++i) {
+        auto* button = new BodyPartButton(body);
+        button->setObjectName(QString("skinPart%1").arg(i));
+        button->setText(parts[i]);
+        button->setAccessibleName(parts[i]);
+        button->setAccessibleDescription(tr("Toggle visibility of both layers for this body part. Space toggles the selected part."));
+        button->setCheckable(true);
+        button->setChecked(true);
+        button->setFocusPolicy(Qt::StrongFocus);
+        const QSize buttonSize(i < 2 ? 44 : 22, i == 0 ? 44 : 52);
+        // Stylesheet polish can replace QWidget minimum constraints. Pin both
+        // dimensions here too so general inline button styles cannot flatten it.
+        button->setStyleSheet(QString("QToolButton#%1 { padding: 0; border: none; "
+                                      "min-width: %2px; max-width: %2px; min-height: %3px; max-height: %3px; }")
+                                  .arg(button->objectName())
+                                  .arg(buttonSize.width())
+                                  .arg(buttonSize.height()));
+        button->setFixedSize(buttonSize);
+        const auto cell = cells[i];
+        bodyLayout->addWidget(button, cell.y(), cell.x(), cell.height(), cell.width());
+        m_partButtons.append(button);
+        connect(button, &QToolButton::toggled, this, &SkinEditorDialog::updateVisibility);
+    }
+    visibilityGrid->addWidget(body, 3, 0, Qt::AlignHCenter);
     visibilityScroll->setWidget(visibility);
     inspector->addWidget(visibilityScroll, 1);
     m_model = new QComboBox(m_inspector);
@@ -501,15 +528,15 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     m_model->setMinimumWidth(0);
     m_model->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
     m_model->setFixedHeight(30);
-    visibilityGrid->addWidget(m_model, 8, 0, 1, 3);
+    visibilityGrid->addWidget(m_model, 4, 0);
     connect(m_model, &QComboBox::currentIndexChanged, this, [this](int index) { m_document.setModel(SkinModel::Model(index)); });
     auto* camera = new QPushButton(tr("Reset view"), m_inspector);
     camera->setAccessibleName(tr("Reset 3D view"));
     camera->setFixedHeight(28);
     camera->setAutoDefault(false);
     camera->setEnabled(m_preview != nullptr);
-    visibilityGrid->addWidget(camera, 9, 0, 1, 3);
-    visibilityGrid->setRowStretch(10, 1);
+    visibilityGrid->addWidget(camera, 5, 0);
+    visibilityGrid->setRowStretch(6, 1);
     if (m_preview)
         connect(camera, &QPushButton::clicked, m_preview, &SkinOpenGLWindow::resetView);
     m_position = new QLabel(drawing);
@@ -566,7 +593,7 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     fit->setStyleSheet(
         "QPushButton { min-height: 22px; max-height: 22px; min-width: 38px; max-width: 38px; "
         "padding: 0; border-radius: 6px; }");
-    for (auto* combo : { m_editMode, layer, part, m_model })
+    for (auto* combo : { m_editMode, part, m_model })
         combo->setStyleSheet("QComboBox { min-height: 0; padding: 2px 8px; border-radius: 8px; }");
     brush->setStyleSheet("QSpinBox { min-height: 0; padding: 2px 4px; border-radius: 7px; }");
     m_colorHex->setStyleSheet("QLineEdit { min-height: 0; padding: 2px 8px; border-radius: 8px; }");
@@ -812,9 +839,37 @@ void SkinEditorDialog::updateEditingMode()
 {
     const bool painting3D = m_preview && !m_previewFailed && m_editMode->currentIndex() == 0;
     m_canvasPanel->setVisible(!painting3D);
-    if (m_preview)
-        m_preview->setEditingEnabled(painting3D);
+    updateVisibility();
     if (m_status)
         m_status->setText(painting3D ? tr("Paint with left drag · Rotate with right drag · Scroll to zoom · Alt-click to pick color")
                                      : tr("Paint the PNG · Middle-drag to pan · Scroll to zoom · Alt-click to pick color"));
+}
+
+void SkinEditorDialog::updateVisibility()
+{
+    if (!m_showBody || !m_showOuter || m_partButtons.size() != 6)
+        return;
+    m_document.endStroke();
+    const bool body = m_showBody->isChecked();
+    const bool outer = m_showOuter->isChecked();
+    const auto target = outer ? SkinTextureDocument::Overlay : SkinTextureDocument::Base;
+    const auto region = SkinTextureDocument::Part(m_region->currentIndex() - 1);
+    m_canvas->setLayerVisibility(body, outer);
+    m_canvas->setRegion(region, target);
+    for (int i = 0; i < m_partButtons.size(); ++i) {
+        auto* button = m_partButtons[i];
+        const bool visible = button->isChecked();
+        button->setToolTip(visible ? tr("%1 visible · Click to hide").arg(button->text())
+                                   : tr("%1 hidden · Click to show").arg(button->text()));
+        m_canvas->setPartVisible(i, visible);
+        if (m_preview) {
+            m_preview->setPartLayerVisible(i, SkinTextureDocument::Base, body && visible);
+            m_preview->setPartLayerVisible(i, SkinTextureDocument::Overlay, outer && visible);
+        }
+    }
+    if (m_preview) {
+        m_preview->setRegion(m_editMode->currentIndex() == 0 ? SkinTextureDocument::All : region, target);
+        m_preview->setEditingEnabled(!m_previewFailed && m_editMode->currentIndex() == 0 && (body || outer));
+    }
+    m_layerHint->setText(outer ? tr("Painting: Outer layer") : body ? tr("Painting: Body") : tr("Layers hidden"));
 }

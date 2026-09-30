@@ -240,6 +240,24 @@
             </property>
            </widget>
           </item>
+          <item row="2" column="0" colspan="2">
+           <widget class="QCheckBox" name="prereleaseUpdateCheckBox">
+            <property name="text"><string>Include prereleases</string></property>
+            <property name="toolTip"><string>Offer newer preview releases as well as stable releases. Updates are downloaded and installed only when you choose.</string></property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QPushButton" name="checkUpdatesButton">
+            <property name="text"><string>Check for updates now</string></property>
+           </widget>
+          </item>
+          <item row="4" column="0" colspan="2">
+           <widget class="QLabel" name="updateStatusLabel">
+            <property name="text"><string>Updates preserve your instances, accounts and settings.</string></property>
+            <property name="wordWrap"><bool>true</bool></property>
+            <property name="textFormat"><enum>Qt::PlainText</enum></property>
+           </widget>
+          </item>
          </layout>
         </widget>
        </item>

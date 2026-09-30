@@ -58,6 +58,8 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void setDocument(SkinTextureDocument* document);
     void setEditingEnabled(bool enabled);
     void setTool(SkinCanvas::Tool tool);
+    void setGridVisible(bool visible);
+    bool gridVisible() const { return m_gridVisible; }
     void setColor(QColor color) { m_color = color; }
     void setBrushSize(int size) { m_brushSize = qBound(1, size, 8); }
     void setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer);
@@ -103,6 +105,7 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     QOpenGLVertexArrayObject m_vertexArray;
     QOpenGLShaderProgram* m_modelProgram = nullptr;
     QOpenGLShaderProgram* m_backgroundProgram = nullptr;
+    QOpenGLShaderProgram* m_gridProgram = nullptr;
     opengl::Scene* m_scene = nullptr;
 
     QMatrix4x4 m_projection;
@@ -118,7 +121,7 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     QColor m_color = Qt::white;
     int m_brushSize = 1;
     SkinTextureDocument::Part m_part = SkinTextureDocument::All;
-    SkinTextureDocument::Layer m_layer = SkinTextureDocument::Base;
+    bool m_gridVisible = true;
     QPointF m_lastPaintPosition;
     std::optional<opengl::SkinPick> m_lastPaintPick;
     float m_distance = 48;

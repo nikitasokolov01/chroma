@@ -1,5 +1,12 @@
 project(tests)
 
+ecm_add_test(ChromaUpdate_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ChromaUpdate)
+
+ecm_add_test(ChromaRelease_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME ChromaRelease)
+set_tests_properties(ChromaUpdate PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 ecm_add_test(ChromaProfile_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ChromaProfile)
 

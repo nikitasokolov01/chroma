@@ -155,6 +155,7 @@
 #endif
 #else
 #include "updater/PrismExternalUpdater.h"
+#include "updater/ChromaUpdater.h"
 #endif
 
 #if defined Q_OS_WIN32
@@ -1344,6 +1345,8 @@ bool Application::updaterEnabled()
 {
 #if defined(Q_OS_MAC)
     return BuildConfig.UPDATER_ENABLED;
+#elif defined(Q_OS_WIN)
+    return QFileInfo(QDir(m_rootPath).filePath("update/apply-chroma-update.ps1")).isFile();
 #else
     return BuildConfig.UPDATER_ENABLED && QFileInfo(FS::PathCombine(m_rootPath, updaterBinaryName())).isFile();
 #endif
@@ -1442,9 +1445,13 @@ void Application::performMainStartupAction()
 #if defined(SPARKLE_ENABLED)
         m_updater.reset(new MacSparkleUpdater());
 #endif
+#elif defined(Q_OS_WIN)
+        m_updater.reset(new ChromaUpdater(m_mainWindow, m_rootPath, m_dataPath, m_portable, network().get()));
 #else
         m_updater.reset(new PrismExternalUpdater(m_mainWindow, m_rootPath, m_dataPath));
 #endif
+        if (m_updater && m_mainWindow)
+            connect(m_updater.get(), &ExternalUpdater::canCheckForUpdatesChanged, m_mainWindow, &MainWindow::updatesAllowedChanged);
         qDebug() << "<> Updater started.";
     }
 
@@ -1827,6 +1834,10 @@ MainWindow* Application::showMainWindow(bool minimized)
         m_mainWindow->activateWindow();
     } else {
         m_mainWindow = new MainWindow();
+#ifdef Q_OS_WIN
+        if (auto* updater = qobject_cast<ChromaUpdater*>(m_updater.get()))
+            updater->setWindow(m_mainWindow);
+#endif
         m_mainWindow->restoreState(QByteArray::fromBase64(APPLICATION->settings()->get("MainWindowState").toString().toUtf8()));
         m_mainWindow->restoreGeometry(QByteArray::fromBase64(APPLICATION->settings()->get("MainWindowGeometry").toString().toUtf8()));
         m_mainWindow->applyHomeLayout();
@@ -1900,6 +1911,10 @@ void Application::on_windowClose()
     auto mainWindow = qobject_cast<MainWindow*>(sender());
     if (mainWindow) {
         m_mainWindow = nullptr;
+#ifdef Q_OS_WIN
+        if (auto* updater = qobject_cast<ChromaUpdater*>(m_updater.get()))
+            updater->setWindow(nullptr);
+#endif
     }
     auto logWindow = qobject_cast<ViewLogWindow*>(sender());
     if (logWindow) {
@@ -2152,7 +2167,6 @@ void Application::triggerUpdateCheck()
 {
     if (m_updater) {
         qDebug() << "Checking for updates.";
-        m_updater->setBetaAllowed(false);  // There are no other channels than stable
         m_updater->checkForUpdates();
     } else {
         qDebug() << "Updater not available.";

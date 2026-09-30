@@ -93,6 +93,7 @@
 #include "ui/widgets/ModpackCardDelegate.h"
 #include "ui/widgets/ProjectDescriptionPage.h"
 #include "ui/widgets/VersionListView.h"
+#include "ChromaUpdateUiTests.h"
 
 namespace {
 
@@ -135,6 +136,11 @@ bool prepareFixture(const QString& root)
     settings.setValue("RequestTimeout", 1);
     settings.sync();
     if (settings.status() != QSettings::NoError)
+        return false;
+    QSettings updates(directory.filePath("chroma-updates.ini"), QSettings::IniFormat);
+    updates.setValue("Automatic", false);
+    updates.sync();
+    if (updates.status() != QSettings::NoError)
         return false;
     QSettings ui(directory.filePath("chroma-ui.cfg"), QSettings::IniFormat);
     ui.clear();
@@ -1280,6 +1286,8 @@ class LauncherHomeTest : public QObject {
 
     void skinEditorModesAndVisibility() { SkinLibraryUiTests::editorModesAndVisibility(m_window, m_root); }
 
+    void updaterPreservesUnsavedEditorDuringVerifiedDownload() { ChromaUpdateUiTests::verifiedDownload(m_window, m_root); }
+
     void libraryCanvasDoesNotRepaintWhenIdle()
     {
         class CanvasProbe : public ClayCanvas {
@@ -1306,6 +1314,11 @@ class LauncherHomeTest : public QObject {
 
     void skinsSidebarAndAltKeepNavigationInline()
     {
+        auto* launcherMenu = m_home->findChild<QToolButton*>("homeLauncherMenu");
+        QVERIFY(launcherMenu && launcherMenu->menu());
+        QCOMPARE(launcherMenu->parentWidget()->objectName(), QString("homeHeader"));
+        for (auto* button : m_home->findChild<QWidget*>("homeRail")->findChildren<QToolButton*>())
+            QVERIFY(button->menu() != launcherMenu->menu());
         QVERIFY(m_window->inlineWorkspace()->closeAllPages());
         m_home->showHomePage(false);
         auto* menu = m_window->findChild<QMenuBar*>();
@@ -1399,6 +1412,7 @@ class LauncherHomeTest : public QObject {
         auto* mode = editor.findChild<QComboBox*>("skinEditMode");
         QVERIFY(canvas && undo && redo && model && apply && mode);
         mode->setCurrentIndex(1);
+        editor.findChild<QToolButton*>("skinShowOuter")->setChecked(false);
         QVERIFY(!apply->isEnabled());
         QVERIFY(!undo->isEnabled());
         canvas->setFocus();

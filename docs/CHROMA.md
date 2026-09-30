@@ -17,6 +17,8 @@ The default main window is rebuilt in C++ and Qt Widgets:
 - An inline workspace for launcher settings, instance editing, account management, and adding instances, with the header and sidebar always available.
 - A provider gallery for modpack discovery, followed by searchable cover grids and pack details with version selection.
 - A Skin Library with account switching, plus Skin Studio for direct 3D painting, 2D texture editing, layer visibility, and local PNG saving.
+- Pixel grids on both 3D skin layers, a clickable body-part diagram, and automatic selection of the visible outer layer for painting.
+- GitHub release checks, including preview releases, with downloads and installation started by the user.
 
 The structure lives in `LauncherHome`, `MainWindow`, `InlineWorkspace`, and `InstanceView`. It is compiled into the launcher. The Chroma palette supplies colors to those native widgets; no external theme installation or web wrapper is involved. The workspace reuses Prism's existing configuration and instance pages, including their validation and task handling.
 
@@ -28,12 +30,35 @@ This is the actual Qt interface rendered by the native test harness with sample 
 
 ## Install and run
 
-The [v0.2.0 preview release](https://github.com/nikitasokolov01/chroma/releases/tag/v0.2.0) provides a Windows x64 installer and a portable ZIP. Close Chroma before installing an update.
+The [v0.3.0 preview release](https://github.com/nikitasokolov01/chroma/releases/tag/v0.3.0) provides a Windows x64 installer and a portable ZIP. Close Chroma before installing an update.
 
 - **Installer:** install for your Windows account, then open Chroma. Its default profile is `%APPDATA%\Chroma`.
 - **Portable ZIP:** extract it and run `chroma.exe`. Keep the folder together; its default profile lives beside the executable.
 
 Both packages support opening an existing Prism folder. A remembered selection takes precedence over the default profile on future normal launches.
+
+### Updating Chroma
+
+**From 0.2.0 or earlier, download and install 0.3.0 manually once.** Those versions
+do not contain Chroma's release updater. Keep your existing profile folder when
+replacing a portable installation, then select it with **Chroma header menu →
+Use Prism folder…** if needed.
+
+From 0.3.0, automatic update checks contact Chroma's GitHub releases. In
+**Settings → Launcher → Updater**, **Check for updates automatically** and
+**Include prereleases** are enabled by default. Checks normally run every 24
+hours; set **How Often?** to **On Launch** to check only when Chroma starts.
+You can turn automatic checks off and still use **Check for updates now** or
+**Chroma header menu → Check for updates…**.
+
+An available update shows its version and release information. Choose **Download update**
+to fetch it. Chroma validates the downloaded file against the release's SHA-256
+checksum before offering installation. Choose **Install and restart** when ready;
+a check alone never downloads or installs an update. The release page remains
+available for manual downloads.
+
+The [0.3.0 release notes](releases/0.3.0.md) record release validation and any
+remaining limitations.
 
 ### Run a source build
 
@@ -51,7 +76,7 @@ The runner follows the normal profile selection, including a remembered Prism fo
 
 Normal `chroma.exe` launches use the remembered Prism folder, if one has been selected. Without a selection, builds with `portable.txt` use the executable's folder; other builds use the **Chroma** application data location (on Windows, `%APPDATA%\Chroma`). The configuration filename remains `prismlauncher.cfg`. The runner's `-DataDirectory` option passes `--dir`, which overrides the remembered selection for that launch.
 
-To open your existing library, choose **Launcher menu (•••) → Use Prism folder…**, select the folder containing `prismlauncher.cfg`, inspect it, and choose **Use this folder**. Chroma restarts once and remembers the folder for future normal launches. Instances and worlds are used directly without copies. Keep Prism closed while Chroma uses that profile; upstream versions may not fully honor Chroma's profile locks. See [the folder guide](CHROMA-MIGRATION.md) for details.
+To open your existing library, choose **Chroma header menu → Use Prism folder…**, select the folder containing `prismlauncher.cfg`, inspect it, and choose **Use this folder**. Chroma restarts once and remembers the folder for future normal launches. Instances and worlds are used directly without copies. Keep Prism closed while Chroma uses that profile; upstream versions may not fully honor Chroma's profile locks. See [the folder guide](CHROMA-MIGRATION.md) for details.
 
 Chroma's interface preferences are stored beside the active configuration in `chroma-ui.cfg`; its remembered profile pointer lives in `profile.json` in Chroma's home directory. The Chroma palette is selected by default. Change it under **Settings → Launcher → Appearance**. All profiles use the rebuilt main window.
 
@@ -83,10 +108,18 @@ between both modes. Without OpenGL, the 2D editor has a front/back image preview
 - **Colors:** drag the visible wheel to choose hue, saturation, and brightness.
   Enter `#RRGGBB` for an exact color or `#AARRGGBB` to include opacity. The opacity
   slider and palette swatches use the same brush color.
-- **Layers:** select the layer to paint above the canvas. Base pixels stay opaque;
-  outer pixels support transparency and erasing. The body-part table has separate
-  **Base** and **Outer** visibility checkboxes for the head, torso, arms, and legs.
-  Hiding a part lets you reach surfaces behind it without changing the PNG.
+- **Layers:** the **Body** and **Outer layer** buttons toggle visibility globally.
+  When Outer layer is visible, painting changes only the outer layer, including
+  transparent pixels. Hide it to paint the body. Hiding both layers disables
+  painting. These rules also apply to the 2D texture. Body pixels stay opaque;
+  outer pixels support transparency and erasing.
+- **Body parts:** click the head, torso, arms, or legs in the body diagram to hide
+  that part on both layers. Click again to show it. Tab focuses each part and
+  Space toggles it. Hiding parts lets you reach surfaces behind them without
+  changing the PNG; hidden parts cannot be painted in either view.
+- **Pixel grid:** **Grid** shows the individual pixels on each visible body and
+  outer surface in 3D. Both grids remain visible when both layers are enabled.
+  The same control toggles the grid on the 2D texture when zoomed in.
 - **Tools:** with a canvas focused, press **B** for brush, **E** for eraser,
   **I** for color picker, or **H** to rotate the model or pan the texture.
   Alt-click samples a color. In 2D, arrow keys move the pixel cursor, **Space**
@@ -103,11 +136,15 @@ model controls scroll beneath it when needed. Editing locally does not upload th
 
 Scroll Home from **Jump back in** through the library using the page scrollbar or the mouse wheel over a card. The search, filters, and cards move with the page. **Library** in the sidebar opens the library without the recent section. Group collapse, sorting, search, keyboard selection, and drag and drop continue to use the native instance view.
 
-Select an instance and choose **Pin to sidebar** in its details panel, or right-click its card and choose **Pin to sidebar**. Its icon appears between the main navigation and launcher menu. Click a pinned icon to open that instance's editor. Pins keep their order across restarts and follow instance name and icon changes. Deleting an instance removes its pin.
+Select an instance and choose **Pin to sidebar** in its details panel, or right-click its card and choose **Pin to sidebar**. Its icon appears below the main sidebar navigation. Click a pinned icon to open that instance's editor. Pins keep their order across restarts and follow instance name and icon changes. Deleting an instance removes its pin.
 
 To remove a pin, choose **Unpin from sidebar** in the selected instance's details or context menu, or right-click its sidebar icon and choose **Unpin from sidebar**. The pin area scrolls when there are more icons than fit. Pins are saved as `ChromaPinnedInstances` in the active profile's `chroma-ui.cfg`.
 
 Launcher screens open inside the workspace. **Back** closes the current screen and returns to the previous one; **Home** and **Library** return to the library after the active pages accept closing. Existing save checks, confirmation prompts, and task cancellation controls still apply. File, color, and icon pickers also appear inline. During a running task, its cancellation control remains available and navigation waits for the task to finish. On narrower windows, settings pages use a page selector in place of a wide page list.
+
+Click **Chroma** in the header to open the launcher menu. It contains profile
+selection, update checks, accounts, and instance commands previously reached
+through the sidebar overflow button.
 
 ## Browse modpacks
 
@@ -144,11 +181,11 @@ Adjust those example paths for your installation. The verified Windows toolchain
 
 The default build retains Prism's public Microsoft OAuth application ID. `CHROMA_MSA_CLIENT_ID` or the build script's `-MicrosoftClientId` parameter overrides it. Passing `-MicrosoftClientId ''` explicitly disables the build-time ID; a saved Services override can still supply one. Review the [upstream custom-build guidance](UPSTREAM_README.md#forkingredistributingcustom-builds-policy) when distributing a modified launcher with external service integrations.
 
-CurseForge and Imgur credentials are empty by default, and upstream binary updates are disabled. Supply a CurseForge key through `CHROMA_CURSEFORGE_API_KEY`, the build script's `-CurseForgeApiKey` parameter, or Services settings. Keep private keys out of the source tree and commit history.
+CurseForge and Imgur credentials are empty by default. Chroma's updater checks its own GitHub releases. Supply a CurseForge key through `CHROMA_CURSEFORGE_API_KEY`, the build script's `-CurseForgeApiKey` parameter, or Services settings. Keep private keys out of the source tree and commit history.
 
 ### Native UI verification
 
-The optional Qt test harness exercises the real main window using synthetic instances in an isolated profile. It checks filtering, selection, action states, sorting, whole-page scrolling, sidebar pins, custom accent persistence, and direct profile use. Inline settings, instance editing, nested pickers, confirmations, and task cancellation are checked for correct navigation and dialog lifetimes. Catalog checks cover the provider gallery, populated card grids, keyboard selection, pack versions, instance options, search resets, and provider switching. Skin checks cover account selection, editing modes, shared history, the inline color wheel, opacity, and per-part layer visibility using original synthetic textures. Layout checks cover 1280×820, 800×820, and 680×640 and save screenshots. The harness does not open your installed Prism profile, sign in, or launch Minecraft.
+The optional Qt test harness exercises the real main window using synthetic instances in an isolated profile. It checks filtering, selection, action states, sorting, whole-page scrolling, sidebar pins, custom accent persistence, and direct profile use. Inline settings, instance editing, nested pickers, confirmations, and task cancellation are checked for correct navigation and dialog lifetimes. Catalog checks cover the provider gallery, populated card grids, keyboard selection, pack versions, instance options, search resets, and provider switching. Skin checks cover account selection, editing modes, shared history, the inline color wheel, opacity, the body diagram, and layer visibility using original synthetic textures. Updater checks use mock GitHub responses and preserve an unsaved skin while an inline update offer opens and closes. Layout checks cover 1280×820, 800×820, and 680×640 and save screenshots. The harness does not open your installed Prism profile, sign in, or launch Minecraft. See the [release notes](releases/0.3.0.md#verification) for the completed checks and final counts.
 
 ```powershell
 . .\scripts\build-chroma.ps1 -Action Environment # Add your dependency path arguments here.
@@ -174,15 +211,15 @@ After a successful build, package the executable, Qt plugins, native libraries, 
 .\scripts\package-chroma.ps1
 ```
 
-The script prints the new package path under `dist`; run `chroma.exe` there and keep its folder together. It requires an empty output directory so existing profile data cannot enter the release package. The portable profile is stored beside the executable until another profile is selected. Use **Launcher menu (•••) → Use Prism folder…** to select an existing Prism profile. The script accepts `-OutputDirectory`, `-RuntimeDirectory`, and the same dependency path options as the build script. Redistributable runtime DLLs must be available in `.tools/release-runtime` or the supplied runtime directory. It does not install or launch the application.
+The script prints the new package path under `dist`; run `chroma.exe` there and keep its folder together. It requires an empty output directory so existing profile data cannot enter the release package. The portable profile is stored beside the executable until another profile is selected. Use **Chroma header menu → Use Prism folder…** to select an existing Prism profile. The script accepts `-OutputDirectory`, `-RuntimeDirectory`, and the same dependency path options as the build script. Redistributable runtime DLLs must be available in `.tools/release-runtime` or the supplied runtime directory. It does not install or launch the application.
 
 On Windows, the test runner stages the two upstream directory-symlink fixtures inside `.tools/build` so the tests also work when Git checked out symlinks as text files.
 
 ## Release versions and Windows installer
 
 Chroma has its own version sequence. While it is in preview, feature releases
-increment the minor version (`0.2.0`, `0.3.0`) and fixes increment the patch version
-(`0.2.1`, `0.2.2`). The three `Launcher_VERSION_*` numbers in `CMakeLists.txt` are
+increment the minor version (`0.3.0`, `0.4.0`) and fixes increment the patch version
+(`0.3.1`, `0.3.2`). The three `Launcher_VERSION_*` numbers in `CMakeLists.txt` are
 the source of truth for the app, installer, package README, and source archives.
 Update the download links and add notes under `docs/releases/` with each release.
 
@@ -216,7 +253,7 @@ source inventory. Keep previous releases available.
 - `ChromaTheme` supplies the light and dark clay palettes and bundled fonts. `ClayStyle` and `ClayWidgets` share surface painting, motion preferences, and native controls; the original Dark palette remains available for existing custom themes.
 - `AccentColor` validates saved values and chooses readable foreground colors.
 - `ChromaProfile` inspects existing Prism folders and stores the remembered selection. `ChromaSettingsObject` keeps interface preferences in `chroma-ui.cfg` while launch preferences remain in `prismlauncher.cfg`.
-- Below 1,000 logical pixels, the details panel hides to preserve library space. The launcher menu retains accounts and instance actions.
+- Below 1,000 logical pixels, the details panel hides to preserve library space. The Chroma header menu retains accounts and instance actions.
 
 ## Further development
 

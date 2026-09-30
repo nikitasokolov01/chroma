@@ -31,9 +31,48 @@ void SkinCanvas::setTool(Tool tool)
 
 void SkinCanvas::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer)
 {
+    m_document->endStroke();
+    m_painting = false;
     m_part = part;
     m_layer = layer;
     update();
+}
+
+void SkinCanvas::setLayerVisibility(bool body, bool outer)
+{
+    m_document->endStroke();
+    m_painting = false;
+    m_bodyVisible = body;
+    m_outerVisible = outer;
+    update();
+}
+
+void SkinCanvas::setPartVisible(int part, bool visible)
+{
+    if (part < SkinTextureDocument::Head || part > SkinTextureDocument::LeftLeg)
+        return;
+    m_document->endStroke();
+    m_painting = false;
+    if (visible)
+        m_visibleParts |= 1u << part;
+    else
+        m_visibleParts &= ~(1u << part);
+    update();
+}
+
+QRegion SkinCanvas::visibleRegion(SkinTextureDocument::Layer layer) const
+{
+    QRegion region;
+    for (int part = SkinTextureDocument::Head; part <= SkinTextureDocument::LeftLeg; ++part) {
+        if (!(m_visibleParts & (1u << part)) || (m_part != SkinTextureDocument::All && m_part != part))
+            continue;
+        const auto bodyPart = static_cast<SkinTextureDocument::Part>(part);
+        if (m_bodyVisible && layer != SkinTextureDocument::Overlay)
+            region += SkinTextureDocument::uvRegion(bodyPart, SkinTextureDocument::Base, m_document->model());
+        if (m_outerVisible && layer != SkinTextureDocument::Base)
+            region += SkinTextureDocument::uvRegion(bodyPart, SkinTextureDocument::Overlay, m_document->model());
+    }
+    return region;
 }
 
 QPointF SkinCanvas::origin() const
@@ -58,18 +97,25 @@ void SkinCanvas::paintEvent(QPaintEvent*)
     for (int y = 0; y < 64; y += 4)
         for (int x = 0; x < 64; x += 4)
             painter.fillRect(QRect(x, y, 4, 4), palette().color(((x + y) / 4) % 2 ? QPalette::Base : QPalette::AlternateBase));
+    const auto visible = visibleRegion(SkinTextureDocument::Both);
+    const auto active = visibleRegion(m_layer);
+    painter.save();
+    painter.setClipRegion(visible, Qt::IntersectClip);
     painter.drawImage(QPoint(0, 0), m_document->image());
-    auto active = SkinTextureDocument::uvRegion(m_part, m_layer, m_document->model());
+    painter.restore();
     painter.save();
     painter.setClipRegion(QRegion(textureRect).subtracted(active));
     painter.fillRect(textureRect, QColor(0, 0, 0, 160));
     painter.restore();
     if (m_grid && m_zoom >= 7) {
+        painter.save();
+        painter.setClipRegion(visible, Qt::IntersectClip);
         painter.setPen(QPen(QColor(100, 100, 100, 100), 0));
         for (int i = 0; i <= 64; ++i) {
             painter.drawLine(i, 0, i, 64);
             painter.drawLine(0, i, 64, i);
         }
+        painter.restore();
     }
     painter.setPen(QPen(palette().color(QPalette::Highlight), 0));
     painter.setBrush(Qt::NoBrush);
@@ -143,9 +189,25 @@ void SkinCanvas::paintTo(QPoint pixel)
         const qreal amount = steps ? qreal(i) / steps : 0;
         const QPoint point(qRound(m_lastPixel.x() + (pixel.x() - m_lastPixel.x()) * amount),
                            qRound(m_lastPixel.y() + (pixel.y() - m_lastPixel.y()) * amount));
-        m_document->paintPixel(point, m_color, m_brushSize, m_part, m_layer, m_tool == Eraser);
+        paintPixel(point);
     }
     m_lastPixel = pixel;
+}
+
+void SkinCanvas::paintPixel(QPoint pixel)
+{
+    if ((!m_bodyVisible && !m_outerVisible) || (m_layer == SkinTextureDocument::Base && !m_bodyVisible) ||
+        (m_layer == SkinTextureDocument::Overlay && !m_outerVisible))
+        return;
+    for (int part = SkinTextureDocument::Head; part <= SkinTextureDocument::LeftLeg; ++part) {
+        if (!(m_visibleParts & (1u << part)) || (m_part != SkinTextureDocument::All && m_part != part))
+            continue;
+        const auto bodyPart = static_cast<SkinTextureDocument::Part>(part);
+        if (m_bodyVisible && m_layer != SkinTextureDocument::Overlay)
+            m_document->paintPixel(pixel, m_color, m_brushSize, bodyPart, SkinTextureDocument::Base, m_tool == Eraser);
+        if (m_outerVisible && m_layer != SkinTextureDocument::Base)
+            m_document->paintPixel(pixel, m_color, m_brushSize, bodyPart, SkinTextureDocument::Overlay, m_tool == Eraser);
+    }
 }
 
 void SkinCanvas::mouseMoveEvent(QMouseEvent* event)
@@ -234,8 +296,11 @@ void SkinCanvas::keyPressEvent(QKeyEvent* event)
         case Qt::Key_Space:
             if (m_tool == Eyedropper)
                 emit colorPicked(m_document->image().pixelColor(m_cursor));
-            else if (m_tool != Pan)
-                m_document->paintPixel(m_cursor, m_color, m_brushSize, m_part, m_layer, m_tool == Eraser);
+            else if (m_tool != Pan) {
+                m_document->beginStroke();
+                paintPixel(m_cursor);
+                m_document->endStroke();
+            }
             break;
         case Qt::Key_Plus:
         case Qt::Key_Equal:

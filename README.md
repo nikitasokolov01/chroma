@@ -4,7 +4,7 @@
 Built on Prism Launcher with C++, Qt Widgets, and customizable light and dark clay themes.</p>
 
 <p align="center">
-  <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v0.2.0">Download for Windows</a> ·
+  <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v0.3.0">Download for Windows</a> ·
   <a href="docs/CHROMA.md">Guide</a> ·
   <a href="docs/CHROMA-MIGRATION.md">Use your Prism library</a> ·
   <a href="https://github.com/nikitasokolov01/chroma/issues">Report an issue</a>
@@ -18,26 +18,28 @@ Chroma rebuilds Prism Launcher's default interface around a card library, a pers
 
 ## Download
 
-**v0.2.0 · Windows x64**
+**v0.3.0 preview · Windows x64**
 
 | Package | Use it when… |
 | --- | --- |
-| [Windows installer](https://github.com/nikitasokolov01/chroma/releases/download/v0.2.0/Chroma-0.2.0-Windows-x64-Setup.exe) | You want a normal installation for your Windows account. |
-| [Portable ZIP](https://github.com/nikitasokolov01/chroma/releases/download/v0.2.0/Chroma-0.2.0-Windows-x64.zip) | You want to extract a folder and run `chroma.exe` from it. Keep its files together. |
+| [Windows installer](https://github.com/nikitasokolov01/chroma/releases/download/v0.3.0/Chroma-0.3.0-Windows-x64-Setup.exe) | You want a normal installation for your Windows account. |
+| [Portable ZIP](https://github.com/nikitasokolov01/chroma/releases/download/v0.3.0/Chroma-0.3.0-Windows-x64.zip) | You want to extract a folder and run `chroma.exe` from it. Keep its files together. |
 
-Read the [v0.2.0 release notes](https://github.com/nikitasokolov01/chroma/releases/tag/v0.2.0) for requirements and known limitations. Updates are downloaded from Releases; the upstream binary updater is disabled.
+Read the [v0.3.0 release notes](docs/releases/0.3.0.md) for requirements and verification results. **Upgrading from 0.2.0 requires this manual download once.** From 0.3.0, Chroma checks its GitHub releases automatically, including preview releases. You choose **Download update**, then **Install and restart** after checksum verification. Automatic checks can be disabled in **Settings → Launcher → Updater**. See [updating Chroma](docs/CHROMA.md#updating-chroma).
 
-## New in v0.2.0: Skin Studio
+## New in v0.3.0: clearer Skin Studio controls
 
 Paint directly on a Classic or Slim 3D model, or switch to the 2D texture beside
 a live preview. Both views share the same skin, brush, color, and undo history.
 
 | Paint in 3D | Edit the 2D texture |
 | --- | --- |
-| [![Skin Studio with a 3D painting canvas, inline color wheel, and separate base and outer visibility for each body part](docs/screenshots/skin-studio.png)](docs/screenshots/skin-studio.png) | [![Skin Studio with its 2D texture canvas, live 3D preview, color wheel, and body-part layer controls](docs/screenshots/skin-studio-2d.png)](docs/screenshots/skin-studio-2d.png) |
+| [![Skin Studio with pixel grids on the 3D model, an inline color wheel, and a clickable body diagram](docs/screenshots/skin-studio.png)](docs/screenshots/skin-studio.png) | [![Skin Studio with its 2D texture canvas, live 3D preview, color wheel, and Body and Outer layer buttons](docs/screenshots/skin-studio-2d.png)](docs/screenshots/skin-studio-2d.png) |
 
 - **Pick colors in place.** The color wheel, hex value, and opacity stay visible beside the canvas.
-- **Reach every surface.** Hide each body part's base or outer layer independently, then rotate the model to paint covered areas.
+- **See each pixel.** The 3D grid follows both body and outer surfaces, including transparent outer pixels. The Grid control works in both editing views.
+- **Choose what is visible.** Use **Body** and **Outer layer** to show each layer; click the head, torso, arms, or legs in the body diagram to hide parts and reach surfaces behind them. Space toggles a focused part.
+- **Paint the visible outer layer.** When **Outer layer** is on, painting changes only that layer. Hide it to paint the body. The same rule applies in 2D.
 - **Keep editing flexible.** Use brush, eraser, color picker, undo/redo, PNG import/export, and local library saving. Base pixels stay opaque; outer layers support transparency.
 
 Open **Skins** in the sidebar, choose a skin, then select **Edit Skin…**. In 3D,
@@ -60,9 +62,9 @@ and image preview.
 - **Choose your appearance.** Use light or dark clay themes and preset or custom accents. Windows caption colors follow the theme while retaining native window controls.
 - **Use your existing Prism profile.** Open instances, worlds, accounts, and custom instance locations directly, without copying modpacks.
 
-Version 0.2.0 also fixes first-open and status-bar skin-preview corruption,
-removes decorative UI slogans, and keeps Alt from revealing the legacy menu bar.
-Commands remain available from **Launcher menu (•••)**.
+Launcher commands now live in the **Chroma header menu**. Click **Chroma** at the
+top of the window for update checks, profile selection, accounts, and instance
+actions. The sidebar keeps navigation and pins together.
 
 ### Light and dark themes
 
@@ -98,7 +100,7 @@ data; they do not show a signed-in user's profile.
 ## Already use Prism?
 
 1. Close Prism and any games using its profile.
-2. In Chroma, choose **Launcher menu (•••) → Use Prism folder…**.
+2. In Chroma, choose **Chroma header menu → Use Prism folder…**.
 3. Select the data folder containing `prismlauncher.cfg`, inspect it, and choose **Use this folder**.
 
 Chroma restarts once and remembers that folder. Instances, worlds, accounts, and launch settings are shared directly; changes affect the same files. Keep one launcher open at a time. Chroma's appearance preferences are stored separately in `chroma-ui.cfg`.

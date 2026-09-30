@@ -53,6 +53,7 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     void updateLayout();
     void updateToolIcons();
     void updateEditingMode();
+    void updateVisibility();
 
     MinecraftAccountPtr m_account;
     SkinTextureDocument m_document;
@@ -73,6 +74,11 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     QWidget* m_canvasPanel = nullptr;
     QWidget* m_inspector = nullptr;
     QComboBox* m_editMode = nullptr;
+    QComboBox* m_region = nullptr;
+    QToolButton* m_showBody = nullptr;
+    QToolButton* m_showOuter = nullptr;
+    QList<QToolButton*> m_partButtons;
+    QLabel* m_layerHint = nullptr;
     SkinColorWheel* m_colorWheel = nullptr;
     QLineEdit* m_colorHex = nullptr;
     QSlider* m_opacity = nullptr;

@@ -28,7 +28,7 @@ class Scene : protected QOpenGLFunctions {
     Scene(const QImage& skin, bool slim, const QImage& cape);
     virtual ~Scene();
 
-    void draw(QOpenGLShaderProgram* program);
+    void draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgram = nullptr);
     void setSkin(const QImage& skin);
     void setCape(const QImage& cape);
     void setMode(bool slim);

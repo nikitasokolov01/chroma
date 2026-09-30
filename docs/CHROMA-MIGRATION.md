@@ -5,7 +5,7 @@ Chroma can open an existing Prism Launcher profile directly. It uses the same in
 ## Choose the folder
 
 1. Close Prism and any Minecraft games using that profile.
-2. In Chroma, open **Launcher menu (•••) → Use Prism folder…**. An empty library also offers this action.
+2. In Chroma, open **Chroma header menu → Use Prism folder…**. An empty library also offers this action.
 3. Select a detected folder or choose **Browse**. Choose the data folder containing `prismlauncher.cfg`, rather than an individual instance. The usual Windows location is `%APPDATA%\PrismLauncher`; portable installations keep it in their portable data folder.
 4. Choose **Inspect** to see the instance count and resolved instance folder. Custom instance and icon locations remain in use.
 5. Choose **Use this folder**. Chroma restarts once to open it.

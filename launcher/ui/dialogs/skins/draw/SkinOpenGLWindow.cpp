@@ -71,6 +71,8 @@ void SkinOpenGLWindow::cleanupGL()
     m_modelProgram = nullptr;
     delete m_backgroundProgram;
     m_backgroundProgram = nullptr;
+    delete m_gridProgram;
+    m_gridProgram = nullptr;
     m_vertexArray.destroy();
     if (context())
         doneCurrent();
@@ -113,11 +115,18 @@ void SkinOpenGLWindow::setTool(SkinCanvas::Tool tool)
     emit toolChanged(tool);
 }
 
-void SkinOpenGLWindow::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer)
+void SkinOpenGLWindow::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer)
 {
     finishStroke();
     m_part = part;
-    m_layer = layer;
+    // 3D layer selection follows the enabled surfaces; the layer argument is
+    // retained for the shared editor controls used by the 2D canvas.
+}
+
+void SkinOpenGLWindow::setGridVisible(bool visible)
+{
+    m_gridVisible = visible;
+    update();
 }
 
 void SkinOpenGLWindow::updateCursor()
@@ -154,7 +163,7 @@ std::optional<opengl::SkinPick> SkinOpenGLWindow::pickAt(QPointF position) const
     const float x = (2.f * position.x() / width() - 1.f) * float(width()) / height() * tangent;
     const float y = (1.f - 2.f * position.y() / height()) * tangent;
     return opengl::pickSkin(eye, forward + x * right + y * up, m_model == SkinModel::SLIM, m_baseVisible ? m_baseParts : 0,
-                            m_overlayVisible ? m_outerParts : 0, m_part, m_layer, m_document ? m_document->image() : m_pendingTexture);
+                            m_overlayVisible ? m_outerParts : 0, m_part);
 }
 
 void SkinOpenGLWindow::applyTool(QPointF position)
@@ -360,6 +369,40 @@ bool SkinOpenGLWindow::initShaders()
     if (!m_modelProgram->bind())
         return false;
 
+    // A separate pass keeps editing guides out of the document and exported
+    // PNG. Derivatives give the grid a stable screen width at every zoom.
+    m_gridProgram = new QOpenGLShaderProgram(this);
+    if (!m_gridProgram->addCacheableShaderFromSourceFile(QOpenGLShader::Vertex, ":/shaders/vshader_skin_model.glsl"))
+        return false;
+    static const char gridFragment[] = R"(
+#ifdef GL_ES
+#extension GL_OES_standard_derivatives : enable
+precision mediump float;
+#endif
+uniform sampler2D texture;
+uniform float gridOpacity;
+varying vec2 v_texcoord;
+void main()
+{
+    vec2 uv = v_texcoord * 64.0;
+    vec2 footprint = max(fwidth(uv), vec2(0.0001));
+    vec2 edgeDistance = abs(fract(uv + 0.5) - 0.5) / footprint;
+    float distance = min(edgeDistance.x, edgeDistance.y);
+    float coverage = 1.0 - smoothstep(0.25, 0.85, distance);
+    // Avoid moire when a grazing face or distant view makes cells too small.
+    coverage *= smoothstep(2.0, 5.0, 1.0 / max(footprint.x, footprint.y));
+    if (coverage < 0.01)
+        discard;
+    vec4 texel = texture2D(texture, v_texcoord);
+    vec3 surface = mix(vec3(0.65), texel.rgb, texel.a);
+    float luminance = dot(surface, vec3(0.2126, 0.7152, 0.0722));
+    vec3 line = luminance < 0.35 ? vec3(0.9) : vec3(0.06);
+    gl_FragColor = vec4(line, coverage * gridOpacity);
+}
+)";
+    if (!m_gridProgram->addCacheableShaderFromSourceCode(QOpenGLShader::Fragment, gridFragment) || !m_gridProgram->link())
+        return false;
+
     // Background shaders
     m_backgroundProgram = new QOpenGLShaderProgram(this);
     // Compile vertex shader
@@ -413,6 +456,7 @@ void SkinOpenGLWindow::paintGL()
     const QSize pixels = size() * devicePixelRatioF();
     glViewport(0, 0, pixels.width(), pixels.height());
     glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_POLYGON_OFFSET_FILL);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glDepthMask(GL_TRUE);
     glClearDepthf(1.0f);
@@ -459,11 +503,17 @@ void SkinOpenGLWindow::paintGL()
     QMatrix4x4 matrix;
     matrix.lookAt(cameraEye(), QVector3D(0, -8, 0), QVector3D(0, 1, 0));
 
-    // Set modelview-projection matrix
+    // Set modelview-projection matrix for both rendering passes.
+    auto* grid = m_document && m_gridVisible ? m_gridProgram : nullptr;
+    if (grid) {
+        grid->bind();
+        grid->setUniformValue("mvp_matrix", m_projection * matrix);
+        grid->release();
+    }
     m_modelProgram->bind();
     m_modelProgram->setUniformValue("mvp_matrix", m_projection * matrix);
 
-    m_scene->draw(m_modelProgram);
+    m_scene->draw(m_modelProgram, grid);
     m_modelProgram->release();
     if (m_vertexArray.isCreated())
         m_vertexArray.release();

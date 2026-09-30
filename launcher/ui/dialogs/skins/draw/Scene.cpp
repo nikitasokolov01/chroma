@@ -74,16 +74,42 @@ Scene::~Scene()
     delete m_capeTexture;
 }
 
-void Scene::draw(QOpenGLShaderProgram* program)
+void Scene::draw(QOpenGLShaderProgram* program, QOpenGLShaderProgram* gridProgram)
 {
     m_skinTexture->bind();
-    program->setUniformValue("texture", 0);
     const auto& parts = m_parts[m_slim ? 1 : 0];
-    for (int i = 0; i < parts.size(); ++i) {
-        const bool base = i < 6;
-        if ((base ? m_baseVisible : m_overlayVisible) && ((base ? m_baseParts : m_outerParts) & (1u << (i % 6))))
-            parts[i]->draw(program);
+    for (int layer = 0; layer < 2; ++layer) {
+        if (!(layer == 0 ? m_baseVisible : m_overlayVisible))
+            continue;
+        const unsigned mask = layer == 0 ? m_baseParts : m_outerParts;
+        auto drawLayer = [&](QOpenGLShaderProgram* shader) {
+            for (int part = 0; part < 6; ++part)
+                if (mask & (1u << part))
+                    parts[layer * 6 + part]->draw(shader);
+        };
+        program->bind();
+        program->setUniformValue("texture", 0);
+        drawLayer(program);
+        if (gridProgram) {
+            // Draw each grid after its own texture, so translucent Outer pixels
+            // blend over the Base grid and opaque pixels cover it naturally.
+            // The shared face triangles provide back-face culling and exact
+            // Classic/Slim texel boundaries, including empty outer surfaces.
+            gridProgram->bind();
+            gridProgram->setUniformValue("texture", 0);
+            gridProgram->setUniformValue("gridOpacity", layer == 0 ? .48f : .68f);
+            glDepthMask(GL_FALSE);
+            glDepthFunc(GL_LEQUAL);
+            glEnable(GL_POLYGON_OFFSET_FILL);
+            glPolygonOffset(-1.f, -1.f);
+            drawLayer(gridProgram);
+            glDisable(GL_POLYGON_OFFSET_FILL);
+            glDepthFunc(GL_LESS);
+            glDepthMask(GL_TRUE);
+            gridProgram->release();
+        }
     }
+    program->bind();
     m_skinTexture->release();
     if (m_capeVisible) {
         m_capeTexture->bind();

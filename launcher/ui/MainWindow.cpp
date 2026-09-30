@@ -454,6 +454,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     ui->fileMenu->insertAction(ui->actionAddInstance, m_usePrismFolder);
     auto* launcherMenu = new QMenu(this);
     launcherMenu->addAction(m_usePrismFolder);
+    if (APPLICATION->updaterEnabled())
+        launcherMenu->addAction(ui->actionCheckUpdate);
     launcherMenu->addSeparator();
     launcherMenu->addMenu(ui->fileMenu);
     launcherMenu->addMenu(ui->editMenu);
@@ -491,6 +493,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(m_workspace, &InlineWorkspace::emptied, this, [this] { m_home->showHomePage(m_home->libraryOnly()); });
     connect(m_workspace, &InlineWorkspace::navigationLockChanged, this, [this](bool locked) {
         m_home->findChild<QWidget*>("homeRail")->setEnabled(!locked);
+        if (auto* menu = m_home->findChild<QWidget*>("homeLauncherMenu"))
+            menu->setEnabled(!locked);
         ui->menuBar->setEnabled(!locked);
     });
     connect(m_home, &LauncherHome::homeRequested, this, [this](bool libraryOnly) {

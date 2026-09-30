@@ -60,7 +60,10 @@ $installer = Join-Path $releaseRoot "Chroma-$Version-Windows-x64-Setup.exe"
 if ($LASTEXITCODE -ne 0) { throw "NSIS failed: $LASTEXITCODE" }
 $zipPath = Join-Path $releaseRoot "Chroma-$Version-Windows-x64.zip"
 Compress-Archive -LiteralPath $portableStage -DestinationPath $zipPath -CompressionLevel Optimal -Force
-$metadata = [ordered]@{ version = $Version; installedFiles = @($inventory); installer = (Split-Path -Leaf $installer); portableZip = (Split-Path -Leaf $zipPath) }
+$portableInventory = @(Get-ChildItem -LiteralPath $portableStage -File -Recurse | Sort-Object FullName | ForEach-Object {
+    [ordered]@{ path = $_.FullName.Substring($portableStage.Length + 1).Replace('\', '/'); size = $_.Length; sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+})
+$metadata = [ordered]@{ version = $Version; installedFiles = @($inventory); portableFiles = $portableInventory; installer = (Split-Path -Leaf $installer); portableZip = (Split-Path -Leaf $zipPath) }
 $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $releaseRoot 'package-manifest.json') -Encoding UTF8
 Get-FileHash -LiteralPath $installer, $zipPath -Algorithm SHA256 | Format-Table -AutoSize
 Write-Output "Release staging: $stagingRoot"

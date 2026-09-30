@@ -127,10 +127,20 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     auto* headerLayout = new QHBoxLayout(header);
     headerLayout->setContentsMargins(20, 12, 20, 12);
     headerLayout->setSpacing(12);
-    auto* logo = new QLabel(header);
-    logo->setPixmap(APPLICATION->logo().pixmap(30, 30));
-    headerLayout->addWidget(logo);
-    headerLayout->addWidget(label(BuildConfig.LAUNCHER_DISPLAYNAME, "brand", header));
+    auto* launcherMenu = new ClayToolButton(header);
+    launcherMenu->setObjectName("homeLauncherMenu");
+    launcherMenu->setText(BuildConfig.LAUNCHER_DISPLAYNAME);
+    launcherMenu->setIcon(APPLICATION->logo());
+    launcherMenu->setIconSize(QSize(28, 28));
+    launcherMenu->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    launcherMenu->setToolTip(tr("Launcher menu"));
+    launcherMenu->setAccessibleName(tr("Launcher menu"));
+    launcherMenu->setCursor(Qt::PointingHandCursor);
+    launcherMenu->setMenu(m_actions.launcherMenu);
+    launcherMenu->setPopupMode(QToolButton::InstantPopup);
+    launcherMenu->setFixedHeight(44);
+    launcherMenu->setStyleSheet("QToolButton#homeLauncherMenu { font-size: 21px; font-weight: 800; padding: 0 12px; }");
+    headerLayout->addWidget(launcherMenu);
     auto* separator = label(QStringLiteral("/"), "muted", header);
     headerLayout->addWidget(separator);
     m_pageTitle = new HeaderTitleLabel(tr("Home"), header);
@@ -214,11 +224,6 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     m_pinsScroll->viewport()->setAutoFillBackground(false);
     pins->setAutoFillBackground(false);
     railLayout->addWidget(m_pinsScroll, 1);
-    auto* folders = navigation(tr("Launcher menu"), "more");
-    folders->setText(QStringLiteral("\u2022\u2022\u2022"));
-    folders->setToolButtonStyle(Qt::ToolButtonTextOnly);
-    folders->setMenu(m_actions.launcherMenu);
-    folders->setPopupMode(QToolButton::InstantPopup);
     auto* settings = navigation(tr("Settings"), "settings");
     connect(settings, &QToolButton::clicked, m_actions.settings, &QAction::trigger);
     body->addWidget(rail);
@@ -742,9 +747,8 @@ void LauncherHome::refresh()
     m_recent->setVisible(!m_libraryOnly && instances->count() > 0);
     m_profileButton->setVisible(instances->count() == 0);
     m_empty->setVisible(m_model->rowCount() == 0);
-    m_empty->setText(instances->count() == 0
-                         ? tr("No instances yet.\nUse your Prism folder or create a new instance above.")
-                         : tr("No instances match your search.\nTry a different name or clear the search."));
+    m_empty->setText(instances->count() == 0 ? tr("No instances yet.\nUse your Prism folder or create a new instance above.")
+                                             : tr("No instances match your search.\nTry a different name or clear the search."));
     refreshPins();
     refreshSelection();
 }
@@ -821,6 +825,9 @@ void LauncherHome::changeEvent(QEvent* event)
 
 void LauncherHome::retranslate()
 {
+    auto* launcherMenu = findChild<QToolButton*>("homeLauncherMenu");
+    launcherMenu->setToolTip(tr("Launcher menu"));
+    launcherMenu->setAccessibleName(tr("Launcher menu"));
     m_recentSignature.clear();
     m_search->setPlaceholderText(tr("Search your instances"));
     m_search->setAccessibleName(tr("Search your instances"));
