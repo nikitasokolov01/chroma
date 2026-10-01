@@ -61,6 +61,10 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     void updateToolIcons();
     void updateEditingMode();
     void updateVisibility();
+    void updateReferenceVisibility();
+    void setSharedTool(SkinCanvas::Tool tool);
+    void updateEffectControls();
+    void previewColorAdjustments();
     void setBodyThroughOverlay(bool enabled);
     void updateLayerHint();
     void applyEffect();
@@ -99,6 +103,8 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     QComboBox* m_effect = nullptr;
     QSlider* m_effectAmount = nullptr;
     QSpinBox* m_effectValue = nullptr;
+    QRegion m_effectRegion;
+    QPushButton* m_effectApply = nullptr;
     QGridLayout* m_fileLayout = nullptr;
     QGridLayout* m_paletteLayout = nullptr;
     QList<QToolButton*> m_swatches;
@@ -111,7 +117,10 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     QComboBox* m_region = nullptr;
     QToolButton* m_showBody = nullptr;
     QToolButton* m_showOuter = nullptr;
+    QToolButton* m_referenceBody = nullptr;
+    QToolButton* m_referenceOuter = nullptr;
     QList<QToolButton*> m_partButtons;
+    QList<QToolButton*> m_referencePartButtons;
     QLabel* m_layerHint = nullptr;
     SkinColorWheel* m_colorWheel = nullptr;
     QLineEdit* m_colorHex = nullptr;
@@ -134,4 +143,6 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     bool m_referenceFailed = false;
     bool m_referenceLoaded = false;
     bool m_bodyThroughOverlay = false;
+    bool m_sharingTool = false;
+    bool m_activeReference = false;
 };

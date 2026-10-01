@@ -28,9 +28,21 @@ to place them, or press **Escape** to cancel placement.
 
 ## Effects
 
-Open the **Effects** tab under the color controls. Choose **Hue**, **Brightness**,
-**Grayscale**, or **Invert**, set the amount where applicable, and select
-**Apply**. Each application is one undo step.
+Open the **Effects** tab under the color controls. **Hue** and **Brightness**
+update the skin as you move the slider or change the number. Every adjustment
+uses the same starting colors: changing hue from 40° to 50° applies 50° from
+the starting skin. It does not add another 50° to the previous preview.
+
+Hue and brightness remember their separate values when you switch effects.
+Set an adjustment to **0** to remove it. Both sliders share one undo step,
+and **Redo** restores their values. Painting, pasting, changing the selection,
+or changing visible parts or layers finishes the adjustment; further slider
+changes start from the resulting skin.
+
+**Grayscale** and **Invert** use **Apply effect**. Each application is one undo
+step.
+
+![Live hue adjustment with its remembered value](screenshots/skin-effects-development.png)
 
 Effects apply to the enabled layers of the body parts shown in the preview.
 Hide a part or layer to protect it. If you also have a marquee, only selected
@@ -41,8 +53,13 @@ transparent pixels are left alone.
 
 Import a second PNG as a reference without replacing the editing skin. The
 reference has its own Classic/Slim setting and can be viewed in 3D or as a 2D
-texture. Use its color picker and marquee to sample colors or copy pixels.
-Painting and effects always belong to the editing skin.
+texture. The toolbar selects the tool for both views. Use **Color picker** and
+**Marquee** on either skin to sample colors or copy pixels. Painting and effects
+belong to the editing skin; the reference remains read-only.
+
+The reference has its own body-part diagram and **Body / Outer layer** buttons.
+These hide reference parts or layers without changing the editing skin's
+visibility controls.
 
 Select an area on the reference, copy it, then paste into the editing view.
 Pasting is undoable. Hide the reference panel whenever you want more canvas
@@ -51,6 +68,19 @@ small windows, use **Editing / Reference** to switch between canvases. Choosing
 Paste returns you to the editing skin.
 
 ![Editing a skin beside a separate reference](screenshots/skin-reference-development.png)
+
+## Owned capes
+
+Open **Skins**, choose a Microsoft account, and select one of its owned capes
+from the cape dropdown. The preview shows the selected cape. Choose
+**Apply cape** to equip it without uploading or changing your skin. Select
+**No Cape** and apply it to remove the equipped cape.
+
+![Owned cape selection and Apply cape in Skin Library](screenshots/skin-capes-development.png)
+
+Cape changes require an eligible Minecraft Java account and are unavailable
+while it is signing in or running Minecraft. Local skin editing remains
+available without an account.
 
 ## Skin Extras
 
@@ -80,8 +110,11 @@ of your profile.
 
 ## Verification
 
-The development build passed 34 test suites, 47 native launcher UI checks,
-47 UI checks using the fallback renderer, and eight updater preservation checks.
+The development build passed 34 test suites, 48 native launcher UI checks,
+48 UI checks using the fallback renderer, and eight updater preservation checks.
 Coverage includes selected-pixel copy/paste, visible-part effects, Shift cleanup,
-Classic/Slim conversion, undo, and saving then applying extras in another session.
+live adjustment history, independent reference visibility, Classic/Slim
+conversion, undo, and saving then applying extras in another session. Cape
+requests use a simulated account and network to check equipping, removing, and
+refused changes without altering a real account.
 The screenshots above use synthetic skins and an isolated test profile.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
 
+#include <QNetworkAccessManager>
 #include <functional>
 #include <optional>
 
@@ -14,6 +15,10 @@ class SkinApplyTask : public Task {
     Q_OBJECT
    public:
     SkinApplyTask(MinecraftAccountPtr account, QString path, SkinModel::Model model, std::optional<QString> cape = std::nullopt);
+    static shared_qobject_ptr<SkinApplyTask> forCape(
+        MinecraftAccountPtr account,
+        QString cape,
+        shared_qobject_ptr<QNetworkAccessManager> network = shared_qobject_ptr<QNetworkAccessManager>());
     bool abort() override;
 
    protected:
@@ -30,4 +35,6 @@ class SkinApplyTask : public Task {
     QByteArray m_png;
     Task::Ptr m_step;
     QList<Task::Ptr> m_steps;
+    bool m_capeOnly = false;
+    shared_qobject_ptr<QNetworkAccessManager> m_capeNetwork;
 };

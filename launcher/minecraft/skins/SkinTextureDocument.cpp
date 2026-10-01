@@ -28,6 +28,43 @@ bool sameFillColor(QRgb left, QRgb right)
 {
     return left == right || (qAlpha(left) == 0 && qAlpha(right) == 0);
 }
+QColor effectColor(QColor original, SkinTextureDocument::Effect effect, int amount)
+{
+    using E = SkinTextureDocument;
+    if ((effect == E::Hue || effect == E::Brightness) && amount == 0)
+        return original;
+    auto next = original;
+    switch (effect) {
+        case E::Hue: {
+            const auto hue = original.hsvHueF();
+            if (hue >= 0) {
+                qreal shifted = hue + amount / 360.0;
+                if (shifted < 0)
+                    shifted += 1;
+                if (shifted >= 1)
+                    shifted -= 1;
+                next = QColor::fromHsvF(shifted, original.hsvSaturationF(), original.valueF(), original.alphaF());
+            }
+            break;
+        }
+        case E::Brightness: {
+            const auto channel = [amount](int value) {
+                return amount > 0 ? value + qRound((255 - value) * amount / 100.0) : qRound(value * (100 + amount) / 100.0);
+            };
+            next.setRgb(channel(original.red()), channel(original.green()), channel(original.blue()), original.alpha());
+            break;
+        }
+        case E::Grayscale: {
+            const int gray = qGray(original.rgba());
+            next.setRgb(gray, gray, gray, original.alpha());
+            break;
+        }
+        case E::Invert:
+            next.setRgb(255 - original.red(), 255 - original.green(), 255 - original.blue(), original.alpha());
+            break;
+    }
+    return next;
+}
 }  // namespace
 
 SkinTextureDocument::SkinTextureDocument(QObject* parent) : QObject(parent) {}
@@ -42,6 +79,7 @@ void SkinTextureDocument::setSelection(QRegion selection)
     selection &= uvRegion(All, Both, model()) & QRegion(m_state.image.rect());
     if (m_selection == selection)
         return;
+    finishColorAdjustments();
     m_selection = selection;
     emit selectionChanged();
 }
@@ -112,6 +150,7 @@ QRegion SkinTextureDocument::uvRegion(Part part, Layer layer, SkinModel::Model m
 
 bool SkinTextureDocument::load(const QImage& image, SkinModel::Model model)
 {
+    finishColorAdjustments();
     auto normalized = SkinModel::normalizeTexture(image);
     if (normalized.isNull())
         return false;
@@ -127,6 +166,7 @@ bool SkinTextureDocument::load(const QImage& image, SkinModel::Model model)
 
 bool SkinTextureDocument::importPng(const QString& path, QString* error)
 {
+    finishColorAdjustments();
     auto image = readPng(path, error);
     if (image.isNull())
         return false;
@@ -159,11 +199,13 @@ void SkinTextureDocument::markSaved()
 
 void SkinTextureDocument::beginStroke()
 {
+    finishColorAdjustments();
     m_stroke = true;
 }
 
 void SkinTextureDocument::paintPixel(QPoint pixel, QColor color, int brushSize, Part part, Layer layer, bool erase)
 {
+    finishColorAdjustments();
     if (m_state.image.isNull())
         return;
     const auto editable = editableRegion(uvRegion(part, layer, model()));
@@ -214,6 +256,7 @@ void SkinTextureDocument::record()
 
 void SkinTextureDocument::setModel(SkinModel::Model model)
 {
+    finishColorAdjustments();
     endStroke();
     if (m_state.model == model)
         return;
@@ -225,28 +268,34 @@ void SkinTextureDocument::setModel(SkinModel::Model model)
 
 void SkinTextureDocument::undo()
 {
+    finishColorAdjustments();
     endStroke();
     if (!canUndo())
         return;
     m_state = m_history[--m_cursor];
+    restoreColorAdjustments();
     setSelection(m_selection);
     emit changed();
 }
 
 void SkinTextureDocument::redo()
 {
+    finishColorAdjustments();
     endStroke();
     if (!canRedo())
         return;
     m_state = m_history[++m_cursor];
+    restoreColorAdjustments();
     setSelection(m_selection);
     emit changed();
 }
 
 void SkinTextureDocument::reset()
 {
+    finishColorAdjustments();
     endStroke();
     m_state = m_original;
+    restoreColorAdjustments();
     setSelection(m_selection);
     record();
     emit changed();
@@ -254,6 +303,7 @@ void SkinTextureDocument::reset()
 
 void SkinTextureDocument::floodFill(QPoint seed, QColor color, const QRegion& allowed)
 {
+    finishColorAdjustments();
     endStroke();
     const auto editable = editableRegion(allowed);
     if (!color.isValid() || !editable.contains(seed))
@@ -292,6 +342,7 @@ void SkinTextureDocument::floodFill(QPoint seed, QColor color, const QRegion& al
 
 void SkinTextureDocument::applyEffect(Effect effect, int amount, const QRegion& allowed)
 {
+    finishColorAdjustments();
     endStroke();
     if (effect < Hue || effect > Invert || ((effect == Hue || effect == Brightness) && amount == 0))
         return;
@@ -305,35 +356,7 @@ void SkinTextureDocument::applyEffect(Effect effect, int amount, const QRegion& 
                 if (!original.alpha())
                     continue;
                 auto next = original;
-                switch (effect) {
-                    case Hue: {
-                        const auto hue = original.hsvHueF();
-                        if (hue >= 0) {
-                            qreal shifted = hue + amount / 360.0;
-                            if (shifted < 0)
-                                shifted += 1;
-                            if (shifted >= 1)
-                                shifted -= 1;
-                            next = QColor::fromHsvF(shifted, original.hsvSaturationF(), original.valueF(), original.alphaF());
-                        }
-                        break;
-                    }
-                    case Brightness: {
-                        const auto channel = [amount](int value) {
-                            return amount > 0 ? value + qRound((255 - value) * amount / 100.0) : qRound(value * (100 + amount) / 100.0);
-                        };
-                        next.setRgb(channel(original.red()), channel(original.green()), channel(original.blue()), original.alpha());
-                        break;
-                    }
-                    case Grayscale: {
-                        const int gray = qGray(original.rgba());
-                        next.setRgb(gray, gray, gray, original.alpha());
-                        break;
-                    }
-                    case Invert:
-                        next.setRgb(255 - original.red(), 255 - original.green(), 255 - original.blue(), original.alpha());
-                        break;
-                }
+                next = effectColor(original, effect, amount);
                 if (next.rgba() != original.rgba()) {
                     m_state.image.setPixelColor(x, y, next);
                     modified = true;
@@ -345,6 +368,87 @@ void SkinTextureDocument::applyEffect(Effect effect, int amount, const QRegion& 
         record();
         emit changed();
     }
+}
+
+void SkinTextureDocument::finishColorAdjustments()
+{
+    if (m_adjustmentBase.isNull())
+        return;
+    m_adjustmentBase = {};
+    m_adjustmentRegion = {};
+    m_adjustmentHistory = -1;
+    m_hueAdjustment = m_brightnessAdjustment = 0;
+    m_state.adjustmentBase = {};
+    m_state.adjustmentRegion = {};
+    m_state.hue = m_state.brightness = 0;
+    emit adjustmentsChanged();
+}
+
+void SkinTextureDocument::restoreColorAdjustments()
+{
+    m_adjustmentBase = m_state.adjustmentBase;
+    m_adjustmentRegion = m_state.adjustmentRegion;
+    m_hueAdjustment = m_state.hue;
+    m_brightnessAdjustment = m_state.brightness;
+    m_adjustmentHistory = m_adjustmentBase.isNull() ? -1 : m_cursor;
+    emit adjustmentsChanged();
+}
+
+void SkinTextureDocument::setColorAdjustments(int hue, int brightness, const QRegion& allowed)
+{
+    endStroke();
+    const auto region = editableRegion(allowed);
+    if (m_state.image.isNull())
+        return;
+    if (!m_adjustmentBase.isNull() && region != m_adjustmentRegion)
+        finishColorAdjustments();
+    if (m_adjustmentBase.isNull()) {
+        m_adjustmentBase = m_state.image;
+        m_adjustmentRegion = region;
+    }
+    m_hueAdjustment = qBound(-180, hue, 180);
+    m_brightnessAdjustment = qBound(-100, brightness, 100);
+    const auto before = m_state.image;
+    auto image = m_adjustmentBase;
+    for (const auto& rect : m_adjustmentRegion)
+        for (int y = rect.top(); y <= rect.bottom(); ++y)
+            for (int x = rect.left(); x <= rect.right(); ++x) {
+                const auto original = m_adjustmentBase.pixelColor(x, y);
+                if (!original.alpha())
+                    continue;
+                auto color = effectColor(original, Hue, m_hueAdjustment);
+                color = effectColor(color, Brightness, m_brightnessAdjustment);
+                image.setPixelColor(x, y, color);
+            }
+    m_state.image = image;
+    m_state.adjustmentBase = m_adjustmentBase;
+    m_state.adjustmentRegion = m_adjustmentRegion;
+    m_state.hue = m_hueAdjustment;
+    m_state.brightness = m_brightnessAdjustment;
+    if (image == m_adjustmentBase && m_adjustmentHistory >= 0) {
+        m_history.resize(m_cursor + 1);
+        if (m_adjustmentHistory == 0) {
+            // The baseline can have fallen outside the bounded undo history.
+            m_history[0] = { image, m_state.model };
+            m_cursor = 0;
+        } else {
+            m_history.removeAt(m_adjustmentHistory);
+            m_cursor = m_adjustmentHistory - 1;
+        }
+        m_adjustmentHistory = -1;
+    } else if (image != m_adjustmentBase) {
+        if (m_adjustmentHistory < 0) {
+            record();
+            m_adjustmentHistory = m_cursor;
+        } else {
+            if (before != image)
+                m_history.resize(m_cursor + 1);
+            m_history[m_adjustmentHistory] = m_state;
+        }
+    }
+    emit adjustmentsChanged();
+    if (before != image)
+        emit changed();
 }
 
 SkinTextureDocument::PixelPatch SkinTextureDocument::copyPixels(const QRegion& allowed) const
@@ -364,6 +468,7 @@ SkinTextureDocument::PixelPatch SkinTextureDocument::copyPixels(const QRegion& a
 
 void SkinTextureDocument::pastePixels(const PixelPatch& patch, QPoint destination, const QRegion& allowed)
 {
+    finishColorAdjustments();
     endStroke();
     if (!validPatch(patch))
         return;

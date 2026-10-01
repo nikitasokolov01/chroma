@@ -30,9 +30,10 @@ Read the [v0.3.0 release notes](docs/releases/0.3.0.md) for requirements and ver
 ## Skin Studio work in development
 
 The `codex/skin-studio-tools` branch adds bucket fill, a marquee selection, Shift
-painting through the outer layer, color effects, reference skins with copy/paste,
-and a named **Skin Extras** inventory for reusable pieces such as helmets or
-whole outer layers. See the [tools guide](docs/SKIN-STUDIO-TOOLS.md). These changes
+painting through the outer layer, live hue and brightness adjustments, reference
+skins with shared tools, separate visibility controls and copy/paste, owned cape
+switching, and a named **Skin Extras** inventory for reusable pieces such as
+helmets or whole outer layers. See the [tools guide](docs/SKIN-STUDIO-TOOLS.md). These changes
 are separate from the published 0.3.0 download and await merging to `main`.
 
 ![Skin Extras inventory in the development build](docs/screenshots/skin-extras-development.png)

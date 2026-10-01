@@ -69,6 +69,13 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
     : QDialog(parent), m_acct(acct), m_ui(new Ui::SkinManageDialog), m_list(this, APPLICATION->settings()->get("SkinsDir").toString(), acct)
 {
     m_ui->setupUi(this);
+    m_applyCape = new QPushButton(tr("Apply cape"), m_ui->capeBox);
+    m_applyCape->setObjectName("skinApplyCape");
+    m_applyCape->setAutoDefault(false);
+    m_applyCape->setCursor(Qt::PointingHandCursor);
+    m_applyCape->setToolTip(tr("Equip the selected owned cape without changing the skin."));
+    m_ui->verticalLayout_4->insertWidget(2, m_applyCape);
+    connect(m_applyCape, &QPushButton::clicked, this, &SkinManageDialog::applySelectedCape);
     auto* importControls = new QGridLayout;
     int controlIndex = 0;
     while (auto* item = m_ui->buttonsHLayout->takeAt(0)) {
@@ -261,15 +268,39 @@ void SkinManageDialog::selectAccount(MinecraftAccountPtr account)
 void SkinManageDialog::updateAccountActions()
 {
     const bool online = m_acct && m_acct->accountType() == AccountType::MSA && m_acct->hasProfile();
-    const bool ready = online && !m_acct->isActive() && !m_acct->isInUse();
+    const bool changingCape = m_capeTask && m_capeTask->isRunning();
+    const bool ready = online && !m_acct->isActive() && !m_acct->isInUse() && !changingCape;
     const auto* skin = getSelectedSkin();
-    m_editButton->setEnabled(skin != nullptr);
+    m_editButton->setEnabled(skin != nullptr && !changingCape);
+    findChild<QPushButton*>("skinManageAccounts")->setEnabled(!changingCape);
     m_ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(skin && ready);
     m_ui->resetBtn->setEnabled(ready);
+    m_applyCape->setEnabled(ready && m_ui->capeCombo->currentData().toString() != m_acct->accountData()->minecraftProfile.currentCape);
+    m_ui->capeCombo->setEnabled(!changingCape);
+    m_accountCombo->setEnabled(!changingCape && APPLICATION->accounts()->count() > 0);
+    m_ui->buttonBox->button(QDialogButtonBox::Cancel)->setEnabled(!changingCape);
+    if (changingCape)
+        return;
     m_accountStatus->setText(!m_acct   ? tr("Local library · Add an account to apply skins.")
                              : !online ? tr("Local editing · Microsoft sign-in is required to apply skins.")
                              : !ready  ? tr("Close Minecraft and finish sign-in before applying a skin.")
                                        : tr("Applying a skin updates %1’s Minecraft profile.").arg(m_acct->profileName()));
+}
+
+void SkinManageDialog::applySelectedCape()
+{
+    if (!m_applyCape->isEnabled())
+        return;
+    const auto account = m_acct;
+    m_capeTask = SkinApplyTask::forCape(account, m_ui->capeCombo->currentData().toString());
+    connect(m_capeTask.get(), &Task::started, this, &SkinManageDialog::updateAccountActions);
+    connect(m_capeTask.get(), &Task::status, m_accountStatus, &QLabel::setText);
+    connect(m_capeTask.get(), &Task::finished, this, [this, account] {
+        updateAccountActions();
+        m_accountStatus->setText(m_capeTask->wasSuccessful() ? tr("Cape updated on %1’s Minecraft account.").arg(account->profileName())
+                                                             : m_capeTask->failReason());
+    });
+    m_capeTask->start();
 }
 
 void SkinManageDialog::activated(QModelIndex index)
@@ -437,6 +468,7 @@ void SkinManageDialog::on_capeCombo_currentIndexChanged(int index)
                 QPixmap::fromImage(skin->getPreview()).scaled(m_skinPreviewLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
         }
     }
+    updateAccountActions();
 }
 
 void SkinManageDialog::on_steveBtn_toggled(bool checked)
@@ -454,6 +486,8 @@ void SkinManageDialog::on_steveBtn_toggled(bool checked)
 
 void SkinManageDialog::accept()
 {
+    if (m_capeTask && m_capeTask->isRunning())
+        return;
     if (!m_acct)
         return;
     auto skin = m_list.skin(m_selectedSkinKey);
@@ -468,6 +502,12 @@ void SkinManageDialog::accept()
     if (auto selected = m_list.skin(m_selectedSkinKey))
         selected->setURL(m_acct->accountData()->minecraftProfile.skin.url);
     QDialog::accept();
+}
+
+void SkinManageDialog::reject()
+{
+    if (!m_capeTask || !m_capeTask->isRunning())
+        QDialog::reject();
 }
 
 void SkinManageDialog::editSelectedSkin()

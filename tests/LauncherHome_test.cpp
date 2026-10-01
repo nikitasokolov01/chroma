@@ -1289,6 +1289,8 @@ class LauncherHomeTest : public QObject {
 
     void skinEffectsRespectVisibilityAndSelection() { SkinLibraryUiTests::effectsRespectVisibilityAndSelection(m_window, m_root); }
 
+    void ownedCapeChangesKeepTheSkin() { SkinLibraryUiTests::ownedCapeChangesKeepTheSkin(m_window, m_root); }
+
     void skinShiftPaintingResetsOutsideEditor() { SkinLibraryUiTests::shiftPaintingResetsOutsideEditor(m_window, m_root); }
 
     void skinReferenceCopyPasteStaysIndependent() { SkinLibraryUiTests::referenceCopyPasteStaysIndependent(m_window, m_root); }

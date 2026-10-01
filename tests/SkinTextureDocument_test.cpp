@@ -33,6 +33,90 @@ class SkinTextureDocumentTest : public QObject {
     }
 
    private slots:
+    void liveAdjustmentsUseStartingColorsAndOneUndo()
+    {
+        QImage source(64, 64, QImage::Format_ARGB32);
+        source.fill(QColor(90, 160, 45, 180));
+        Document document;
+        QVERIFY(document.load(source));
+        const auto before = document.image();
+        const auto scope = Document::uvRegion(Document::Head, Document::Overlay, document.model());
+        document.setSelection(QRegion(QRect(40, 8, 2, 1)));
+        document.setColorAdjustments(40, 0, scope);
+        QVERIFY(document.image() != before);
+        document.setColorAdjustments(50, 20, scope);
+        Document expected;
+        QVERIFY(expected.load(before));
+        expected.setSelection(document.selection());
+        expected.applyEffect(Document::Hue, 50, scope);
+        expected.applyEffect(Document::Brightness, 20, scope);
+        QCOMPARE(document.image(), expected.image());
+        QCOMPARE(document.image().pixelColor(42, 8), before.pixelColor(42, 8));
+        QCOMPARE(document.image().pixelColor(40, 8).alpha(), before.pixelColor(40, 8).alpha());
+        const auto adjusted = document.image();
+        document.undo();
+        QCOMPARE(document.image(), before);
+        QVERIFY(!document.canUndo());
+        QCOMPARE(document.hueAdjustment(), 0);
+        document.redo();
+        QCOMPARE(document.image(), adjusted);
+        QCOMPARE(document.hueAdjustment(), 50);
+        QCOMPARE(document.brightnessAdjustment(), 20);
+        document.setColorAdjustments(0, 0, scope);
+        QCOMPARE(document.image(), before);
+        QVERIFY(!document.isDirty());
+        QVERIFY(!document.canUndo());
+        document.setColorAdjustments(70, 0, scope);
+        document.setSelection(QRegion(QRect(41, 8, 1, 1)));
+        QCOMPARE(document.hueAdjustment(), 0);
+        const auto frozen = document.image();
+        document.setColorAdjustments(10, 0, scope);
+        document.undo();
+        QCOMPARE(document.image(), frozen);
+        document.undo();
+        QCOMPARE(document.image(), before);
+    }
+
+    void editingAfterLiveAdjustmentsUsesASeparateUndo()
+    {
+        QImage source(64, 64, QImage::Format_ARGB32);
+        source.fill(Qt::red);
+        Document document;
+        QVERIFY(document.load(source));
+        const auto scope = Document::uvRegion(Document::All, Document::Both, document.model());
+        document.setColorAdjustments(60, 0, scope);
+        const auto adjusted = document.image();
+        document.beginStroke();
+        document.paintPixel(QPoint(8, 8), Qt::blue, 1, Document::Head, Document::Base);
+        document.endStroke();
+        QCOMPARE(document.hueAdjustment(), 0);
+        document.undo();
+        QCOMPARE(document.image(), adjusted);
+        QCOMPARE(document.hueAdjustment(), 60);
+        document.setColorAdjustments(40, 0, scope);
+        QVERIFY(!document.canRedo());
+        document.undo();
+        QCOMPARE(document.image(), SkinModel::normalizeTexture(source));
+        QVERIFY(!document.canUndo());
+    }
+
+    void capeOnlyRejectsMissingOfflineAndUnownedAccounts()
+    {
+        auto missing = SkinApplyTask::forCape(nullptr, "cape");
+        missing->start();
+        QVERIFY(missing->isFinished());
+        QVERIFY(!missing->wasSuccessful());
+        const auto account = MinecraftAccount::createOffline("CapeTest");
+        auto offline = SkinApplyTask::forCape(account, "cape");
+        offline->start();
+        QVERIFY(!offline->wasSuccessful());
+        account->accountData()->type = AccountType::MSA;
+        auto unowned = SkinApplyTask::forCape(account, "unowned");
+        unowned->start();
+        QVERIFY(unowned->failReason().contains("owned"));
+        QVERIFY(account->accountData()->minecraftProfile.currentCape.isEmpty());
+    }
+
     void normalizationHandlesPixelFormatsAndOpaqueEdges()
     {
         for (const auto format : { QImage::Format_RGB888, QImage::Format_RGBA8888, QImage::Format_ARGB32 }) {
@@ -203,6 +287,28 @@ class SkinTextureDocumentTest : public QObject {
             ++steps;
         }
         QCOMPARE(steps, 100);
+    }
+
+    void liveAdjustmentAtTheUndoLimitCanReturnToZero()
+    {
+        Document document;
+        auto original = texture();
+        original.setPixelColor(8, 8, Qt::red);
+        QVERIFY(document.load(original));
+        const auto region = Document::uvRegion(Document::All, Document::Both, document.model());
+        document.setColorAdjustments(60, 0, region);
+        for (int i = 0; i < 100; ++i)
+            document.paintPixel({ 8, 8 }, i % 2 ? Qt::red : Qt::blue, 1, Document::Head, Document::Base);
+        while (document.canUndo())
+            document.undo();
+        QCOMPARE(document.hueAdjustment(), 60);
+        document.setColorAdjustments(0, 0, region);
+        QCOMPARE(document.image(), original);
+        QVERIFY(!document.canUndo());
+        document.paintPixel({ 8, 8 }, Qt::green, 1, Document::Head, Document::Base);
+        QVERIFY(document.canUndo());
+        document.undo();
+        QCOMPARE(document.image(), original);
     }
 
     void selectionIsNonDestructiveAndClipsBrushes()

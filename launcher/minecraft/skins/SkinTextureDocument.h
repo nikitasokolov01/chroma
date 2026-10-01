@@ -46,6 +46,10 @@ class SkinTextureDocument : public QObject {
     void setModel(SkinModel::Model model);
     void floodFill(QPoint seed, QColor color, const QRegion& allowed);
     void applyEffect(Effect effect, int amount, const QRegion& allowed);
+    void setColorAdjustments(int hue, int brightness, const QRegion& allowed);
+    void finishColorAdjustments();
+    int hueAdjustment() const { return m_hueAdjustment; }
+    int brightnessAdjustment() const { return m_brightnessAdjustment; }
     PixelPatch copyPixels(const QRegion& allowed) const;
     void pastePixels(const PixelPatch& patch, QPoint destination, const QRegion& allowed);
     static QByteArray encodePatch(const PixelPatch& patch);
@@ -61,14 +65,20 @@ class SkinTextureDocument : public QObject {
    signals:
     void changed();
     void selectionChanged();
+    void adjustmentsChanged();
 
    private:
     struct State {
         QImage image;
         SkinModel::Model model = SkinModel::CLASSIC;
+        QImage adjustmentBase;
+        QRegion adjustmentRegion;
+        int hue = 0;
+        int brightness = 0;
         bool operator==(const State& other) const { return model == other.model && image == other.image; }
     };
     void record();
+    void restoreColorAdjustments();
     QRegion editableRegion(const QRegion& allowed) const;
     QRegion m_selection;
     State m_state;
@@ -77,4 +87,9 @@ class SkinTextureDocument : public QObject {
     QVector<State> m_history;
     int m_cursor = 0;
     bool m_stroke = false;
+    QImage m_adjustmentBase;
+    QRegion m_adjustmentRegion;
+    int m_adjustmentHistory = -1;
+    int m_hueAdjustment = 0;
+    int m_brightnessAdjustment = 0;
 };

@@ -24,6 +24,7 @@
 #include <QPixmap>
 
 #include "minecraft/auth/MinecraftAccount.h"
+#include "minecraft/skins/SkinApplyTask.h"
 #include "minecraft/skins/SkinList.h"
 #include "minecraft/skins/SkinModel.h"
 #include "ui/dialogs/skins/draw/SkinOpenGLWindow.h"
@@ -55,6 +56,7 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     void on_urlBtn_clicked();
     void on_userBtn_clicked();
     void accept() override;
+    void reject() override;
     void on_capeCombo_currentIndexChanged(int index);
     void on_steveBtn_toggled(bool checked);
     void on_resetBtn_clicked();
@@ -72,6 +74,7 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     void refreshAccounts();
     void selectAccount(MinecraftAccountPtr account);
     void updateAccountActions();
+    void applySelectedCape();
 
    private:
     MinecraftAccountPtr m_acct;
@@ -87,4 +90,6 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     QComboBox* m_accountCombo = nullptr;
     QLabel* m_accountStatus = nullptr;
     bool m_previewFailed = false;
+    QPushButton* m_applyCape = nullptr;
+    shared_qobject_ptr<SkinApplyTask> m_capeTask;
 };

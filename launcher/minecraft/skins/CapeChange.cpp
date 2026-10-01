@@ -36,6 +36,8 @@
 
 #include "CapeChange.h"
 
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <memory>
 
 #include "net/ByteArraySink.h"
@@ -53,7 +55,7 @@ QNetworkReply* CapeChange::getReply(QNetworkRequest& request)
         return m_network->deleteResource(request);
     } else {
         setStatus(tr("Equipping cape"));
-        return m_network->put(request, QString("{\"capeId\":\"%1\"}").arg(m_capeId).toUtf8());
+        return m_network->put(request, QJsonDocument(QJsonObject{ { "capeId", m_capeId } }).toJson(QJsonDocument::Compact));
     }
 }
 
@@ -65,6 +67,7 @@ CapeChange::Ptr CapeChange::make(QString token, QString capeId)
     up->m_sink.reset(new Net::ByteArraySink(std::make_shared<QByteArray>()));
     up->addHeaderProxy(new Net::RawHeaderProxy(QList<Net::HeaderPair>{
         { "Authorization", QString("Bearer %1").arg(token).toLocal8Bit() },
+        { "Content-Type", "application/json" },
     }));
     return up;
 }

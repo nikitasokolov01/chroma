@@ -6,8 +6,12 @@
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QPainter>
 #include <QPushButton>
 #include <QScopeGuard>
@@ -18,6 +22,7 @@
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTest>
+#include <QTimer>
 #include <QToolButton>
 
 #include "Application.h"
@@ -31,6 +36,98 @@
 #include "ui/widgets/InlineWorkspace.h"
 
 namespace SkinLibraryUiTests {
+
+class CapeReply : public QNetworkReply {
+   public:
+    CapeReply(const QNetworkRequest& request, bool fail, QObject* parent) : QNetworkReply(parent)
+    {
+        setRequest(request);
+        setUrl(request.url());
+        setAttribute(QNetworkRequest::HttpStatusCodeAttribute, fail ? 403 : 204);
+        open(QIODevice::ReadOnly);
+        QTimer::singleShot(0, this, [this, fail] {
+            if (fail) {
+                setError(QNetworkReply::ContentAccessDenied, "Synthetic cape refusal");
+                emit errorOccurred(error());
+            }
+            setFinished(true);
+            emit finished();
+        });
+    }
+    void abort() override {}
+
+   protected:
+    qint64 readData(char*, qint64) override { return -1; }
+};
+
+class CapeNetwork : public QNetworkAccessManager {
+   public:
+    Operation operation = GetOperation;
+    QNetworkRequest request;
+    QByteArray body;
+    bool fail = false;
+    int calls = 0;
+
+   protected:
+    QNetworkReply* createRequest(Operation op, const QNetworkRequest& req, QIODevice* data) override
+    {
+        operation = op;
+        request = req;
+        body = data ? data->readAll() : QByteArray();
+        ++calls;
+        return new CapeReply(req, fail, this);
+    }
+};
+
+inline void ownedCapeChangesKeepTheSkin(MainWindow*, const QString&)
+{
+    auto account = MinecraftAccount::createOffline("CapeFixture");
+    auto& profile = account->accountData()->minecraftProfile;
+    account->accountData()->type = AccountType::MSA;
+    account->accountData()->yggdrasilToken.token = "fixture-token";
+    Cape cape;
+    cape.id = "owned-cape";
+    cape.alias = "Owned cape";
+    profile.capes.insert(cape.id, cape);
+    profile.skin.data = "synthetic-skin-bytes";
+    profile.skin.variant = "SLIM";
+    const auto skin = profile.skin.data;
+    const auto network = makeShared<CapeNetwork>();
+    QSignalSpy changed(account.get(), &MinecraftAccount::changed);
+    auto equip = SkinApplyTask::forCape(account, cape.id, network);
+    equip->start();
+    QTRY_VERIFY(equip->isFinished());
+    QVERIFY(equip->wasSuccessful());
+    QCOMPARE(profile.currentCape, cape.id);
+    QCOMPARE(changed.count(), 1);
+    QCOMPARE(network->operation, QNetworkAccessManager::PutOperation);
+    QCOMPARE(network->request.url().path(), QString("/minecraft/profile/capes/active"));
+    QCOMPARE(network->request.header(QNetworkRequest::ContentTypeHeader).toString(), QString("application/json"));
+    QCOMPARE(QJsonDocument::fromJson(network->body).object().value("capeId").toString(), cape.id);
+    QCOMPARE(profile.skin.data, skin);
+    QCOMPARE(profile.skin.variant, QString("SLIM"));
+    auto same = SkinApplyTask::forCape(account, cape.id, network);
+    same->start();
+    QVERIFY(same->wasSuccessful());
+    QCOMPARE(network->calls, 1);
+    network->fail = true;
+    auto refused = SkinApplyTask::forCape(account, QString(), network);
+    refused->start();
+    QTRY_VERIFY(refused->isFinished());
+    QVERIFY(!refused->wasSuccessful());
+    QCOMPARE(profile.currentCape, cape.id);
+    QCOMPARE(changed.count(), 1);
+    network->fail = false;
+    auto remove = SkinApplyTask::forCape(account, QString(), network);
+    remove->start();
+    QTRY_VERIFY(remove->isFinished());
+    QVERIFY(remove->wasSuccessful());
+    QVERIFY(profile.currentCape.isEmpty());
+    QCOMPARE(network->operation, QNetworkAccessManager::DeleteOperation);
+    QVERIFY(network->body.isEmpty());
+    QCOMPARE(changed.count(), 2);
+    QCOMPARE(profile.skin.data, skin);
+}
 
 inline QString horizontalScrollDiagnostic(QScrollArea* scroll, QWidget* editor, QWidget* window)
 {
@@ -131,10 +228,12 @@ inline void accountSwitching(MainWindow* window, const QString& root)
     auto* combo = manager.findChild<QComboBox*>("skinAccountCombo");
     auto* capes = manager.findChild<QComboBox*>("capeCombo");
     auto* actions = manager.findChild<QDialogButtonBox*>("buttonBox");
+    auto* applyCape = manager.findChild<QPushButton*>("skinApplyCape");
     auto* edit = manager.findChild<QPushButton*>("editSkinButton");
     auto* reset = manager.findChild<QPushButton*>("resetBtn");
     auto* manage = manager.findChild<QPushButton*>("skinManageAccounts");
-    QVERIFY(combo && capes && actions && edit && reset && manage);
+    QVERIFY(combo && capes && actions && edit && reset && manage && applyCape);
+    QVERIFY(!applyCape->isEnabled());
     QVERIFY(!combo->isEnabled());
     QCOMPARE(combo->currentText(), QString("No accounts added"));
     QVERIFY(manager.getSelectedSkin());
@@ -167,6 +266,10 @@ inline void accountSwitching(MainWindow* window, const QString& root)
     QVERIFY(capeBytes.open(QIODevice::WriteOnly));
     QVERIFY(texture.save(&capeBytes, "PNG"));
     second->accountData()->minecraftProfile.capes.insert(cape.id, cape);
+    auto otherCape = cape;
+    otherCape.id = "synthetic-cape-two";
+    otherCape.alias = "Another owned cape";
+    second->accountData()->minecraftProfile.capes.insert(otherCape.id, otherCape);
     second->accountData()->minecraftProfile.currentCape = cape.id;
     accounts->addAccount(first);
     accounts->addAccount(second);
@@ -182,9 +285,19 @@ inline void accountSwitching(MainWindow* window, const QString& root)
     QCOMPARE(manager.getSelectedSkin()->getTexture().pixelColor(8, 8), QColor("#dc7781"));
     QVERIFY(actions->button(QDialogButtonBox::Ok)->isEnabled());
     QVERIFY(reset->isEnabled());
-    QCOMPARE(capes->count(), 2);
+    QCOMPARE(capes->count(), 3);
     QCOMPARE(capes->currentData().toString(), cape.id);
     QVERIFY(manager.capes().contains(cape.id));
+    QVERIFY(!applyCape->isEnabled());
+    const auto selectedSkin = manager.getSelectedSkin()->getTexture();
+    capes->setCurrentIndex(capes->findData(otherCape.id));
+    QVERIFY(applyCape->isEnabled());
+    QCOMPARE(second->accountData()->minecraftProfile.currentCape, cape.id);
+    QCOMPARE(manager.getSelectedSkin()->getTexture(), selectedSkin);
+    capes->setCurrentIndex(0);
+    QVERIFY(applyCape->isEnabled());
+    capes->setCurrentIndex(capes->findData(cape.id));
+    QVERIFY(!applyCape->isEnabled());
     for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
         window->resize(size);
         QTest::qWait(60);
@@ -534,16 +647,53 @@ inline void effectsRespectVisibilityAndSelection(MainWindow* window, const QStri
     auto* tabs = editor.findChild<QTabWidget*>("skinInspectorTabs");
     auto* effect = editor.findChild<QComboBox*>("skinEffect");
     auto* value = editor.findChild<QSpinBox*>("skinEffectValue");
+    auto* slider = editor.findChild<QSlider*>("skinEffectAmount");
     auto* apply = editor.findChild<QPushButton*>("skinApplyEffect");
     auto* outer = editor.findChild<QToolButton*>("skinShowOuter");
     auto* head = editor.findChild<QToolButton*>("skinPart0");
     auto* wheel = editor.findChild<SkinColorWheel*>("skinColorWheel");
-    QVERIFY(document && tabs && effect && value && apply && outer && head && wheel);
+    QVERIFY(document && tabs && effect && value && slider && apply && outer && head && wheel);
     auto discardEdits = qScopeGuard([&] { document->markSaved(); });
     QCOMPARE(tabs->count(), 3);
     tabs->setCurrentIndex(1);
     QCOMPARE(value->minimum(), -180);
     QCOMPARE(value->maximum(), 180);
+    QVERIFY(!apply->isVisible());
+    slider->setValue(40);
+    QCOMPARE(value->value(), 40);
+    QVERIFY(document->image() != texture);
+    value->setValue(50);
+    SkinTextureDocument expectedLive;
+    QVERIFY(expectedLive.load(texture));
+    const auto liveScope = SkinTextureDocument::uvRegion(SkinTextureDocument::All, SkinTextureDocument::Both, document->model());
+    expectedLive.applyEffect(SkinTextureDocument::Hue, 50, liveScope);
+    QCOMPARE(document->image(), expectedLive.image());
+    effect->setCurrentIndex(SkinTextureDocument::Brightness);
+    value->setValue(20);
+    expectedLive.applyEffect(SkinTextureDocument::Brightness, 20, liveScope);
+    QCOMPARE(document->image(), expectedLive.image());
+    effect->setCurrentIndex(SkinTextureDocument::Hue);
+    QCOMPARE(value->value(), 50);
+    QTest::qWait(80);
+    QVERIFY(window->grab().save(QDir(root).filePath("skin-live-adjustments-1280.png")));
+    auto* mode = editor.findChild<QComboBox*>("skinEditMode");
+    QVERIFY(mode);
+    mode->setCurrentIndex(1);
+    QCOMPARE(value->value(), 50);
+    QCOMPARE(document->image(), expectedLive.image());
+    if (mode->isEnabled())
+        mode->setCurrentIndex(0);
+    QCOMPARE(value->value(), 50);
+    document->undo();
+    QCOMPARE(document->image(), texture);
+    document->redo();
+    QCOMPARE(value->value(), 50);
+    value->setValue(0);
+    effect->setCurrentIndex(SkinTextureDocument::Brightness);
+    QCOMPARE(value->value(), 20);
+    value->setValue(0);
+    QCOMPARE(document->image(), texture);
+    QVERIFY(!document->canUndo());
     effect->setCurrentIndex(SkinTextureDocument::Brightness);
     QCOMPARE(value->minimum(), -100);
     QCOMPARE(value->maximum(), 100);
@@ -692,6 +842,47 @@ inline void referenceCopyPasteStaysIndependent(MainWindow* window, const QString
     QCOMPARE(referenceDocument->image(), reference);
     mode->setCurrentIndex(1);
     referenceMode->setCurrentIndex(1);
+    QVERIFY(!editor.findChild<QComboBox*>("skinReferenceTool"));
+    auto* refBody = editor.findChild<QToolButton*>("skinReferenceBody");
+    auto* refOuter = editor.findChild<QToolButton*>("skinReferenceOuter");
+    auto* mainBody = editor.findChild<QToolButton*>("skinShowBase");
+    auto* mainOuter = editor.findChild<QToolButton*>("skinShowOuter");
+    auto* picker = editor.findChild<QToolButton*>("skinToolPicker");
+    auto* select = editor.findChild<QToolButton*>("skinToolSelect");
+    QVERIFY(refBody && refOuter && mainBody && mainOuter && picker && select);
+    auto* refHead = editor.findChild<QToolButton*>("skinReferencePart0");
+    auto* mainHead = editor.findChild<QToolButton*>("skinPart0");
+    QVERIFY(refHead && mainHead);
+    referenceCanvas->setFocus();
+    QTest::mouseClick(picker, Qt::LeftButton);
+    QVERIFY(picker->isChecked());
+    QTest::keyClick(referenceCanvas, Qt::Key_Space);
+    QCOMPARE(wheel->color().rgba(), reference.pixelColor(8, 8).rgba());
+    refBody->setChecked(false);
+    QVERIFY(mainBody->isChecked());
+    QTest::mouseClick(select, Qt::LeftButton);
+    QTest::keyClick(referenceCanvas, Qt::Key_Space);
+    QVERIFY(referenceDocument->selection().isEmpty());
+    refBody->setChecked(true);
+    refHead->setChecked(false);
+    QVERIFY(mainHead->isChecked());
+    if (referencePreview) {
+        QVERIFY(!referencePreview->partLayerVisible(0, SkinTextureDocument::Base));
+        QVERIFY(!referencePreview->partLayerVisible(0, SkinTextureDocument::Overlay));
+    }
+    QTest::keyClick(referenceCanvas, Qt::Key_Space);
+    QVERIFY(referenceDocument->selection().isEmpty());
+    refHead->setChecked(true);
+    refOuter->setChecked(false);
+    QVERIFY(mainOuter->isChecked());
+    if (referencePreview) {
+        QVERIFY(referencePreview->partLayerVisible(0, SkinTextureDocument::Base));
+        QVERIFY(!referencePreview->partLayerVisible(0, SkinTextureDocument::Overlay));
+    }
+    QTest::keyClick(referenceCanvas, Qt::Key_Space);
+    QCOMPARE(referenceDocument->selection(), QRegion(QRect(8, 8, 1, 1)));
+    referenceDocument->clearSelection();
+    refOuter->setChecked(true);
     referenceCanvas->setFocus();
     QTest::keyClick(referenceCanvas, Qt::Key_B);
     QTest::keyClick(referenceCanvas, Qt::Key_Space);
@@ -742,13 +933,21 @@ inline void referenceCopyPasteStaysIndependent(MainWindow* window, const QString
         }
         QVERIFY(panel->isVisible());
         QVERIFY(wheel->isVisible());
+        QVERIFY(picker->isVisible() && select->isVisible());
+        QVERIFY(window->rect().contains(QRect(select->mapTo(window, QPoint()), select->size())));
+        for (int part = 0; part < 6; ++part) {
+            auto* button = editor.findChild<QToolButton*>(QString("skinReferencePart%1").arg(part));
+            QVERIFY(button && button->isVisible());
+            QVERIFY(panel->rect().contains(QRect(button->mapTo(panel, QPoint()), button->size())));
+        }
         QVERIFY(window->rect().contains(QRect(wheel->mapTo(window, QPoint()), wheel->size())));
         QVERIFY(window->rect().contains(QRect(referenceCanvas->mapTo(window, QPoint()), referenceCanvas->size())));
         if (canvas->isVisible())
             QVERIFY(!QRect(referenceCanvas->mapTo(window, QPoint()), referenceCanvas->size())
                          .intersects(QRect(canvas->mapTo(window, QPoint()), canvas->size())));
-        for (QWidget* control : { static_cast<QWidget*>(referenceMode), static_cast<QWidget*>(referenceModel),
-                                  editor.findChild<QWidget*>("skinReferenceTool"), static_cast<QWidget*>(copy) }) {
+        for (QWidget* control :
+             { static_cast<QWidget*>(referenceMode), static_cast<QWidget*>(referenceModel), editor.findChild<QWidget*>("skinReferenceBody"),
+               editor.findChild<QWidget*>("skinReferenceOuter"), static_cast<QWidget*>(copy) }) {
             QVERIFY(control && control->isVisible());
             QVERIFY(control->height() >= 24);
             QVERIFY(window->rect().contains(QRect(control->mapTo(window, QPoint()), control->size())));
