@@ -43,6 +43,7 @@
 #include "Json.h"
 #include "MMCZip.h"
 #include "Version.h"
+#include "discord/DiscordArtwork.h"
 #include "meta/Index.h"
 #include "meta/Version.h"
 #include "meta/VersionList.h"
@@ -1047,6 +1048,7 @@ void PackInstallTask::install()
     instance.setName(name());
     instance.setIconKey(m_instIcon);
     instance.setManagedPack("atlauncher", m_pack_safe_name, m_pack_name, m_version_name, m_version_name);
+    instance.setDiscordArtworkUrl(DiscordArtwork::atLauncherUrl(m_pack_safe_name));
     instanceSettings->resumeSave();
 
     jarmods.clear();

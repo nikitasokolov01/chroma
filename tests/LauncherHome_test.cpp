@@ -20,6 +20,7 @@
 #include <QFontDatabase>
 #include <QFrame>
 #include <QGridLayout>
+#include <QGroupBox>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -55,6 +56,7 @@
 #include "Application.h"
 #include "BuildConfig.h"
 #include "ChromaProfile.h"
+#include "discord/DiscordPresence.h"
 #include "InstanceList.h"
 #include "InstanceOrderUiTests.h"
 #include "SkinLibraryUiTests.h"
@@ -81,6 +83,7 @@
 #include "ui/pagedialog/PageDialog.h"
 #include "ui/pages/global/APIPage.h"
 #include "ui/pages/global/AccountListPage.h"
+#include "ui/pages/global/LauncherPage.h"
 #include "ui/pages/modplatform/modrinth/ModrinthModel.h"
 #include "ui/pages/modplatform/modrinth/ModrinthPage.h"
 #include "ui/themes/AccentColor.h"
@@ -156,6 +159,7 @@ bool prepareFixture(const QString& root)
     ui.clear();
     ui.setValue("ConfigVersion", "1.3");
     ui.setValue("Language", "en_US");
+    ui.setValue("ChromaDiscordPresence", false);
     ui.sync();
     if (ui.status() != QSettings::NoError)
         return false;
@@ -1763,6 +1767,121 @@ class LauncherHomeTest : public QObject {
         QTRY_VERIFY(visited);
         QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
         QCOMPARE(m_popupPaints, 0);
+    }
+
+    void discordActivitySettingsRespectSaveAndCancel()
+    {
+        QVERIFY(QStandardPaths::isTestModeEnabled());
+        auto* presence = APPLICATION->discordPresence();
+        QVERIFY(presence);
+        const auto previousEnabled = APPLICATION->settings()->get("ChromaDiscordPresence");
+        const auto previousTheme = APPLICATION->settings()->get("ApplicationTheme");
+        const auto previousSize = m_window->size();
+        const auto restore = qScopeGuard([&] {
+            m_window->inlineWorkspace()->closeAllPages();
+            APPLICATION->settings()->set("ChromaDiscordPresence", previousEnabled);
+            APPLICATION->settings()->set("ApplicationTheme", previousTheme);
+            APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+            m_window->resize(previousSize);
+        });
+        APPLICATION->settings()->set("ChromaDiscordPresence", false);
+        QCOMPARE(presence->currentActivity().value("details").toString(), QString("Browsing for modpacks"));
+        m_window->resize(1280, 820);
+
+        APPLICATION->ShowGlobalSettings(m_window, "launcher-settings");
+        QTRY_VERIFY(qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage()));
+        auto* settings = qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage());
+        auto* general = settings->findChild<LauncherPage*>();
+        QVERIFY(general);
+        auto* enabled = general->findChild<QCheckBox*>("discordActivityCheckBox");
+        auto* status = general->findChild<QLabel*>("discordStatusLabel");
+        auto* scroll = general->findChild<QScrollArea*>("scrollArea");
+        auto* buttons = settings->findChild<QDialogButtonBox*>("pageDialogButtons");
+        QVERIFY(enabled && status && scroll && buttons);
+        QVERIFY(!enabled->isChecked());
+        QCOMPARE(status->text(), presence->statusText());
+        scroll->ensureWidgetVisible(enabled);
+        QTest::mouseClick(enabled, Qt::LeftButton, Qt::NoModifier, QPoint(8, enabled->height() / 2));
+        QVERIFY(enabled->isChecked());
+        QVERIFY(!APPLICATION->settings()->get("ChromaDiscordPresence").toBool());
+        QCOMPARE(status->text(), QString("Save to show your activity on Discord."));
+        QTest::mouseClick(buttons->button(QDialogButtonBox::Cancel), Qt::LeftButton);
+        QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
+        QVERIFY(!APPLICATION->settings()->get("ChromaDiscordPresence").toBool());
+
+        APPLICATION->ShowGlobalSettings(m_window, "launcher-settings");
+        QTRY_VERIFY(qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage()));
+        settings = qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage());
+        enabled = settings->findChild<QCheckBox*>("discordActivityCheckBox");
+        QVERIFY(enabled && !enabled->isChecked());
+        enabled->setChecked(true);
+        auto* save = settings->findChild<QPushButton*>("savePageButton");
+        QVERIFY(save);
+        QTest::mouseClick(save, Qt::LeftButton);
+        QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
+        QVERIFY(APPLICATION->settings()->get("ChromaDiscordPresence").toBool());
+        QSettings persisted(QDir(m_root).filePath("chroma-ui.cfg"), QSettings::IniFormat);
+        QCOMPARE(persisted.value("ChromaDiscordPresence").toBool(), true);
+        QSettings shared(QDir(m_root).filePath(BuildConfig.LAUNCHER_CONFIGFILE), QSettings::IniFormat);
+        QVERIFY(!shared.contains("ChromaDiscordPresence"));
+
+        APPLICATION->ShowGlobalSettings(m_window, "launcher-settings");
+        QTRY_VERIFY(qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage()));
+        settings = qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage());
+        general = settings->findChild<LauncherPage*>();
+        QVERIFY(general);
+        enabled = general->findChild<QCheckBox*>("discordActivityCheckBox");
+        status = general->findChild<QLabel*>("discordStatusLabel");
+        scroll = general->findChild<QScrollArea*>("scrollArea");
+        auto* group = general->findChild<QGroupBox*>("discordActivityBox");
+        QVERIFY(enabled && status && scroll && group);
+        QVERIFY(enabled->isChecked());
+        QCOMPARE(status->text(), presence->statusText());
+        QVERIFY(status->text().contains("not configured"));
+        for (const auto* theme : { "chroma", "chroma-dark" }) {
+            APPLICATION->settings()->set("ApplicationTheme", theme);
+            APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+            for (const auto size : { QSize(1280, 820), QSize(680, 640) }) {
+                m_window->resize(size);
+                QTest::qWait(60);
+                scroll->ensureWidgetVisible(group, 0, 10);
+                QCoreApplication::processEvents();
+                verifyInline(settings, 1);
+                verifyPageGeometry(settings);
+                QVERIFY(scroll->horizontalScrollBar()->maximum() == 0);
+                for (auto* label : group->findChildren<QLabel*>()) {
+                    QVERIFY(label->wordWrap());
+                    QVERIFY(label->height() >= label->heightForWidth(label->width()));
+                    QVERIFY(group->rect().contains(QRect(label->mapTo(group, QPoint()), label->size())));
+                }
+                QVERIFY(m_window->grab().save(
+                    QDir(m_root).filePath(QString("discord-settings-%1-%2.png").arg(theme).arg(size.width()))));
+            }
+        }
+
+        m_window->resize(1280, 820);
+        enabled->setChecked(false);
+        QCOMPARE(status->text(), QString("Save to stop sharing your activity."));
+        QVERIFY(APPLICATION->settings()->get("ChromaDiscordPresence").toBool());
+        save = settings->findChild<QPushButton*>("savePageButton");
+        QVERIFY(save);
+        QTest::mouseClick(save, Qt::LeftButton);
+        QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
+        QVERIFY(!APPLICATION->settings()->get("ChromaDiscordPresence").toBool());
+        persisted.sync();
+        QCOMPARE(persisted.value("ChromaDiscordPresence").toBool(), false);
+
+        // The disabled state and its live status survive reopening Settings.
+        APPLICATION->ShowGlobalSettings(m_window, "launcher-settings");
+        QTRY_VERIFY(qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage()));
+        settings = qobject_cast<PageDialog*>(m_window->inlineWorkspace()->currentPage());
+        enabled = settings->findChild<QCheckBox*>("discordActivityCheckBox");
+        status = settings->findChild<QLabel*>("discordStatusLabel");
+        QVERIFY(enabled && status && !enabled->isChecked());
+        QCOMPARE(status->text(), presence->statusText());
+        QVERIFY(status->text().contains("off"));
+        settings->reject();
+        QTRY_COMPARE(m_window->inlineWorkspace()->pageCount(), 0);
     }
 
     void providerGalleryAndCatalogBrowsing()

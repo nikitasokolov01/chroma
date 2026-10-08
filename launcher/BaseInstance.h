@@ -120,6 +120,7 @@ class BaseInstance : public QObject, public std::enable_shared_from_this<BaseIns
     virtual QString id() const;
 
     void setMinecraftRunning(bool running);
+    bool isMinecraftRunning() const { return m_isMinecraftRunning; }
     void setRunning(bool running);
     bool isRunning() const;
     int64_t totalTimePlayed() const;
@@ -154,6 +155,10 @@ class BaseInstance : public QObject, public std::enable_shared_from_this<BaseIns
 
     QString iconKey() const;
     void setIconKey(QString val);
+
+    /// Public catalog artwork only; local/custom images are never uploaded to Discord.
+    QString discordArtworkUrl() const;
+    void setDiscordArtworkUrl(const QString& url);
 
     QString notes() const;
     void setNotes(QString val);
@@ -300,6 +305,7 @@ class BaseInstance : public QObject, public std::enable_shared_from_this<BaseIns
     void launchTaskChanged(shared_qobject_ptr<LaunchTask>);
 
     void runningStatusChanged(bool running);
+    void minecraftRunningChanged(bool running);
 
     void profilerChanged();
 
@@ -313,6 +319,7 @@ class BaseInstance : public QObject, public std::enable_shared_from_this<BaseIns
     SettingsObjectPtr m_settings;
     // InstanceFlags m_flags;
     bool m_isRunning = false;
+    bool m_isMinecraftRunning = false;
     shared_qobject_ptr<LaunchTask> m_launchProcess;
     QDateTime m_timeStarted;
     RuntimeContext m_runtimeContext;

@@ -97,6 +97,8 @@ and image preview.
 
 ## More features
 
+**In the next update:** optional [Discord activity](docs/DISCORD-PRESENCE.md) shows **Playing Chroma**, with **Browsing for modpacks** or the running pack's name and public artwork. Disable it in **Settings → General → Discord Activity**. This feature is not included in the v1.0.0 download above.
+
 - **Organize instances.** Search grouped cards, open recent instances, or drag cards into a saved manual order. Name and last-played sorting remain available.
 - **Pin from the library.** Drop an instance onto the sidebar to pin it, then open its settings with one click.
 - **Manage skins from the sidebar.** Open **Skins**, switch accounts with the dropdown, and manage skins and capes without changing your default launch account. Local editing works before adding an account.

@@ -43,6 +43,7 @@
 #include "Application.h"
 #include "BuildConfig.h"
 #include "ChromaProfile.h"
+#include "discord/DiscordPresence.h"
 
 #include "DataMigrationTask.h"
 #include "java/JavaInstallList.h"
@@ -715,6 +716,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("LastUsedGroupForNewInstance", QString());
 
         m_settings->registerSetting("MenuBarInsteadOfToolBar", false);
+        m_settings->registerSetting("ChromaDiscordPresence", true);
 
         m_settings->registerSetting("NumberOfConcurrentTasks", 10);
         m_settings->registerSetting("NumberOfConcurrentDownloads", 6);
@@ -1088,6 +1090,16 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
     // now we have network, download translation updates
     m_translations->downloadIndex();
+
+    m_discordPresence = std::make_unique<DiscordPresence>(
+        m_settings, QStandardPaths::isTestModeEnabled() ? QString() : BuildConfig.DISCORD_APPLICATION_ID);
+    const auto observeDiscordInstances = [this] {
+        for (int i = 0; i < m_instances->count(); ++i)
+            m_discordPresence->observeInstance(m_instances->at(i));
+    };
+    connect(m_instances.get(), &InstanceList::instancesChanged, m_discordPresence.get(), observeDiscordInstances);
+    observeDiscordInstances();
+    connect(this, &Application::aboutToQuit, m_discordPresence.get(), &DiscordPresence::shutdown);
 
     // FIXME: what to do with these?
     m_profilers.insert("jprofiler", std::shared_ptr<BaseProfilerFactory>(new JProfilerFactory()));

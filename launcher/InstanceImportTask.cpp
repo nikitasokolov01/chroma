@@ -304,6 +304,7 @@ void InstanceImportTask::processFlame()
         }
     }
     inst_creation_task->setIcon(m_instIcon);
+    inst_creation_task->setDiscordArtworkUrl(m_extra_info.value("pack_logo_url", m_discordArtworkUrl));
     inst_creation_task->setGroup(m_instGroup);
     inst_creation_task->setConfirmUpdate(shouldConfirmUpdate());
 
@@ -403,6 +404,7 @@ void InstanceImportTask::processModrinth()
         }
     }
     inst_creation_task->setIcon(m_instIcon);
+    inst_creation_task->setDiscordArtworkUrl(m_extra_info.value("pack_logo_url", m_discordArtworkUrl));
     inst_creation_task->setGroup(m_instGroup);
     inst_creation_task->setConfirmUpdate(shouldConfirmUpdate());
 

@@ -33,6 +33,7 @@ class TechnicPackProcessor : public QObject {
              const QString& instIcon,
              const QString& stagingPath,
              const QString& minecraftVersion = QString(),
-             bool isSolder = false);
+             bool isSolder = false,
+             const QString& discordArtworkUrl = QString());
 };
 }  // namespace Technic

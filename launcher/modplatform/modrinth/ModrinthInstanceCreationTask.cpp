@@ -241,6 +241,7 @@ bool ModrinthCreationTask::createInstance()
         instance.setManagedPack("modrinth", "", name(), "", "");
 
     instance.setName(name());
+    instance.setDiscordArtworkUrl(m_discordArtworkUrl);
     instance.saveNow();
 
     auto downloadMods = makeShared<NetJob>(tr("Mod Download Modrinth"), APPLICATION->network());

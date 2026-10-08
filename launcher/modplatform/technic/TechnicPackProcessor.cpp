@@ -29,7 +29,8 @@ void Technic::TechnicPackProcessor::run(SettingsObjectPtr globalSettings,
                                         const QString& instIcon,
                                         const QString& stagingPath,
                                         const QString& minecraftVersion,
-                                        [[maybe_unused]] const bool isSolder)
+                                        [[maybe_unused]] const bool isSolder,
+                                        const QString& discordArtworkUrl)
 {
     QString minecraftPath = FS::PathCombine(stagingPath, "minecraft");
     QString configPath = FS::PathCombine(stagingPath, "instance.cfg");
@@ -37,6 +38,7 @@ void Technic::TechnicPackProcessor::run(SettingsObjectPtr globalSettings,
     MinecraftInstance instance(globalSettings, instanceSettings, stagingPath);
 
     instance.setName(instName);
+    instance.setDiscordArtworkUrl(discordArtworkUrl);
 
     if (instIcon != "default") {
         instance.setIconKey(instIcon);

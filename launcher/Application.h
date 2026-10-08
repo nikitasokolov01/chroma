@@ -74,6 +74,7 @@ class ITheme;
 class MCEditTool;
 class ThemeManager;
 class IconTheme;
+class DiscordPresence;
 
 namespace Meta {
 class Index;
@@ -129,6 +130,7 @@ class Application : public QApplication {
     std::shared_ptr<JavaInstallList> javalist();
 
     std::shared_ptr<InstanceList> instances() const { return m_instances; }
+    DiscordPresence* discordPresence() const { return m_discordPresence.get(); }
 
     std::shared_ptr<IconList> icons() const { return m_icons; }
 
@@ -261,6 +263,7 @@ class Application : public QApplication {
     std::unique_ptr<MCEditTool> m_mcedit;
     QSet<QString> m_features;
     std::unique_ptr<ThemeManager> m_themeManager;
+    std::unique_ptr<DiscordPresence> m_discordPresence;
 
     QMap<QString, std::shared_ptr<BaseProfilerFactory>> m_profilers;
 

@@ -5,6 +5,12 @@ project(application)
 ######## Sources and headers ########
 
 set(CORE_SOURCES
+    discord/DiscordRpcClient.h
+    discord/DiscordRpcClient.cpp
+    discord/DiscordPresence.h
+    discord/DiscordPresence.cpp
+    discord/DiscordArtwork.h
+    discord/DiscordArtwork.cpp
     # LOGIC - Base classes and infrastructure
     BaseInstaller.h
     BaseInstaller.cpp

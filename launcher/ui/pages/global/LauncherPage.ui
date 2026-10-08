@@ -176,6 +176,61 @@
         </widget>
        </item>
        <item>
+        <widget class="QGroupBox" name="discordActivityBox">
+         <property name="title">
+          <string>Discord Activity</string>
+         </property>
+         <layout class="QVBoxLayout" name="discordActivityLayout">
+          <item>
+           <widget class="QCheckBox" name="discordActivityCheckBox">
+            <property name="text">
+             <string>Show Chroma activity on Discord</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="discordActivityDescriptionLabel">
+            <property name="text">
+             <string>Shows “Playing Chroma” with “Browsing for modpacks”, or the name and artwork of your running modpack when available.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="textFormat">
+             <enum>Qt::PlainText</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="discordActivityHelpLabel">
+            <property name="text">
+             <string>Keep the Discord desktop app open with activity sharing enabled.</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="textFormat">
+             <enum>Qt::PlainText</enum>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="discordStatusLabel">
+            <property name="text">
+             <string>Waiting for Discord</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="textFormat">
+             <enum>Qt::PlainText</enum>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QGroupBox" name="updateSettingsBox">
          <property name="title">
           <string>Updater</string>

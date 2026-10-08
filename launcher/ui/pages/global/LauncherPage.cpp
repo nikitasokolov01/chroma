@@ -49,6 +49,7 @@
 #include "Application.h"
 #include "BuildConfig.h"
 #include "DesktopServices.h"
+#include "discord/DiscordPresence.h"
 #include "settings/SettingsObject.h"
 #include "ui/themes/ITheme.h"
 #include "ui/themes/ThemeManager.h"
@@ -76,6 +77,12 @@ LauncherPage::LauncherPage(QWidget* parent) : QWidget(parent), ui(new Ui::Launch
     ui->sortingModeGroup->setId(ui->sortManualBtn, Sort_Manual);
 
     loadSettings();
+
+    connect(ui->discordActivityCheckBox, &QCheckBox::toggled, this, &LauncherPage::updateDiscordStatus);
+    if (auto* presence = APPLICATION->discordPresence()) {
+        connect(presence, &DiscordPresence::statusChanged, this, [this] { updateDiscordStatus(); });
+    }
+    updateDiscordStatus();
 
     ui->updateSettingsBox->setHidden(!APPLICATION->updater());
     if (auto updater = APPLICATION->updater()) {
@@ -217,6 +224,8 @@ void LauncherPage::applySettings()
     }
 
     s->set("MenuBarInsteadOfToolBar", ui->preferMenuBarCheckBox->isChecked());
+    s->set("ChromaDiscordPresence", ui->discordActivityCheckBox->isChecked());
+    updateDiscordStatus();
 
     s->set("NumberOfConcurrentTasks", ui->numberOfConcurrentTasksSpinBox->value());
     s->set("NumberOfConcurrentDownloads", ui->numberOfConcurrentDownloadsSpinBox->value());
@@ -277,6 +286,7 @@ void LauncherPage::loadSettings()
     }
 
     ui->preferMenuBarCheckBox->setChecked(s->get("MenuBarInsteadOfToolBar").toBool());
+    ui->discordActivityCheckBox->setChecked(s->get("ChromaDiscordPresence").toBool());
 
     ui->numberOfConcurrentTasksSpinBox->setValue(s->get("NumberOfConcurrentTasks").toInt());
     ui->numberOfConcurrentDownloadsSpinBox->setValue(s->get("NumberOfConcurrentDownloads").toInt());
@@ -322,4 +332,18 @@ void LauncherPage::loadSettings()
 void LauncherPage::retranslate()
 {
     ui->retranslateUi(this);
+    updateDiscordStatus();
+}
+
+void LauncherPage::updateDiscordStatus()
+{
+    const bool enabled = ui->discordActivityCheckBox->isChecked();
+    if (enabled != APPLICATION->settings()->get("ChromaDiscordPresence").toBool()) {
+        ui->discordStatusLabel->setText(enabled ? tr("Save to show your activity on Discord.")
+                                               : tr("Save to stop sharing your activity."));
+    } else if (auto* presence = APPLICATION->discordPresence()) {
+        ui->discordStatusLabel->setText(presence->statusText());
+    } else {
+        ui->discordStatusLabel->setText(enabled ? tr("Not configured") : tr("Disabled"));
+    }
 }

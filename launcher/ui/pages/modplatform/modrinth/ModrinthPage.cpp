@@ -293,6 +293,7 @@ void ModrinthPage::suggestCurrent()
             QMap<QString, QString> extra_info;
             extra_info.insert("pack_id", m_current->addonId.toString());
             extra_info.insert("pack_version_id", ver.fileId.toString());
+            extra_info.insert("pack_logo_url", m_current->logoUrl);
 
             m_dialog->setSuggestedPack(m_current->name, ver.version, new InstanceImportTask(ver.downloadUrl, this, std::move(extra_info)));
             QString editedLogoName = "modrinth_" + m_current->logoName;

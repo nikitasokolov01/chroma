@@ -44,6 +44,7 @@
 #include <QJsonObject>
 
 #include "Application.h"
+#include "discord/DiscordArtwork.h"
 #include "Json.h"
 #include "settings/INISettingsObject.h"
 #include "settings/OverrideSetting.h"
@@ -78,6 +79,7 @@ BaseInstance::BaseInstance(SettingsObjectPtr globalSettings, SettingsObjectPtr s
 
     m_settings->registerSetting("name", "Unnamed Instance");
     m_settings->registerSetting("iconKey", "default");
+    m_settings->registerSetting("ChromaDiscordArtworkUrl", "");
     m_settings->registerSetting("notes", "");
 
     m_settings->registerSetting("lastLaunchTime", 0);
@@ -177,6 +179,8 @@ void BaseInstance::setManagedPack(const QString& type,
                                   const QString& versionId,
                                   const QString& version)
 {
+    if (getManagedPackType() != type || getManagedPackID() != id)
+        m_settings->set("ChromaDiscordArtworkUrl", "");
     m_settings->set("ManagedPack", true);
     m_settings->set("ManagedPackType", type);
     m_settings->set("ManagedPackID", id);
@@ -187,12 +191,17 @@ void BaseInstance::setManagedPack(const QString& type,
 
 void BaseInstance::copyManagedPack(BaseInstance& other)
 {
+    // Updates made from a local archive may have no catalog artwork of their own.
+    const bool samePack = getManagedPackType() == other.getManagedPackType() && getManagedPackID() == other.getManagedPackID();
+    const auto artwork = other.discordArtworkUrl();
     m_settings->set("ManagedPack", other.isManagedPack());
     m_settings->set("ManagedPackType", other.getManagedPackType());
     m_settings->set("ManagedPackID", other.getManagedPackID());
     m_settings->set("ManagedPackName", other.getManagedPackName());
     m_settings->set("ManagedPackVersionID", other.getManagedPackVersionID());
     m_settings->set("ManagedPackVersionName", other.getManagedPackVersionName());
+    if (!artwork.isEmpty() || !samePack)
+        setDiscordArtworkUrl(artwork);
 
     if (APPLICATION->settings()->get("AutomaticJavaSwitch").toBool() && m_settings->get("AutomaticJava").toBool() &&
         m_settings->get("OverrideJavaLocation").toBool()) {
@@ -272,6 +281,8 @@ bool BaseInstance::isRunning() const
 
 void BaseInstance::setRunning(bool running)
 {
+    if (!running && m_isMinecraftRunning)
+        setMinecraftRunning(false);
     if (running == m_isRunning)
         return;
 
@@ -282,6 +293,11 @@ void BaseInstance::setRunning(bool running)
 
 void BaseInstance::setMinecraftRunning(bool running)
 {
+    if (running == m_isMinecraftRunning)
+        return;
+    m_isMinecraftRunning = running;
+    emit minecraftRunningChanged(running);
+
     if (!settings()->get("RecordGameTime").toBool()) {
         return;
     }
@@ -385,6 +401,20 @@ void BaseInstance::setIconKey(QString val)
 QString BaseInstance::iconKey() const
 {
     return m_settings->get("iconKey").toString();
+}
+
+QString BaseInstance::discordArtworkUrl() const
+{
+    return DiscordArtwork::publicUrl(m_settings->get("ChromaDiscordArtworkUrl").toString());
+}
+
+void BaseInstance::setDiscordArtworkUrl(const QString& url)
+{
+    const auto artwork = DiscordArtwork::publicUrl(url);
+    if (m_settings->get("ChromaDiscordArtworkUrl").toString() == artwork)
+        return;
+    m_settings->set("ChromaDiscordArtworkUrl", artwork);
+    emit propertiesChanged(this);
 }
 
 void BaseInstance::setName(QString val)

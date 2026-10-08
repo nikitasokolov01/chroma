@@ -40,6 +40,7 @@ class InstanceTask : public Task, public InstanceName {
     void setStagingPath(const QString& stagingPath) { m_stagingPath = stagingPath; }
 
     void setIcon(const QString& icon) { m_instIcon = icon; }
+    void setDiscordArtworkUrl(const QString& url) { m_discordArtworkUrl = url; }
 
     void setGroup(const QString& group) { m_instGroup = group; }
     QString group() const { return m_instGroup; }
@@ -62,6 +63,7 @@ class InstanceTask : public Task, public InstanceName {
    protected: /* data */
     SettingsObjectPtr m_globalSettings;
     QString m_instIcon;
+    QString m_discordArtworkUrl;
     QString m_instGroup;
     QString m_stagingPath;
 

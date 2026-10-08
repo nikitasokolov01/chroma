@@ -214,6 +214,7 @@ set(Launcher_MATRIX_URL "https://prismlauncher.org/matrix" CACHE STRING "URL to 
 
 # Discord URL
 set(Launcher_DISCORD_URL "https://prismlauncher.org/discord" CACHE STRING "URL for the Discord guild.")
+set(Launcher_DISCORD_APPLICATION_ID "1557805260255400097" CACHE STRING "Public Discord application ID for Chroma Rich Presence.")
 
 # Subreddit URL
 set(Launcher_SUBREDDIT_URL "https://prismlauncher.org/reddit" CACHE STRING "URL for the subreddit.")

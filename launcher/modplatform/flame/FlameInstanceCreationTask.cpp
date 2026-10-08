@@ -461,6 +461,7 @@ bool FlameCreationTask::createInstance()
         instance.setManagedPack("flame", "", name(), "", "");
 
     instance.setName(name());
+    instance.setDiscordArtworkUrl(m_discordArtworkUrl);
 
     m_modIdResolver.reset(new Flame::FileResolvingTask(m_pack));
     connect(m_modIdResolver.get(), &Flame::FileResolvingTask::succeeded, this, [this, &loop] { idResolverSucceeded(loop); });

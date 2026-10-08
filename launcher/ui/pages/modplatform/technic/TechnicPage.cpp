@@ -316,14 +316,14 @@ void TechnicPage::selectVersion()
         return;
     }
 
-    if (!current.isSolder) {
-        dialog->setSuggestedPack(current.name, selectedVersion,
-                                 new Technic::SingleZipPackInstallTask(current.url, current.minecraftVersion));
-    } else {
-        dialog->setSuggestedPack(current.name, selectedVersion,
-                                 new Technic::SolderPackInstallTask(APPLICATION->network(), current.url, current.slug, selectedVersion,
-                                                                    current.minecraftVersion));
-    }
+    InstanceTask* task = nullptr;
+    if (!current.isSolder)
+        task = new Technic::SingleZipPackInstallTask(current.url, current.minecraftVersion);
+    else
+        task = new Technic::SolderPackInstallTask(APPLICATION->network(), current.url, current.slug, selectedVersion,
+                                                current.minecraftVersion);
+    task->setDiscordArtworkUrl(current.logoUrl);
+    dialog->setSuggestedPack(current.name, selectedVersion, task);
 }
 
 void TechnicPage::onSolderLoaded()

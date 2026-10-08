@@ -1,5 +1,12 @@
 project(tests)
 
+ecm_add_test(DiscordRpcClient_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME DiscordRpcClient)
+ecm_add_test(DiscordPresence_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME DiscordPresence)
+ecm_add_test(DiscordArtwork_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME DiscordArtwork)
+
 ecm_add_test(ChromaUpdate_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME ChromaUpdate)
 
