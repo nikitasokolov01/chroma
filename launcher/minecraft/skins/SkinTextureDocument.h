@@ -17,6 +17,16 @@ class SkinTextureDocument : public QObject {
     enum Part { All = -1, Head, Body, RightArm, LeftArm, RightLeg, LeftLeg };
     enum Layer { Both, Base, Overlay };
     enum Effect { Hue, Brightness, Grayscale, Invert };
+    enum TextureStyle { Fine, Fabric, Hair };
+    struct TextureSettings {
+        TextureStyle style = Fine;
+        int strength = 20;  // 0–100; the default adds subtle highlights and shadows.
+    };
+    struct MirrorOptions {
+        bool headAndBody = false;
+        bool arms = false;
+        bool legs = false;
+    };
     struct PixelPatch {
         QImage image;
         QRegion mask;   // Coordinates relative to image; pixels outside this mask are not pasted.
@@ -40,8 +50,22 @@ class SkinTextureDocument : public QObject {
     bool importPng(const QString& path, QString* error = nullptr);
     bool exportPng(const QString& path, QString* error = nullptr) const;
     void markSaved();
+    void setMirrorOptions(MirrorOptions options);
+    MirrorOptions mirrorOptions() const { return m_mirrorOptions; }
     void beginStroke();
-    void paintPixel(QPoint pixel, QColor color, int brushSize, Part part, Layer layer, bool erase = false);
+    void paintPixel(QPoint pixel,
+                    QColor color,
+                    int brushSize,
+                    Part part,
+                    Layer layer,
+                    bool erase = false,
+                    const QRegion& allowed = QRegion(0, 0, 64, 64));
+    void texturePixel(QPoint pixel,
+                      int brushSize,
+                      Part part,
+                      Layer layer,
+                      TextureSettings settings,
+                      const QRegion& allowed = QRegion(0, 0, 64, 64));
     void endStroke();
     void setModel(SkinModel::Model model);
     void floodFill(QPoint seed, QColor color, const QRegion& allowed);
@@ -80,6 +104,8 @@ class SkinTextureDocument : public QObject {
     void record();
     void restoreColorAdjustments();
     QRegion editableRegion(const QRegion& allowed) const;
+    QPoint mirroredPixel(QPoint pixel) const;
+    MirrorOptions m_mirrorOptions;
     QRegion m_selection;
     State m_state;
     State m_original;
@@ -87,6 +113,7 @@ class SkinTextureDocument : public QObject {
     QVector<State> m_history;
     int m_cursor = 0;
     bool m_stroke = false;
+    QImage m_strokeBase;
     QImage m_adjustmentBase;
     QRegion m_adjustmentRegion;
     int m_adjustmentHistory = -1;

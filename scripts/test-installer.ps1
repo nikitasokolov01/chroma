@@ -17,7 +17,7 @@ function Invoke-Installer([string]$Path) {
     if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
 }
 Invoke-Installer $(if ($PreviousInstaller) { $PreviousInstaller } else { $Installer })
-foreach ($name in @('chroma.exe', 'Uninstall.exe', 'chroma-no-integration', 'LICENSE', 'PRIVACY.md', 'vcruntime140.dll', 'platforms\qwindows.dll')) {
+foreach ($name in @('chroma.exe', 'Uninstall.exe', 'chroma-no-integration', 'LICENSE', 'PRIVACY.md', 'vcruntime140.dll', 'platforms\qwindows.dll', 'iconengines\qsvgicon.dll')) {
     if (-not (Test-Path -LiteralPath (Join-Path $install $name))) { throw "Missing installed file: $name" }
 }
 $initialVersion = (Get-Item -LiteralPath (Join-Path $install 'chroma.exe')).VersionInfo.FileVersion

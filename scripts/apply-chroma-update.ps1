@@ -15,7 +15,7 @@ function Get-SafeRelativePath([string]$Path) {
         if ($part -in @('', '.', '..') -or $part -match '[<>:"|?*\x00-\x1f]' -or $part -match '[ .]$' -or
             $part -match '^(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)') { throw "Invalid package path: $Path" }
     }
-    if ($relative -match '^(?i:instances|logs|metacache|cache|skins|skin-extras|accounts|downloads|assets|libraries|java)(/|$)' -or
+    if ($relative -match '^(?i:instances|logs|metacache|cache|skins|skin-extras|skin-outfits|accounts|downloads|assets|libraries|java)(/|$)' -or
         $relative -match '(?i)(^|/)(accounts\.json|profile\.json|prismlauncher\.cfg|chroma-ui\.cfg|chroma_update\.cfg|chroma-updates\.ini|chroma-no-integration|Uninstall\.exe)$') {
         throw "Package attempts to replace profile or installation data: $Path"
     }

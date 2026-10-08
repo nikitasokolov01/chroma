@@ -1,11 +1,12 @@
-# Skin Studio tools in development
+# Skin Studio tools for v1.0.0
 
-These changes are on `codex/skin-studio-tools`. They are not included in the
-published 0.3.0 installer.
+These tools are being prepared for v1.0.0. They are not included in the
+published 0.3.0 installer. See the [release preparation notes](releases/1.0.0.md).
 
 ## Paint, fill, and select
 
 - **Brush (B)** paints individual pixels; **Eraser (E)** clears outer pixels.
+- **Texture brush (T)** adds shading using the colors already painted on the skin.
 - **Bucket (G)** fills connected pixels of the same color. In 3D it stays on the
   clicked face; in 2D it follows the active texture regions. A selection limits
   the fill.
@@ -25,6 +26,58 @@ An active marquee limits brush strokes, fills, pastes, and effects. Clear the
 selection before editing the whole visible region again. Copy with **Ctrl+C**;
 **Ctrl+V** prepares the copied pixels for placement. Click the model or texture
 to place them, or press **Escape** to cancel placement.
+
+## Mirror painting
+
+In **Layers**, enable **Head and torso**, **Pair arms**, or **Pair legs** under
+**Mirror strokes**. Each option can be switched on independently. Brush,
+eraser, and texture strokes reflect across the character in both 2D and 3D, including
+side, top, and bottom faces and Classic/Slim arms. Both sides share one undo step.
+
+Mirroring respects the active layer, hidden parts, the selected editing region,
+and marquee selection. To paint both arms, leave both visible and use **All body
+regions**. Bucket fill, pasted pieces, and color effects keep their normal scope.
+
+## Texture brush
+
+Select the dotted **Texture brush** icon or press **T**. Its settings replace the
+color wheel in the inspector, leaving room for the canvas. Choose **Fine grain**
+for scattered shading, **Fabric** for a subtle weave, or **Hair** for vertical
+strands, then adjust **Strength** and the brush size.
+
+Paint directly on the 3D model or the 2D texture. Each pixel keeps its existing
+hue, saturation, and opacity; transparent pixels stay clear. Repeated mouse
+events within a stroke do not build up noise. Each new stroke can deepen the
+texture, and **Undo** restores the entire stroke, including its mirrored side.
+Hidden parts, active layers, and marquee selections limit the brush.
+
+![Texture brush settings in the existing Skin Studio inspector](screenshots/skin-texture-development.png)
+
+## Palette swapping
+
+The **Palette** tab opens large **Current** and **Preview** 3D models. Drag either
+to rotate both, scroll to zoom, or select **Reset view** to fit them again.
+Systems without 3D support use large front/back previews.
+
+Use **Where to recolor** to choose the whole skin, head, torso, paired arms or
+legs, or an individual limb. Choose the body layer, outer layer, or both.
+The color-family swatches update to match that scope, visible parts, and any
+marquee selection. Select a swatch, enter a hex color or select **Pick**, and
+adjust the hue range to include more or fewer related shades. Gray shades are
+kept separate from colored families. **Pick** opens a floating color wheel beside
+the control; changes preview immediately. Click outside or press **Escape** to
+close it without leaving Skin Studio.
+
+Previewing does not change your skin; **Apply swap** commits one undoable change. **Reset preview**
+returns the target color to the selected source. Shadows, highlights, and pixel
+opacity are retained, and hidden parts, hidden layers, and pixels outside a
+selection are protected. For example, select **Torso** and **Body layer** to
+recolor a shirt without changing matching colors on the arms or head. Leaving
+Palette restores the editing view and tool settings.
+
+![Palette swapping with synchronized 3D previews](screenshots/skin-palette-development.png)
+
+![Floating palette color picker](screenshots/skin-palette-popover-development.png)
 
 ## Effects
 
@@ -108,13 +161,45 @@ Extras are stored in `skin-extras` inside the active launcher profile. They stay
 local and are preserved by launcher updates. Back up this folder with the rest
 of your profile.
 
+## Outfit presets
+
+Use **Save outfit** in **Skin Library** to save a named snapshot of the selected
+skin and its Classic/Slim model. Any Extras already applied to that skin become
+part of the snapshot. Save your edited skin to the library first, then save the
+outfit. Include the cape choice when you want the outfit to equip an owned cape
+or remove it; leaving the cape choice out keeps the account's cape unchanged.
+
+Selecting an outfit previews it locally. Presets remain available across
+sessions and can be renamed or deleted without changing the original skin.
+**Apply outfit** uploads its skin and applies its saved cape choice to the
+selected account. An account that does not own the saved cape cannot apply that
+outfit. Sign-in must be complete and Minecraft closed before applying it.
+
+Outfits are stored in `skin-outfits` inside the active launcher profile and are
+preserved by launcher updates. They contain local skin/cape snapshots, not
+account credentials. Editing or deleting an Extra later does not change saved
+outfits.
+
+![Named outfits in the Skin Library](screenshots/skin-outfits-development.png)
+
 ## Verification
 
-The development build passed 34 test suites, 48 native launcher UI checks,
-48 UI checks using the fallback renderer, and eight updater preservation checks.
+Verification covers 36 test suites, 55 native interface checks, and 54 fallback
+interface checks (the native OpenGL mirror test is intentionally skipped there).
+After correcting test assumptions for Slim UVs and headless fonts, the palette
+suite passes all 14 checks on both platforms. Screenshot review caught compact
+tab overflow and file-control sizing; the affected Skin Studio checks were
+rerun on both renderers after fixing them. No failed checks remain. The earlier
+nine updater preservation checks also passed.
+
 Coverage includes selected-pixel copy/paste, visible-part effects, Shift cleanup,
 live adjustment history, independent reference visibility, Classic/Slim
-conversion, undo, and saving then applying extras in another session. Cape
-requests use a simulated account and network to check equipping, removing, and
-refused changes without altering a real account.
+conversion, undo, and saving then applying Extras in another session. New checks
+exercise mirrored anatomical faces, actual 2D/3D strokes, hidden destinations,
+texture patterns and repeat-event stability, synchronized palette cameras,
+scoped palettes, popup typing/dismissal, preview/undo and shade preservation,
+outfit persistence, source-skin
+protection, and missing-preset recovery. Cape requests use a simulated account
+and network; outfit UI checks verify local save/preview and account eligibility
+without uploading to a real account.
 The screenshots above use synthetic skins and an isolated test profile.

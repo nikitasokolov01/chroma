@@ -24,6 +24,8 @@ class QSlider;
 class QSpinBox;
 class QTabWidget;
 class SkinExtrasPanel;
+class SkinPalettePanel;
+class SkinPaletteCompare;
 
 class SkinEditorDialog : public QDialog, public SkinProvider {
     Q_OBJECT
@@ -70,6 +72,10 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     void applyEffect();
     void importReference();
     void updateReferenceView();
+    bool paletteViewActive() const;
+    void updatePaletteView();
+    void updateTextureSettings();
+    void updateInspectorControls();
     void copyMainSelection();
     void pasteMainSelection();
     QRegion effectRegion() const;
@@ -100,6 +106,8 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     QToolButton* m_referenceToggle = nullptr;
     QTabWidget* m_inspectorTabs = nullptr;
     SkinExtrasPanel* m_extras = nullptr;
+    SkinPalettePanel* m_paletteSwap = nullptr;
+    SkinPaletteCompare* m_paletteComparison = nullptr;
     QComboBox* m_effect = nullptr;
     QSlider* m_effectAmount = nullptr;
     QSpinBox* m_effectValue = nullptr;
@@ -110,6 +118,11 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     QList<QToolButton*> m_swatches;
     QWidget* m_canvasPanel = nullptr;
     QWidget* m_paintControls = nullptr;
+    QWidget* m_paintToolbar = nullptr;
+    QWidget* m_workspaceCommands = nullptr;
+    QWidget* m_textureControls = nullptr;
+    QComboBox* m_textureStyle = nullptr;
+    QSpinBox* m_textureStrength = nullptr;
     QWidget* m_previewPanel = nullptr;
     QList<QPushButton*> m_zoomButtons;
     QWidget* m_inspector = nullptr;
@@ -125,6 +138,7 @@ class SkinEditorDialog : public QDialog, public SkinProvider {
     SkinColorWheel* m_colorWheel = nullptr;
     QLineEdit* m_colorHex = nullptr;
     QSlider* m_opacity = nullptr;
+    QLabel* m_opacityLabel = nullptr;
     QList<QPushButton*> m_fileButtons;
     QList<QToolButton*> m_toolButtons;
     int m_layoutMode = -1;

@@ -46,8 +46,11 @@ Use Prism folder…** if needed.
 
 From 0.3.0, automatic update checks contact Chroma's GitHub releases. In
 **Settings → Launcher → Updater**, **Check for updates automatically** and
-**Include prereleases** are enabled by default. Checks normally run every 24
-hours; set **How Often?** to **On Launch** to check only when Chroma starts.
+**Include prereleases** are enabled by default. Version 1.0.0 checks shortly after
+launch and then hourly by default; an existing saved interval is preserved.
+Set **How Often?** to **On Launch** to check only when Chroma starts. Automatic
+checks show a notice with a feature summary; **What's new** opens the full notes
+without closing the current page. **Later** hides that release for the session.
 You can turn automatic checks off and still use **Check for updates now** or
 **Chroma header menu → Check for updates…**.
 
@@ -94,8 +97,9 @@ Read the [privacy guide](../PRIVACY.md) for local account storage, network conne
 
 ## Skin Library and Skin Studio
 
-For the tools being developed on `codex/skin-studio-tools`, see the
-[bucket, selection, effects, reference, and Skin Extras guide](SKIN-STUDIO-TOOLS.md).
+For the tools in the local v1.0.0 release, see the
+[Skin Studio tools guide](SKIN-STUDIO-TOOLS.md), including outfits, mirror painting,
+palette swaps, texture brushes, selections, reference skins, and Skin Extras.
 The published 0.3.0 controls are described below.
 
 Open **Skins** in the sidebar. The account dropdown chooses whose skins and capes
@@ -221,32 +225,59 @@ On Windows, the test runner stages the two upstream directory-symlink fixtures i
 
 ## Release versions and Windows installer
 
-Chroma has its own version sequence. While it is in preview, feature releases
-increment the minor version (`0.3.0`, `0.4.0`) and fixes increment the patch version
-(`0.3.1`, `0.3.2`). The three `Launcher_VERSION_*` numbers in `CMakeLists.txt` are
-the source of truth for the app, installer, package README, and source archives.
-Update the download links and add notes under `docs/releases/` with each release.
+Chroma has its own version sequence, with **1.0.0** prepared as the first version
+after the 0.x previews. The three `Launcher_VERSION_*` numbers in `CMakeLists.txt`
+are the source of truth for the app, installer, package README, and source
+archives. Add notes under `docs/releases/`; update public download links only
+after publishing the matching release.
 
-Commit and tag the release as `v<version>`, then configure and build from that
-revision so the executable records its matching commit and version. Run the unit
-and native UI checks before packaging. With release tools prepared:
+For a local release candidate, configure with `-ReleaseBuild` to display the core
+version while preserving the actual Git commit and branch in build information.
+The underlying CMake option is `Launcher_RELEASE_BUILD`. A later configure without
+the switch restores development version display; the switch does not commit,
+tag, publish, or change update settings. Tagged builds also recognize matching
+`1.0.0` or `v1.0.0` tags as stable.
+
+Freeze source changes before the final build so the matching source archive can
+capture the same inputs. Run the unit and native UI checks before packaging.
+With the release tools and runtime DLLs prepared, a local candidate uses:
 
 ```powershell
+.\scripts\build-chroma.ps1 -Action All -ReleaseBuild
 .\scripts\build-installer.ps1
 .\scripts\test-installer.ps1
 $version = .\scripts\get-chroma-version.ps1
-.\.tools\python\Scripts\python.exe scripts/archive-chroma-source.py --ref "v$version" --output "dist/release/v$version/Chroma-$version-source.tar.gz"
+.\.tools\python\Scripts\python.exe scripts/archive-chroma-source.py --working-tree --output "dist/release/v$version/Chroma-$version-source.tar.gz"
 .\.tools\python\Scripts\python.exe scripts/archive-dependency-sources.py
+Copy-Item -LiteralPath '.tools/release-licenses/qt-everywhere-src-6.5.3.tar.xz' -Destination "dist/release/v$version/"
+.\scripts\write-release-checksums.ps1 -ReleaseDirectory "dist/release/v$version"
 ```
 
 The installer and portable ZIP are written to `dist/release/v<version>/`.
-Packaging rejects a stale executable version or existing release output.
+Packaging rejects a stale executable version or existing release output. It
+generates `SHA256SUMS.txt` for the binary packages and manifest; run the checksum
+helper again after adding all source assets. The matching Qt source archive must
+be available locally before copying it into the release directory.
 Installer checks use a temporary directory without shell integration and verify
 install, upgrade, uninstall, bundled runtime loading, and profile preservation.
+For an upgrade from an existing release, additionally run
+`scripts/test-update-packages.ps1` with `-ReleaseDirectory`, `-PreviousInstaller`,
+and `-PreviousZip` pointing to the new directory and previous release packages.
+
+The working-tree source mode includes tracked local changes and nonignored new
+source files, records the base commit and per-file content hashes, and excludes
+local tools, test output, environment files, and launcher profiles. It includes
+initialized submodules at their actual checked-out revisions and rejects dirty
+submodules. It uses fixed archive timestamps from the base commit so identical
+source inputs produce identical archives. When packaging a committed release,
+use `--ref "v$version"` instead of `--working-tree`. Both modes preserve submodule
+sources, and neither changes the repository.
+
 Publish both packages, the application and dependency source archives, the
 matching full Qt source archive, `package-manifest.json`, and `SHA256SUMS.txt` on
 the same GitHub release. See [release licensing](RELEASE-LICENSING.md) for the
-source inventory. Keep previous releases available.
+source inventory. Publication is a separate step; these local scripts do not
+create a release or upload anything. Keep previous releases available.
 
 ## Implementation notes
 

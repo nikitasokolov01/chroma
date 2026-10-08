@@ -8,11 +8,12 @@
 class SkinCanvas : public QWidget {
     Q_OBJECT
    public:
-    enum Tool { Brush, Eraser, Eyedropper, Pan, Bucket, Select };
+    enum Tool { Brush, Eraser, Eyedropper, Pan, Bucket, Select, Texture };
     explicit SkinCanvas(SkinTextureDocument* document, QWidget* parent = nullptr);
     void setTool(Tool tool);
     void setColor(QColor color) { m_color = color; }
     void setBrushSize(int size) { m_brushSize = size; }
+    void setTextureSettings(SkinTextureDocument::TextureSettings settings);
     void setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer);
     void setLayerVisibility(bool body, bool outer);
     void setPartVisible(int part, bool visible);
@@ -67,6 +68,7 @@ class SkinCanvas : public QWidget {
     Tool m_tool = Brush;
     QColor m_color = Qt::white;
     int m_brushSize = 1;
+    SkinTextureDocument::TextureSettings m_textureSettings;
     qreal m_zoom = 5;
     QPointF m_pan;
     QPointF m_dragPosition;

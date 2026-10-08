@@ -103,6 +103,15 @@ void SkinCanvas::setTool(Tool tool)
         emit toolChanged(tool);
 }
 
+void SkinCanvas::setTextureSettings(SkinTextureDocument::TextureSettings settings)
+{
+    settings.strength = qBound(0, settings.strength, 100);
+    if (settings.style == m_textureSettings.style && settings.strength == m_textureSettings.strength)
+        return;
+    finishInteraction();
+    m_textureSettings = settings;
+}
+
 void SkinCanvas::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer)
 {
     finishInteraction();
@@ -271,7 +280,7 @@ void SkinCanvas::mousePressEvent(QMouseEvent* event)
         selectTo(pixel);
     } else if (!m_readOnly && m_tool == Bucket) {
         m_document->floodFill(pixel, m_color, editableRegion());
-    } else if (!m_readOnly && (m_tool == Brush || m_tool == Eraser)) {
+    } else if (!m_readOnly && (m_tool == Brush || m_tool == Eraser || m_tool == Texture)) {
         m_painting = true;
         m_lastPixel = pixel;
         m_document->beginStroke();
@@ -295,19 +304,12 @@ void SkinCanvas::paintTo(QPoint pixel)
 
 void SkinCanvas::paintPixel(QPoint pixel)
 {
-    const auto layer = activeLayer();
-    if (m_readOnly || (!m_bodyVisible && !m_outerVisible) || (layer == SkinTextureDocument::Base && !m_bodyVisible) ||
-        (layer == SkinTextureDocument::Overlay && !m_outerVisible))
+    if (m_readOnly)
         return;
-    for (int part = SkinTextureDocument::Head; part <= SkinTextureDocument::LeftLeg; ++part) {
-        if (!(m_visibleParts & (1u << part)) || (m_part != SkinTextureDocument::All && m_part != part))
-            continue;
-        const auto bodyPart = static_cast<SkinTextureDocument::Part>(part);
-        if (m_bodyVisible && layer != SkinTextureDocument::Overlay)
-            m_document->paintPixel(pixel, m_color, m_brushSize, bodyPart, SkinTextureDocument::Base, m_tool == Eraser);
-        if (m_outerVisible && layer != SkinTextureDocument::Base)
-            m_document->paintPixel(pixel, m_color, m_brushSize, bodyPart, SkinTextureDocument::Overlay, m_tool == Eraser);
-    }
+    if (m_tool == Texture)
+        m_document->texturePixel(pixel, m_brushSize, m_part, activeLayer(), m_textureSettings, editableRegion());
+    else
+        m_document->paintPixel(pixel, m_color, m_brushSize, m_part, activeLayer(), m_tool == Eraser, editableRegion());
 }
 
 void SkinCanvas::mouseMoveEvent(QMouseEvent* event)
@@ -412,6 +414,10 @@ void SkinCanvas::keyPressEvent(QKeyEvent* event)
                 setTool(Brush);
                 event->accept();
                 return;
+            case Qt::Key_T:
+                setTool(Texture);
+                event->accept();
+                return;
             case Qt::Key_E:
                 setTool(Eraser);
                 event->accept();
@@ -459,7 +465,7 @@ void SkinCanvas::keyPressEvent(QKeyEvent* event)
                 m_document->setSelection(QRegion(QRect(m_cursor, QSize(1, 1))).intersected(editableRegion()));
             else if (!m_readOnly && m_tool == Bucket)
                 m_document->floodFill(m_cursor, m_color, editableRegion());
-            else if (!m_readOnly && (m_tool == Brush || m_tool == Eraser)) {
+            else if (!m_readOnly && (m_tool == Brush || m_tool == Eraser || m_tool == Texture)) {
                 m_document->beginStroke();
                 paintPixel(m_cursor);
                 m_document->endStroke();

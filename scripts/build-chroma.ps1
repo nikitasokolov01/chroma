@@ -5,6 +5,7 @@ param(
     [string]$JavaHome,
     [string]$VcVars,
     [int]$Jobs = 6,
+    [switch]$ReleaseBuild,
     [string]$MicrosoftClientId = $env:CHROMA_MSA_CLIENT_ID,
     [string]$CurseForgeApiKey = $env:CHROMA_CURSEFORGE_API_KEY
 )
@@ -43,10 +44,12 @@ if ($Action -in @('Configure', 'All')) {
     if ($PSBoundParameters.ContainsKey('MicrosoftClientId') -or -not [string]::IsNullOrEmpty($MicrosoftClientId)) {
         $msaClientArgument = "-DLauncher_MSA_CLIENT_ID=$MicrosoftClientId"
     }
+    $releaseBuildOption = if ($ReleaseBuild) { 'ON' } else { 'OFF' }
     & cmake -S $projectRoot -B $buildRoot -G Ninja '-DCMAKE_BUILD_TYPE=RelWithDebInfo' `
         "-DCMAKE_PREFIX_PATH=$QtRoot" "-DCMAKE_TOOLCHAIN_FILE=$VcpkgRoot\scripts\buildsystems\vcpkg.cmake" `
         "-DVCPKG_INSTALLED_DIR=$installed" '-DVCPKG_TARGET_TRIPLET=x64-windows' `
         '-DBUILD_TESTING=ON' '-DENABLE_LTO=OFF' '-DLauncher_USE_PCH=ON' `
+        "-DLauncher_RELEASE_BUILD=$releaseBuildOption" `
         '-DLauncher_BUILD_PLATFORM=chroma-development' '-DLauncher_BUILD_ARTIFACT=' `
         '-DLauncher_UPDATER_GITHUB_REPO=' '-DLauncher_APP_BINARY_NAME=chroma' `
         '-DLauncher_BUG_TRACKER_URL=https://github.com/nikitasokolov01/chroma/issues' `

@@ -26,6 +26,7 @@
 #include <QSlider>
 #include <QSpinBox>
 #include <QSplitter>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolButton>
@@ -36,6 +37,8 @@
 #include "ui/dialogs/skins/SkinCanvas.h"
 #include "ui/dialogs/skins/SkinColorWheel.h"
 #include "ui/dialogs/skins/SkinExtrasPanel.h"
+#include "ui/dialogs/skins/SkinPalettePanel.h"
+#include "ui/dialogs/skins/SkinPaletteCompare.h"
 #include "ui/widgets/ClayWidgets.h"
 
 namespace {
@@ -132,6 +135,13 @@ QPixmap toolPixmap(SkinCanvas::Tool tool, QColor color)
         case SkinCanvas::Select:
             painter.setPen(QPen(color, 1.7, Qt::DashLine));
             painter.drawRect(QRectF(4, 4, 16, 16));
+            break;
+        case SkinCanvas::Texture:
+            painter.drawRoundedRect(QRectF(3, 3, 18, 18), 3, 3);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(color);
+            for (const auto point : { QPointF(7, 7), QPointF(16, 7), QPointF(11.5, 12), QPointF(7, 17), QPointF(16, 17) })
+                painter.drawEllipse(point, 1.5, 1.5);
             break;
     }
     return pixmap;
@@ -231,7 +241,9 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     paintControlsLayout->setContentsMargins(0, 0, 0, 0);
     paintControlsLayout->setSpacing(6);
     drawingLayout->addWidget(m_paintControls);
-    auto* toolRow = new QHBoxLayout;
+    m_paintToolbar = new QWidget(drawing);
+    auto* toolRow = new QHBoxLayout(m_paintToolbar);
+    toolRow->setContentsMargins(0, 0, 0, 0);
     auto* toolbox = new QWidget(drawing);
     toolbox->setObjectName("skinToolbox");
     toolbox->setAccessibleName(tr("Painting tools"));
@@ -240,16 +252,17 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     tools->setSpacing(4);
     auto* group = new QButtonGroup(this);
     const QStringList toolNames{
-        tr("Brush"), tr("Eraser"), tr("Pick Color"), tr("Pan / Rotate"), tr("Bucket fill"), tr("Marquee selection")
+        tr("Brush"), tr("Eraser"), tr("Pick Color"), tr("Pan / Rotate"), tr("Bucket fill"), tr("Marquee selection"), tr("Texture brush")
     };
-    const QStringList toolIds{ "skinToolBrush", "skinToolEraser", "skinToolPicker", "skinToolPan", "skinToolBucket", "skinToolSelect" };
-    const QList<Qt::Key> toolKeys{ Qt::Key_B, Qt::Key_E, Qt::Key_I, Qt::Key_H, Qt::Key_G, Qt::Key_M };
+    const QStringList toolIds{ "skinToolBrush", "skinToolEraser", "skinToolPicker", "skinToolPan", "skinToolBucket", "skinToolSelect", "skinToolTexture" };
+    const QList<Qt::Key> toolKeys{ Qt::Key_B, Qt::Key_E, Qt::Key_I, Qt::Key_H, Qt::Key_G, Qt::Key_M, Qt::Key_T };
     const QStringList descriptions{ tr("Paint with the selected color."),
                                     tr("Erase outer-layer pixels. Base layers stay opaque."),
                                     tr("Sample a color. Alt-click also picks a color."),
                                     tr("Drag to rotate the model or pan the texture."),
                                     tr("Fill connected pixels on the editable surface."),
-                                    tr("Drag to select pixels. Copy with Ctrl+C; paste with Ctrl+V, then click to place.") };
+                                    tr("Drag to select pixels. Copy with Ctrl+C; paste with Ctrl+V, then click to place."),
+                                    tr("Add fine grain, fabric or hair shading using the colors already on your skin.") };
     for (int i = 0; i < toolNames.size(); ++i) {
         auto* button = new QToolButton(toolbox);
         button->setObjectName(toolIds[i]);
@@ -284,7 +297,7 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     brush->setSuffix(tr(" px"));
     brush->setFixedHeight(30);
     brush->setFixedWidth(66);
-    drawingLayout->insertLayout(0, toolRow);
+    drawingLayout->insertWidget(0, m_paintToolbar);
 
     auto* modes = new QHBoxLayout;
     m_editMode = new QComboBox(drawing);
@@ -304,7 +317,51 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     modes->addWidget(grid);
     paintControlsLayout->addLayout(modes);
 
-    auto* commands = new QHBoxLayout;
+    m_textureControls = new QWidget(m_paintControls);
+    m_textureControls->setObjectName("skinTextureControls");
+    auto* textureLayout = new QVBoxLayout(m_textureControls);
+    textureLayout->setContentsMargins(0, 0, 0, 0);
+    textureLayout->setSpacing(4);
+    auto* textureTitle = new QLabel(tr("Texture brush"), m_textureControls);
+    auto textureTitleFont = textureTitle->font();
+    textureTitleFont.setBold(true);
+    textureTitle->setFont(textureTitleFont);
+    textureLayout->addWidget(textureTitle);
+    auto* textureRow = new QHBoxLayout;
+    textureRow->setSpacing(6);
+    m_textureStyle = new QComboBox(m_textureControls);
+    m_textureStyle->setObjectName("skinTextureStyle");
+    m_textureStyle->setAccessibleName(tr("Texture pattern"));
+    m_textureStyle->addItems({ tr("Fine grain"), tr("Fabric"), tr("Hair") });
+    m_textureStyle->setMinimumWidth(0);
+    m_textureStyle->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+    m_textureStyle->setFixedHeight(30);
+    auto* strengthLabel = new QLabel(tr("Strength"), m_textureControls);
+    m_textureStrength = new QSpinBox(m_textureControls);
+    m_textureStrength->setObjectName("skinTextureStrength");
+    m_textureStrength->setAccessibleName(tr("Texture strength"));
+    m_textureStrength->setRange(1, 100);
+    m_textureStrength->setValue(20);
+    m_textureStrength->setSuffix(tr("%"));
+    m_textureStrength->setFixedHeight(30);
+    m_textureStrength->setFixedWidth(68);
+    strengthLabel->setBuddy(m_textureStrength);
+    textureLayout->addWidget(m_textureStyle);
+    textureRow->addWidget(strengthLabel);
+    textureRow->addStretch();
+    textureRow->addWidget(m_textureStrength);
+    textureLayout->addLayout(textureRow);
+    auto* textureHint = new QLabel(tr("Shades existing colors. Transparent pixels stay clear."), m_textureControls);
+    textureHint->setWordWrap(true);
+    textureHint->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    textureLayout->addWidget(textureHint);
+    m_textureControls->hide();
+    connect(m_textureStyle, &QComboBox::currentIndexChanged, this, &SkinEditorDialog::updateTextureSettings);
+    connect(m_textureStrength, &QSpinBox::valueChanged, this, &SkinEditorDialog::updateTextureSettings);
+
+    m_workspaceCommands = new QWidget(drawing);
+    auto* commands = new QHBoxLayout(m_workspaceCommands);
+    commands->setContentsMargins(0, 0, 0, 0);
     commands->setSpacing(4);
     auto* referenceImport = new QPushButton(tr("Reference…"), drawing);
     referenceImport->setObjectName("skinImportReference");
@@ -336,7 +393,7 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     m_referenceWorkspace->setFixedHeight(28);
     m_referenceWorkspace->hide();
     commands->addWidget(m_referenceWorkspace, 1);
-    drawingLayout->addLayout(commands);
+    drawingLayout->addWidget(m_workspaceCommands);
     connect(referenceImport, &QPushButton::clicked, this, &SkinEditorDialog::importReference);
     connect(copy, &QPushButton::clicked, this, &SkinEditorDialog::copyMainSelection);
     connect(paste, &QPushButton::clicked, this, &SkinEditorDialog::pasteMainSelection);
@@ -349,6 +406,10 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     m_referenceSplit = new QSplitter(Qt::Horizontal, drawing);
     m_referenceSplit->setChildrenCollapsible(false);
     drawingLayout->addWidget(m_referenceSplit, 1);
+    m_paletteComparison = new SkinPaletteCompare(drawing);
+    m_paletteComparison->setObjectName("skinPaletteComparison");
+    m_paletteComparison->hide();
+    drawingLayout->addWidget(m_paletteComparison, 1);
     auto* split = m_split = new QSplitter(Qt::Horizontal, m_referenceSplit);
     split->setChildrenCollapsible(false);
     m_canvasPanel = new QWidget(split);
@@ -631,6 +692,8 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     inspector->setContentsMargins(8, 4, 8, 4);
     inspector->setSpacing(4);
     workspace->addWidget(m_inspector);
+    m_textureControls->setParent(m_inspector);
+    inspector->addWidget(m_textureControls);
     m_colorWheel = new SkinColorWheel(m_inspector);
     m_colorWheel->setFixedHeight(180);
     inspector->addWidget(m_colorWheel);
@@ -655,6 +718,7 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     auto* opacityRow = new QHBoxLayout;
     opacityRow->setSpacing(4);
     auto* opacityLabel = new QLabel(tr("Opacity"), m_inspector);
+    m_opacityLabel = opacityLabel;
     m_opacity = new QSlider(Qt::Horizontal, m_inspector);
     m_opacity->setObjectName("skinOpacity");
     m_opacity->setAccessibleName(tr("Brush opacity"));
@@ -676,7 +740,7 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     m_inspectorTabs->setDocumentMode(true);
     m_inspectorTabs->setStyleSheet(
         "QTabWidget#skinInspectorTabs::pane { border: none; } "
-        "QTabWidget#skinInspectorTabs QTabBar::tab { min-width: 0; padding: 5px 4px; }");
+        "QTabWidget#skinInspectorTabs QTabBar::tab { min-width: 0; margin: 0; padding: 5px 2px; }");
     inspector->addWidget(m_inspectorTabs, 1);
     auto* swatches = m_paletteLayout = new QGridLayout;
     swatches->setSpacing(3);
@@ -799,7 +863,27 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     camera->setAutoDefault(false);
     camera->setEnabled(m_preview != nullptr);
     visibilityGrid->addWidget(camera, 5, 0);
-    visibilityGrid->setRowStretch(6, 1);
+    auto* mirrorControls = new QWidget(visibility);
+    auto* mirrorLayout = new QVBoxLayout(mirrorControls);
+    mirrorLayout->setContentsMargins(0, 4, 0, 0);
+    mirrorLayout->setSpacing(4);
+    auto* mirrorLabel = new QLabel(tr("Mirror strokes"), mirrorControls);
+    mirrorLayout->addWidget(mirrorLabel);
+    auto* mirrorBody = new QCheckBox(tr("Head and torso"), mirrorControls);
+    auto* mirrorArms = new QCheckBox(tr("Pair arms"), mirrorControls);
+    auto* mirrorLegs = new QCheckBox(tr("Pair legs"), mirrorControls);
+    mirrorBody->setObjectName("skinMirrorHeadBody");
+    mirrorArms->setObjectName("skinMirrorArms");
+    mirrorLegs->setObjectName("skinMirrorLegs");
+    for (auto* toggle : { mirrorBody, mirrorArms, mirrorLegs }) {
+        toggle->setToolTip(tr("Reflect brush, eraser and texture strokes. Hidden parts and unselected pixels stay unchanged."));
+        mirrorLayout->addWidget(toggle);
+        connect(toggle, &QCheckBox::toggled, this, [this, mirrorBody, mirrorArms, mirrorLegs] {
+            m_document.setMirrorOptions({ mirrorBody->isChecked(), mirrorArms->isChecked(), mirrorLegs->isChecked() });
+        });
+    }
+    visibilityGrid->addWidget(mirrorControls, 6, 0);
+    visibilityGrid->setRowStretch(7, 1);
     if (m_preview)
         connect(camera, &QPushButton::clicked, m_preview, &SkinOpenGLWindow::resetView);
 
@@ -866,6 +950,23 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
         // Return to the new inventory item once the save form has collapsed.
         QTimer::singleShot(0, extrasScroll, [extrasScroll] { extrasScroll->verticalScrollBar()->setValue(0); });
     });
+    auto* paletteScroll = new QScrollArea(m_inspectorTabs);
+    paletteScroll->setObjectName("skinPaletteScroll");
+    paletteScroll->setFrameShape(QFrame::NoFrame);
+    paletteScroll->setWidgetResizable(true);
+    paletteScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_paletteSwap = new SkinPalettePanel(&m_document, paletteScroll);
+    connect(m_paletteSwap, &SkinPalettePanel::statusMessage, this, &SkinEditorDialog::showError);
+    connect(m_paletteSwap, &SkinPalettePanel::previewChanged, this, [this](const QImage& preview) {
+        m_paletteComparison->setTextures(m_document.image(), preview, m_document.model());
+    });
+    paletteScroll->setWidget(m_paletteSwap);
+    m_inspectorTabs->addTab(paletteScroll, tr("Palette"));
+    connect(m_inspectorTabs, &QTabWidget::currentChanged, this, [this] {
+        // Palette mode dedicates the workspace to its before/after comparison.
+        updateInspectorControls();
+        updatePaletteView();
+    });
     m_position = new QLabel(drawing);
     m_position->setObjectName("skinPixelPosition");
     drawingLayout->addWidget(m_position);
@@ -913,7 +1014,7 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     // Editor controls use compact dimensions; general launcher form padding
     // otherwise enlarges them beyond their fixed heights and clips labels.
     for (auto* button : findChildren<QPushButton*>())
-        if (!m_extras->isAncestorOf(button))
+        if (!m_extras->isAncestorOf(button) && !m_paletteSwap->isAncestorOf(button))
             button->setStyleSheet("QPushButton { min-height: 0; padding: 2px 8px; border-radius: 8px; }");
     for (auto* button : { m_save, m_apply, m_close })
         button->setStyleSheet(QString("QPushButton#%1 { min-height: 26px; max-height: 26px; padding: 0 8px; border-radius: 8px; }")
@@ -928,16 +1029,25 @@ SkinEditorDialog::SkinEditorDialog(QWidget* parent, MinecraftAccountPtr account,
     fit->setStyleSheet(
         "QPushButton { min-height: 22px; max-height: 22px; min-width: 38px; max-width: 38px; "
         "padding: 0; border-radius: 6px; }");
-    for (auto* combo : { m_editMode, part, m_model, m_effect })
+    for (auto* combo : { m_editMode, part, m_model, m_effect, m_textureStyle })
         combo->setStyleSheet("QComboBox { min-height: 0; padding: 2px 8px; border-radius: 8px; }");
+    // Keep the region selector readable when the compact reference workspace
+    // returns to editing. Style polish must not let it collapse above the canvas.
+    part->setStyleSheet("QComboBox#skinRegion { min-height: 22px; max-height: 22px; padding: 0 8px; border-radius: 8px; }");
     for (auto* combo : { m_referenceMode, m_referenceModelChoice, m_referenceWorkspace })
         combo->setStyleSheet(
             QString("QComboBox#%1 { min-height: 22px; max-height: 22px; padding: 0 5px; border-radius: 7px; }").arg(combo->objectName()));
     brush->setStyleSheet("QSpinBox { min-height: 0; padding: 2px 4px; border-radius: 7px; }");
+    m_textureStrength->setStyleSheet("QSpinBox { min-height: 0; padding: 2px 4px; border-radius: 7px; }");
     m_colorHex->setStyleSheet("QLineEdit { min-height: 0; padding: 2px 8px; border-radius: 8px; }");
     setColor(Qt::white);
+    updateTextureSettings();
+    updateInspectorControls();
     m_document.load(skin.getTexture(), skin.getModel());
     updateActions();
+    // Applying styles can replace Qt's explicit minimum sizes. Resolve the
+    // responsive button geometry again after the final style is installed.
+    m_layoutMode = -1;
     updateLayout();
     qApp->installEventFilter(this);
 }
@@ -962,6 +1072,10 @@ SkinEditorDialog::~SkinEditorDialog()
 
 void SkinEditorDialog::synchronize()
 {
+    if (m_paletteSwap)
+        m_paletteSwap->setAllowedRegion(effectRegion());
+    if (m_paletteSwap && m_paletteComparison)
+        m_paletteComparison->setTextures(m_document.image(), m_paletteSwap->previewImage(), m_document.model());
     if (m_document.isDirty())
         m_savedPath.clear();
     if (m_previewModel.getModel() != m_document.model())
@@ -1157,7 +1271,7 @@ bool SkinEditorDialog::eventFilter(QObject* watched, QEvent* event)
                (event->type() == QEvent::EnabledChange && belongs && !widget->isEnabled()) ||
                (event->type() == QEvent::FocusIn && !belongs)) {
         setBodyThroughOverlay(false);
-    } else if (belongs && isVisible() && isEnabled() && !m_applying) {
+    } else if (belongs && isVisible() && isEnabled() && !m_applying && !paletteViewActive()) {
         if (event->type() == QEvent::KeyPress) {
             const auto* key = static_cast<QKeyEvent*>(event);
             if (key->key() == Qt::Key_Shift)
@@ -1275,6 +1389,8 @@ void SkinEditorDialog::updateReferenceView()
 
 void SkinEditorDialog::copyMainSelection()
 {
+    if (paletteViewActive())
+        return;
     if (width() < 800 && m_referenceLoaded && m_referencePanel->isVisible()) {
         const bool copied = m_referencePreview && !m_referenceFailed && m_referenceMode->currentIndex() == 0
                                 ? m_referencePreview->copySelection()
@@ -1290,6 +1406,8 @@ void SkinEditorDialog::copyMainSelection()
 
 void SkinEditorDialog::pasteMainSelection()
 {
+    if (paletteViewActive())
+        return;
     if (width() < 800 && m_referenceLoaded)
         m_referenceWorkspace->setCurrentIndex(0);
     bool ready;
@@ -1321,7 +1439,56 @@ void SkinEditorDialog::setSharedTool(SkinCanvas::Tool tool)
         m_referenceCanvas->setTool(tool);
     if (m_referencePreview)
         m_referencePreview->setTool(tool);
+    updateInspectorControls();
     m_sharingTool = false;
+}
+
+bool SkinEditorDialog::paletteViewActive() const
+{
+    return m_inspectorTabs && m_inspectorTabs->currentWidget() &&
+           m_inspectorTabs->currentWidget()->objectName() == "skinPaletteScroll";
+}
+
+void SkinEditorDialog::updatePaletteView()
+{
+    m_document.endStroke();
+    m_canvas->cancelPaste();
+    if (m_preview)
+        m_preview->cancelPaste();
+    setBodyThroughOverlay(false);
+    if (paletteViewActive()) {
+        m_paletteComparison->setTextures(m_document.image(), m_paletteSwap->previewImage(), m_document.model());
+        if (m_status)
+            m_status->setText(tr("Compare current and proposed colors · Apply swap when ready"));
+    } else {
+        updateEditingMode();
+    }
+    updateLayout();
+}
+
+void SkinEditorDialog::updateTextureSettings()
+{
+    if (!m_canvas || !m_textureStyle || !m_textureStrength)
+        return;
+    const SkinTextureDocument::TextureSettings settings{ SkinTextureDocument::TextureStyle(m_textureStyle->currentIndex()),
+                                                        m_textureStrength->value() };
+    m_canvas->setTextureSettings(settings);
+    if (m_preview)
+        m_preview->setTextureSettings(settings);
+}
+
+void SkinEditorDialog::updateInspectorControls()
+{
+    if (!m_opacityLabel)
+        return;
+    const bool paletteMode = paletteViewActive();
+    const bool texture = m_toolButtons.value(SkinCanvas::Texture) && m_toolButtons[SkinCanvas::Texture]->isChecked();
+    m_textureControls->setVisible(texture && !paletteMode);
+    const bool paintingColors = !paletteMode && !texture;
+    m_colorWheel->setVisible(paintingColors);
+    m_colorHex->setVisible(paintingColors);
+    m_opacity->setVisible(paintingColors);
+    m_opacityLabel->setVisible(paintingColors);
 }
 
 void SkinEditorDialog::updateReferenceVisibility()
@@ -1405,6 +1572,7 @@ void SkinEditorDialog::updateLayout()
     if (!m_split || !m_position || m_fileButtons.isEmpty())
         return;
     const int compact = width() < 800 ? 1 : 0;
+    const bool paletteMode = paletteViewActive();
     const bool compactReference = compact && m_referenceLoaded;
     if (compactReference && !m_referenceToggle->isChecked() && m_referenceWorkspace->currentIndex() != 0) {
         const QSignalBlocker blocker(m_referenceWorkspace);
@@ -1413,9 +1581,14 @@ void SkinEditorDialog::updateLayout()
     const bool showingReference = compactReference && m_referenceToggle->isChecked() && m_referenceWorkspace->currentIndex() == 1;
     m_referencePanel->setVisible(m_referenceLoaded && m_referenceToggle->isChecked() && (!compact || showingReference));
     m_split->setVisible(!showingReference);
-    m_paintControls->setVisible(!showingReference);
+    m_referenceSplit->setVisible(!paletteMode);
+    m_paletteComparison->setVisible(paletteMode);
+    m_paintToolbar->setVisible(!paletteMode);
+    m_workspaceCommands->setVisible(!paletteMode);
+    m_paintControls->setVisible(!paletteMode && !showingReference);
+    m_position->setVisible(!paletteMode && !compact);
     for (auto* button : m_fileButtons)
-        button->setVisible(!showingReference);
+        button->setVisible(paletteMode || !showingReference);
     m_referenceWorkspace->setVisible(compactReference);
     m_referenceToggle->setVisible(!compactReference);
     const bool painting3D = m_preview && !m_previewFailed && m_editMode->currentIndex() == 0;
@@ -1431,14 +1604,15 @@ void SkinEditorDialog::updateLayout()
     m_previewPanel->setVisible(!compactReference || painting3D);
     if (m_referenceSplit)
         m_referenceSplit->setOrientation(compact ? Qt::Vertical : Qt::Horizontal);
+    // Font metrics differ between the native and fallback platforms. Reserve
+    // enough room for every inspector tab instead of hiding one behind arrows.
+    m_inspector->setFixedWidth(qMax(compact ? 188 : 210, m_inspectorTabs->tabBar()->sizeHint().width() + 16));
     if (m_layoutMode == compact)
         return;
     m_layoutMode = compact;
     m_split->setOrientation(Qt::Horizontal);
-    m_inspector->setFixedWidth(compact ? 188 : 210);
     m_colorWheel->setFixedHeight(compact ? 144 : 180);
     m_subtitle->setVisible(!compact);
-    m_position->setVisible(!compact);
     const int swatchColumns = compact ? 4 : 8;
     for (int i = 0; i < m_swatches.size(); ++i) {
         m_paletteLayout->removeWidget(m_swatches[i]);
@@ -1446,7 +1620,11 @@ void SkinEditorDialog::updateLayout()
     }
     const int columns = compact ? 3 : 6;
     for (int i = 0; i < m_fileButtons.size(); ++i) {
-        m_fileButtons[i]->setFixedHeight(compact ? 28 : 32);
+        const int height = compact ? 28 : 32;
+        m_fileButtons[i]->setStyleSheet(
+            QString("QPushButton { min-height: %1px; max-height: %1px; padding: 0 8px; border-width: 2px; border-radius: 8px; }")
+                .arg(height - 4));
+        m_fileButtons[i]->setFixedHeight(height);
         m_fileLayout->removeWidget(m_fileButtons[i]);
         m_fileLayout->addWidget(m_fileButtons[i], i / columns, i % columns);
     }
@@ -1495,6 +1673,10 @@ void SkinEditorDialog::updateVisibility()
             m_preview->setPartLayerVisible(i, SkinTextureDocument::Base, body && visible);
             m_preview->setPartLayerVisible(i, SkinTextureDocument::Overlay, outer && visible);
         }
+        if (m_paletteComparison) {
+            m_paletteComparison->setPartLayerVisible(i, SkinTextureDocument::Base, body && visible);
+            m_paletteComparison->setPartLayerVisible(i, SkinTextureDocument::Overlay, outer && visible);
+        }
     }
     if (m_preview) {
         m_preview->setRegion(m_editMode->currentIndex() == 0 ? SkinTextureDocument::All : region, target);
@@ -1502,5 +1684,7 @@ void SkinEditorDialog::updateVisibility()
     }
     if (m_extras)
         m_extras->setVisibleParts(visibleParts);
+    if (m_paletteSwap)
+        m_paletteSwap->setAllowedRegion(scope);
     updateLayerHint();
 }

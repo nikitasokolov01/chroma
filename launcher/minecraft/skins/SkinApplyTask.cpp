@@ -100,6 +100,12 @@ void SkinApplyTask::upload()
         emitFailed(tr("The account is in use or needs sign-in. Refresh the account after closing Minecraft, then retry."));
         return;
     }
+    // Refresh may change the account's cape inventory. Revalidate before
+    // uploading the skin so an incompatible outfit never starts a partial apply.
+    if (m_cape && !m_cape->isEmpty() && !m_account->accountData()->minecraftProfile.capes.contains(*m_cape)) {
+        emitFailed(tr("This cape is no longer listed on the selected Minecraft account. Choose another outfit or cape before applying."));
+        return;
+    }
     setStatus(tr("Uploading skin…"));
     auto request = SkinUpload::makeBytes(m_account->accessToken(), m_png, m_model == SkinModel::SLIM ? "slim" : "classic");
     request->setNetwork(APPLICATION->network());

@@ -20,6 +20,9 @@ class QToolButton;
 class QVBoxLayout;
 class InstanceView;
 class InstanceProxyModel;
+class ChromaUpdater;
+class UpdateNotice;
+class WindowControls;
 
 // The home screen shares Prism's actions and instance view. Launching, account
 // handling, imports, editing, and drag/drop remain owned by their existing code.
@@ -50,6 +53,7 @@ class LauncherHome : public QWidget {
     bool libraryOnly() const { return m_libraryOnly; }
     void toggleSelectedPin();
     bool selectedInstancePinned() const;
+    void setUpdater(ChromaUpdater* updater);
 
    signals:
     void launchRequested(const QString& id);
@@ -89,6 +93,7 @@ class LauncherHome : public QWidget {
     QScrollArea* m_homeScroll;
     QScrollArea* m_pinsScroll;
     QVBoxLayout* m_pinnedRows;
+    QVBoxLayout* m_contentLayout;
     QToolButton* m_pinButton;
     QHash<QString, QToolButton*> m_pinButtons;
     QLineEdit* m_search;
@@ -111,4 +116,6 @@ class LauncherHome : public QWidget {
     QToolButton* m_skinsButton;
     QToolButton* m_profileButton;
     QLabel* m_pageTitle;
+    UpdateNotice* m_updateNotice = nullptr;
+    WindowControls* m_windowControls = nullptr;
 };

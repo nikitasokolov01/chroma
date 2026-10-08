@@ -13,7 +13,7 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $projectRoot "dist\rel
 if (-not $NsisCompiler) { $NsisCompiler = Join-Path $projectRoot '.tools\nsis-3.12-portable\nsis-3.12\makensis.exe' }
 if (-not (Test-Path -LiteralPath $NsisCompiler)) { throw 'Run scripts/prepare-release-tools.ps1 or provide -NsisCompiler.' }
 $releaseRoot = [IO.Path]::GetFullPath($OutputDirectory)
-foreach ($name in @("Chroma-$Version-Windows-x64-Setup.exe", "Chroma-$Version-Windows-x64.zip", 'package-manifest.json')) {
+foreach ($name in @("Chroma-$Version-Windows-x64-Setup.exe", "Chroma-$Version-Windows-x64.zip", 'package-manifest.json', 'SHA256SUMS.txt')) {
     if (Test-Path -LiteralPath (Join-Path $releaseRoot $name)) { throw "Release output already exists: $name. Choose a new output directory." }
 }
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
@@ -40,7 +40,7 @@ $installLines = [Collections.Generic.List[string]]::new()
 $uninstallLines = [Collections.Generic.List[string]]::new()
 $inventory = foreach ($file in $files) {
     $relative = $file.FullName.Substring($installedStage.Length + 1)
-    if ($relative -match '(^|\\)(profile\.json|prismlauncher\.cfg|chroma-ui\.cfg|chroma-updates\.ini|accounts\.json|instances|logs|metacache|skins|skin-extras)(\\|$)') { throw "Profile data in release staging: $relative" }
+    if ($relative -match '(^|\\)(profile\.json|prismlauncher\.cfg|chroma-ui\.cfg|chroma-updates\.ini|accounts\.json|instances|logs|metacache|skins|skin-extras|skin-outfits)(\\|$)') { throw "Profile data in release staging: $relative" }
     $directory = Split-Path -Parent $relative
     $installLines.Add('SetOutPath "$INSTDIR' + $(if ($directory) { '\' + (ConvertTo-NsisLiteral $directory) }) + '"')
     $installLines.Add('File "' + (ConvertTo-NsisLiteral $file.FullName) + '"')
@@ -65,5 +65,6 @@ $portableInventory = @(Get-ChildItem -LiteralPath $portableStage -File -Recurse 
 })
 $metadata = [ordered]@{ version = $Version; installedFiles = @($inventory); portableFiles = $portableInventory; installer = (Split-Path -Leaf $installer); portableZip = (Split-Path -Leaf $zipPath) }
 $metadata | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $releaseRoot 'package-manifest.json') -Encoding UTF8
+& (Join-Path $PSScriptRoot 'write-release-checksums.ps1') -ReleaseDirectory $releaseRoot
 Get-FileHash -LiteralPath $installer, $zipPath -Algorithm SHA256 | Format-Table -AutoSize
 Write-Output "Release staging: $stagingRoot"

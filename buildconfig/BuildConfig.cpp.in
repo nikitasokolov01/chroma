@@ -94,7 +94,12 @@ Config::Config()
         GIT_COMMIT = "";
     }
 
-    if (GIT_REFSPEC.startsWith("refs/heads/")) {
+#cmakedefine01 Launcher_RELEASE_BUILD
+    // A local release build may precede its public tag. Keep its real commit
+    // and refspec above; the explicit build option changes only the channel.
+    if (Launcher_RELEASE_BUILD || GIT_TAG == versionString() || GIT_TAG == "v" + versionString()) {
+        VERSION_CHANNEL = "stable";
+    } else if (GIT_REFSPEC.startsWith("refs/heads/")) {
         VERSION_CHANNEL = GIT_REFSPEC;
         VERSION_CHANNEL.remove("refs/heads/");
     } else if (!GIT_COMMIT.isEmpty()) {

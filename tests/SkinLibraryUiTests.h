@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #pragma once
+#include <QTabBar>
 
 #include <QBuffer>
 #include <QCheckBox>
@@ -338,15 +339,16 @@ inline void compactToolbox(MainWindow* window, const QString& root)
     auto* pan = editor.findChild<QToolButton*>("skinToolPan");
     auto* bucket = editor.findChild<QToolButton*>("skinToolBucket");
     auto* select = editor.findChild<QToolButton*>("skinToolSelect");
+    auto* textureBrush = editor.findChild<QToolButton*>("skinToolTexture");
     auto* mode = editor.findChild<QComboBox*>("skinEditMode");
     auto* outer = editor.findChild<QToolButton*>("skinShowOuter");
-    QVERIFY(document && canvas && brush && eraser && picker && pan && bucket && select && mode && outer);
+    QVERIFY(document && canvas && brush && eraser && picker && pan && bucket && select && textureBrush && mode && outer);
     auto discardEdits = qScopeGuard([&] { document->markSaved(); });
     mode->setCurrentIndex(1);
     outer->setChecked(false);
     QVERIFY(canvas->isVisible());
     QVERIFY(brush->isChecked());
-    for (auto* button : { brush, eraser, picker, pan, bucket, select }) {
+    for (auto* button : { brush, eraser, picker, pan, bucket, select, textureBrush }) {
         QVERIFY(!button->icon().isNull());
         QVERIFY(!button->accessibleName().isEmpty());
         QVERIFY(!button->toolTip().isEmpty());
@@ -396,12 +398,20 @@ inline void compactToolbox(MainWindow* window, const QString& root)
     QVERIFY(bucket->isChecked());
     QTest::keyClick(canvas, Qt::Key_M);
     QVERIFY(select->isChecked());
+    QTest::keyClick(canvas, Qt::Key_T);
+    QVERIFY(textureBrush->isChecked());
+    QVERIFY(editor.findChild<QWidget*>("skinTextureControls")->isVisible());
     for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
         window->resize(size);
         QTest::qWait(80);
-        for (auto* button : { brush, eraser, picker, pan, bucket, select }) {
+        for (auto* button : { brush, eraser, picker, pan, bucket, select, textureBrush }) {
             QVERIFY(button->width() <= 36 && button->height() <= 36);
             QVERIFY(button->parentWidget()->rect().contains(button->geometry()));
+        }
+        const auto* tabs = editor.findChild<QTabWidget*>("skinInspectorTabs")->tabBar();
+        for (int i = 0; i < tabs->count(); ++i) {
+            QVERIFY2(tabs->rect().contains(tabs->tabRect(i)), qPrintable(QString("Tab %1 clipped at %2px").arg(i).arg(size.width())));
+            QVERIFY(tabs->tabRect(i).width() >= tabs->fontMetrics().horizontalAdvance(tabs->tabText(i)));
         }
         for (auto* scroll : editor.findChildren<QScrollArea*>())
             if (scroll->isVisible())
@@ -654,7 +664,7 @@ inline void effectsRespectVisibilityAndSelection(MainWindow* window, const QStri
     auto* wheel = editor.findChild<SkinColorWheel*>("skinColorWheel");
     QVERIFY(document && tabs && effect && value && slider && apply && outer && head && wheel);
     auto discardEdits = qScopeGuard([&] { document->markSaved(); });
-    QCOMPARE(tabs->count(), 3);
+    QCOMPARE(tabs->count(), 4);
     tabs->setCurrentIndex(1);
     QCOMPARE(value->minimum(), -180);
     QCOMPARE(value->maximum(), 180);
@@ -720,8 +730,10 @@ inline void effectsRespectVisibilityAndSelection(MainWindow* window, const QStri
         for (int tab = 0; tab < tabs->count(); ++tab) {
             tabs->setCurrentIndex(tab);
             QTest::qWait(30);
-            QVERIFY(wheel->isVisible());
-            QVERIFY(window->rect().contains(QRect(wheel->mapTo(window, QPoint()), wheel->size())));
+            const bool paletteSwap = tabs->currentWidget()->objectName() == "skinPaletteScroll";
+            QCOMPARE(wheel->isVisible(), !paletteSwap);
+            if (!paletteSwap)
+                QVERIFY(window->rect().contains(QRect(wheel->mapTo(window, QPoint()), wheel->size())));
             for (const QString& name : { QString("skinSave"), QString("skinApply"), QString("skinClose") }) {
                 auto* button = editor.findChild<QPushButton*>(name);
                 QVERIFY(button && button->isVisible());

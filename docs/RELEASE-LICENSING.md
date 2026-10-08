@@ -1,5 +1,23 @@
 # Release licensing and source availability
 
+## v1.0.0 local preparation
+
+Version 1.0.0 is being prepared locally and is not yet published. Its release set
+uses `Chroma-1.0.0-source.tar.gz`, `Chroma-1.0.0-dependency-sources.tar.gz`, and the
+matching complete Qt source archive alongside the installer and portable ZIP.
+Retain the component licenses and notices described below. The prior 0.3.0 audit
+remains a historical record; it is not a fresh audit of a new package.
+
+For an uncommitted local candidate, `archive-chroma-source.py --working-tree`
+captures tracked changes and nonignored new source files with a content manifest
+and the actual base and submodule revisions. Excluded local tools, profile data,
+and environment files are not read into the source archive. Follow the
+[local release procedure](CHROMA.md#release-versions-and-windows-installer), inspect
+the final package inventory, and regenerate checksums after adding all sources.
+Do not substitute the old 0.3.0 launcher source for the 1.0.0 build.
+
+## Historical 0.3.0 distribution record
+
 This records the Chroma 0.3.0 Windows release preparation on **2026-09-29**.
 It is a distribution record and maintainer guide, not a legal guarantee.
 The controlling texts are [LICENSE](../LICENSE), [COPYING.md](../COPYING.md),

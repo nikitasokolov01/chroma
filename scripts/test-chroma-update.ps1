@@ -18,6 +18,8 @@ function New-TestCase([string]$Name) {
     [IO.File]::WriteAllText((Join-Path $app 'accounts.json'), '{"keep":"account"}')
     New-Item -ItemType Directory -Path (Join-Path $app 'skin-extras') | Out-Null
     [IO.File]::WriteAllText((Join-Path $app 'skin-extras\helmet.skinextra'), 'keep helmet')
+    New-Item -ItemType Directory -Path (Join-Path $app 'skin-outfits') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $app 'skin-outfits\winter.skinoutfit'), 'keep outfit')
     [IO.File]::WriteAllText((Join-Path $app 'instances\example\minecraft\saves\level.dat'), 'keep world')
     [IO.File]::WriteAllText((Join-Path $payload 'chroma.exe'), 'new binary')
     [IO.File]::WriteAllText((Join-Path $payload 'z-last.dll'), 'new library')
@@ -54,7 +56,7 @@ function Invoke-TestCase($Case, [bool]$Success, [bool]$BomlessUtf8 = $false) {
     if ($status.rollbackErrors.Count) { throw 'Rollback reported errors.' }
     $expectedBinary = if ($Success) { 'new binary' } else { 'old binary' }
     if ([IO.File]::ReadAllText((Join-Path $Case.app 'chroma.exe')) -ne $expectedBinary) { throw 'Unexpected executable contents.' }
-    foreach ($pair in @(@('portable.txt', 'keep marker'), @('profile.json', '{"keep":"profile"}'), @('accounts.json', '{"keep":"account"}'), @('skin-extras\helmet.skinextra', 'keep helmet'), @('instances\example\minecraft\saves\level.dat', 'keep world'))) {
+    foreach ($pair in @(@('portable.txt', 'keep marker'), @('profile.json', '{"keep":"profile"}'), @('accounts.json', '{"keep":"account"}'), @('skin-extras\helmet.skinextra', 'keep helmet'), @('skin-outfits\winter.skinoutfit', 'keep outfit'), @('instances\example\minecraft\saves\level.dat', 'keep world'))) {
         if ([IO.File]::ReadAllText((Join-Path $Case.app $pair[0])) -ne $pair[1]) { throw "Profile was changed: $($pair[0])" }
     }
 }
@@ -81,6 +83,12 @@ $manifest.portableFiles += @{ path = 'skin-extras/helmet.skinextra'; size = 0; s
 $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $extras.request.manifestPath -Encoding UTF8
 $extras.request.manifestSha256 = (Get-FileHash -LiteralPath $extras.request.manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
 Invoke-TestCase $extras $false
+$outfits = New-TestCase 'skin-outfits-entry'
+$manifest = Get-Content -LiteralPath $outfits.request.manifestPath -Raw | ConvertFrom-Json
+$manifest.portableFiles += @{ path = 'skin-outfits/winter.skinoutfit'; size = 0; sha256 = '0' * 64 }
+$manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $outfits.request.manifestPath -Encoding UTF8
+$outfits.request.manifestSha256 = (Get-FileHash -LiteralPath $outfits.request.manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+Invoke-TestCase $outfits $false
 $traversal = New-TestCase 'path-traversal'
 $manifest = Get-Content -LiteralPath $traversal.request.manifestPath -Raw | ConvertFrom-Json
 $manifest.portableFiles += @{ path = '../outside.exe'; size = 0; sha256 = '0' * 64 }
@@ -91,4 +99,4 @@ $rollback = New-TestCase 'rollback'
 $locked = [IO.File]::Open((Join-Path $rollback.app 'z-last.dll'), [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
 try { Invoke-TestCase $rollback $false } finally { $locked.Dispose() }
 if ([IO.File]::ReadAllText((Join-Path $rollback.app 'z-last.dll')) -ne 'old library') { throw 'Locked library was changed.' }
-@{ passed = 8; bomlessUnicodeRequest = $true; profilePreservation = $true; skinExtrasPreservation = $true; rollback = $true; fixture = $fixture } | ConvertTo-Json
+@{ passed = 9; bomlessUnicodeRequest = $true; profilePreservation = $true; skinExtrasPreservation = $true; skinOutfitsPreservation = $true; rollback = $true; fixture = $fixture } | ConvertTo-Json

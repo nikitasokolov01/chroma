@@ -4,7 +4,7 @@ Unicode true
 !include FileFunc.nsh
 !include x64.nsh
 
-Name "Chroma ${VERSION} Preview"
+Name "Chroma ${VERSION}"
 OutFile "${OUTPUT_FILE}"
 InstallDir "$LOCALAPPDATA\Programs\Chroma"
 InstallDirRegKey HKCU "Software\Chroma" "InstallPath"
@@ -20,6 +20,8 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Chroma and upstream contributors"
 
 Var NoIntegration
 !define MUI_ABORTWARNING
+!define MUI_ICON "${PROJECT_ROOT}\program_info\chroma.ico"
+!define MUI_UNICON "${PROJECT_ROOT}\program_info\chroma.ico"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\chroma.exe"
 !define MUI_FINISHPAGE_RUN_NOTCHECKED
 !define MUI_FINISHPAGE_TEXT "Chroma is installed. Profiles and shared Prism data are kept separately and are preserved when Chroma is uninstalled."
@@ -80,12 +82,12 @@ Section "Chroma" SEC_MAIN
         WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Chroma" "InstallLocation" "$INSTDIR"
         WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Chroma" "UninstallString" '"$INSTDIR\Uninstall.exe"'
         WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Chroma" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
-        WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Chroma" "DisplayIcon" "$INSTDIR\chroma.exe"
+        WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Chroma" "DisplayIcon" '"$INSTDIR\chroma.exe",0'
         WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Chroma" "URLInfoAbout" "https://github.com/nikitasokolov01/chroma"
         WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Chroma" "NoModify" 1
         WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Chroma" "NoRepair" 1
         CreateDirectory "$SMPROGRAMS\Chroma"
-        CreateShortCut "$SMPROGRAMS\Chroma\Chroma.lnk" "$INSTDIR\chroma.exe"
+        CreateShortCut "$SMPROGRAMS\Chroma\Chroma.lnk" "$INSTDIR\chroma.exe" "" "$INSTDIR\chroma.exe" 0
         CreateShortCut "$SMPROGRAMS\Chroma\Uninstall Chroma.lnk" "$INSTDIR\Uninstall.exe"
     ${EndIf}
 SectionEnd

@@ -58,6 +58,8 @@
 #include "InstanceList.h"
 #include "InstanceOrderUiTests.h"
 #include "SkinLibraryUiTests.h"
+#include "SkinCreativeUiTests.h"
+#include "SkinMirrorViewTests.h"
 #include "icons/IconList.h"
 #include "meta/Index.h"
 #include "meta/VersionList.h"
@@ -95,6 +97,13 @@
 #include "ui/widgets/ProjectDescriptionPage.h"
 #include "ui/widgets/VersionListView.h"
 #include "ChromaUpdateUiTests.h"
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace {
 
@@ -912,24 +921,134 @@ class LauncherHomeTest : public QObject {
 
     void nativeWindowControlsSurviveThemeChanges()
     {
+        QVERIFY(!QApplication::windowIcon().isNull());
+        QWidget secondaryWindow;
+        QVERIFY(!secondaryWindow.windowIcon().pixmap(32, 32).isNull());
+        QCOMPARE(secondaryWindow.windowIcon().cacheKey(), QApplication::windowIcon().cacheKey());
         const auto flags = m_window->windowFlags();
-        QVERIFY(!flags.testFlag(Qt::FramelessWindowHint));
         QVERIFY(flags.testFlag(Qt::WindowMinimizeButtonHint));
         QVERIFY(flags.testFlag(Qt::WindowMaximizeButtonHint));
+#ifdef Q_OS_WIN
+        auto* minimize = m_home->findChild<QAbstractButton*>("windowMinimize");
+        auto* maximize = m_home->findChild<QAbstractButton*>("windowMaximize");
+        auto* close = m_home->findChild<QAbstractButton*>("windowClose");
+        QVERIFY(minimize && maximize && close);
+        const auto clickMaximize = [&] {
+            if (QGuiApplication::platformName() == "windows") {
+                const auto handle = reinterpret_cast<HWND>(m_window->winId());
+                const auto point = maximize->mapTo(m_window, maximize->rect().center()) * m_window->devicePixelRatioF();
+                POINT screen{ point.x(), point.y() };
+                QVERIFY(ClientToScreen(handle, &screen));
+                QCOMPARE(SendMessageW(handle, WM_NCHITTEST, 0, MAKELPARAM(screen.x, screen.y)), LRESULT(HTMAXBUTTON));
+                // Exercise the actual non-client press and captured client
+                // release. Direct button clicks cannot catch routing failures.
+                QVERIFY(PostMessageW(handle, WM_NCLBUTTONDOWN, HTMAXBUTTON, MAKELPARAM(screen.x, screen.y)));
+                QVERIFY(PostMessageW(handle, WM_LBUTTONUP, 0, MAKELPARAM(point.x(), point.y())));
+                QVERIFY(PostMessageW(handle, WM_CANCELMODE, 0, 0));
+            } else {
+                QTest::mouseClick(maximize, Qt::LeftButton);
+            }
+        };
+        for (auto* button : { minimize, maximize, close }) {
+            QVERIFY(button->isVisible());
+            QVERIFY(!button->accessibleName().isEmpty());
+            QVERIFY(button->focusPolicy() != Qt::NoFocus);
+        }
+#endif
         const auto original = APPLICATION->settings()->get("ApplicationTheme");
         for (const auto& theme : { "chroma", "chroma-dark", "bright" }) {
             APPLICATION->settings()->set("ApplicationTheme", theme);
             APPLICATION->themeManager()->applyCurrentlySelectedTheme();
             QCoreApplication::processEvents();
             QCOMPARE(m_window->windowFlags(), flags);
+            QVERIFY(m_window->grab().save(QDir(m_root).filePath(QString("custom-header-%1.png").arg(theme))));
+            if (QGuiApplication::platformName() == "windows") {
+                m_window->raise();
+                m_window->activateWindow();
+                QTest::qWait(100);
+                const QRect bounds = m_window->frameGeometry();
+                const auto frame = m_window->screen()->grabWindow(0, bounds.x(), bounds.y(), bounds.width(), bounds.height());
+                QVERIFY(!frame.isNull());
+                QVERIFY(frame.save(QDir(m_root).filePath(QString("custom-window-frame-%1.png").arg(theme))));
+            }
         }
         APPLICATION->settings()->set("ApplicationTheme", original);
         APPLICATION->themeManager()->applyCurrentlySelectedTheme();
+#ifdef Q_OS_WIN
+        clickMaximize();
+#else
         m_window->showMaximized();
+#endif
         QTRY_VERIFY(m_window->isMaximized());
+#ifdef Q_OS_WIN
+        QVERIFY(maximize->accessibleName().contains("Restore", Qt::CaseInsensitive));
+        clickMaximize();
+#else
         m_window->showNormal();
+#endif
+        QTRY_VERIFY(!m_window->isMaximized());
         m_window->resize(1280, 820);
         QTRY_COMPARE(m_window->size(), QSize(1280, 820));
+#ifdef Q_OS_WIN
+        QTest::mouseClick(minimize, Qt::LeftButton);
+        QTRY_VERIFY(m_window->isMinimized());
+        m_window->showNormal();
+        QTRY_VERIFY(!m_window->isMinimized());
+        QVERIFY(!minimize->hasFocus());
+        QVERIFY(!minimize->isDown());
+        QVERIFY(!minimize->property("nativeHover").toBool());
+        for (const QSize size : { QSize(1280, 820), QSize(680, 640) }) {
+            m_window->resize(size);
+            QTest::qWait(80);
+            QCOMPARE(m_window->size(), size);
+            auto* titleBar = m_home->findChild<QWidget*>("windowTitleBar");
+            auto* header = m_home->findChild<QWidget*>("homeHeader");
+            QVERIFY(titleBar && header);
+            QCOMPARE(titleBar->mapTo(m_window, QPoint()).y(), 0);
+            QCOMPARE(close->mapTo(m_window, QPoint()).x() + close->width(), m_window->width());
+            QCOMPARE(close->mapTo(m_window, QPoint()).y(), 0);
+            QVERIFY(header->mapTo(m_window, QPoint()).y() >= titleBar->height());
+            for (auto* button : { minimize, maximize, close }) {
+                QVERIFY(titleBar->rect().contains(QRect(button->mapTo(titleBar, QPoint()), button->size())));
+                QVERIFY(!header->isAncestorOf(button));
+            }
+            QVERIFY(m_window->grab().save(QDir(m_root).filePath(QString("custom-header-%1.png").arg(size.width()))));
+        }
+        m_window->resize(1280, 820);
+#endif
+    }
+
+    void customClosePreservesUnsavedSkin()
+    {
+#ifndef Q_OS_WIN
+        QSKIP("The integrated window controls are used on Windows.");
+#else
+        QVERIFY(m_window->inlineWorkspace()->closeAllPages());
+        SkinEditorDialog editor(m_window, MinecraftAccountPtr(), SkinModel(SkinLibraryUiTests::patternedSkin()));
+        m_window->openInlinePage(&editor, "Skin Studio");
+        auto* document = editor.findChild<SkinTextureDocument*>("skinEditingDocument");
+        auto* close = m_home->findChild<QAbstractButton*>("windowClose");
+        QVERIFY(document && close);
+        auto clean = qScopeGuard([&] { document->markSaved(); });
+        document->paintPixel(QPoint(8, 8), Qt::magenta, 1, SkinTextureDocument::Head, SkinTextureDocument::Base);
+        const auto edited = document->image();
+        bool cancelled = false;
+        QTimer::singleShot(40, m_window, [&] {
+            auto* question = qobject_cast<QMessageBox*>(m_window->inlineWorkspace()->currentPage());
+            if (question && question->button(QMessageBox::Cancel)) {
+                question->button(QMessageBox::Cancel)->click();
+                cancelled = true;
+            }
+        });
+        close->click();
+        QVERIFY(cancelled);
+        QVERIFY(m_window->isVisible());
+        QCOMPARE(m_window->inlineWorkspace()->currentPage(), &editor);
+        QCOMPARE(document->image(), edited);
+        QVERIFY(document->isDirty());
+        document->markSaved();
+        editor.reject();
+#endif
     }
 
     void responsiveGeometryAndScreenshots()
@@ -1285,6 +1404,20 @@ class LauncherHomeTest : public QObject {
 
     void skinToolsUseCompactIconsAndKeyboard() { SkinLibraryUiTests::compactToolbox(m_window, m_root); }
 
+    void mirrorBrushUsesEditorControls() { SkinCreativeUiTests::mirrorBrushUsesEditorControls(m_window, m_root); }
+
+    void canvasMirrorsPairedArmsAndHonorsHiddenParts() { SkinMirrorViewTests::canvasMirrorsPairedArmsAndHonorsHiddenParts(); }
+
+    void previewMirrorsPickedArmsAndHonorsHiddenParts() { SkinMirrorViewTests::previewMirrorsPickedArmsAndHonorsHiddenParts(); }
+
+    void paletteSwapUsesVisibleLayers() { SkinCreativeUiTests::paletteSwapUsesVisibleLayers(m_window, m_root); }
+
+    void paletteStudioScopesAndPopover() { SkinCreativeUiTests::paletteStudioScopesAndPopover(m_window, m_root); }
+
+    void textureBrushUsesExistingColors() { SkinCreativeUiTests::textureBrushUsesExistingColors(m_window, m_root); }
+
+    void outfitsPersistAndCheckCapeOwnership() { SkinCreativeUiTests::outfitsPersistAndCheckCapeOwnership(m_window, m_root); }
+
     void skinEditorModesAndVisibility() { SkinLibraryUiTests::editorModesAndVisibility(m_window, m_root); }
 
     void skinEffectsRespectVisibilityAndSelection() { SkinLibraryUiTests::effectsRespectVisibilityAndSelection(m_window, m_root); }
@@ -1365,6 +1498,7 @@ class LauncherHomeTest : public QObject {
         editor.reject();
     }
 
+    void backgroundUpdateNoticePreservesEditor() { ChromaUpdateUiTests::backgroundNotice(m_window, m_root); }
     void updaterPreservesUnsavedEditorDuringVerifiedDownload() { ChromaUpdateUiTests::verifiedDownload(m_window, m_root); }
 
     void libraryCanvasDoesNotRepaintWhenIdle()

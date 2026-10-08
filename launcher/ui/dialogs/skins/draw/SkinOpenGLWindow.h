@@ -43,6 +43,11 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     Q_OBJECT
 
    public:
+    struct CameraState {
+        float yaw = 90;
+        float pitch = 0;
+        float distance = 48;
+    };
     SkinOpenGLWindow(SkinProvider* provider, QColor color, QWidget* parent = nullptr);
     virtual ~SkinOpenGLWindow();
 
@@ -51,6 +56,8 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void updateCape(const QImage& cape);
     void setElytraVisible(bool visible);
     void resetView();
+    CameraState cameraState() const { return { m_yaw, m_pitch, m_distance }; }
+    void setCameraState(CameraState state);
     void setLayersVisible(bool base, bool overlay);
     void setPartVisible(int part, bool visible);
     void setPartLayerVisible(int part, SkinTextureDocument::Layer layer, bool visible);
@@ -70,6 +77,7 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     bool gridVisible() const { return m_gridVisible; }
     void setColor(QColor color) { m_color = color; }
     void setBrushSize(int size) { m_brushSize = qBound(1, size, 8); }
+    void setTextureSettings(SkinTextureDocument::TextureSettings settings);
     void setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer);
     std::optional<opengl::SkinPick> pickAt(QPointF position) const;
 
@@ -83,6 +91,7 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     // Signals completed drawing. Read grabFramebuffer() outside this callback
     // because a widget framebuffer readback may itself invoke paintGL().
     void frameRendered();
+    void cameraChanged();
 
    protected:
     void mousePressEvent(QMouseEvent* e) override;
@@ -142,6 +151,7 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     SkinCanvas::Tool m_tool = SkinCanvas::Brush;
     QColor m_color = Qt::white;
     int m_brushSize = 1;
+    SkinTextureDocument::TextureSettings m_textureSettings;
     SkinTextureDocument::Part m_part = SkinTextureDocument::All;
     bool m_gridVisible = true;
     QPointF m_lastPaintPosition;

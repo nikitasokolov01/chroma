@@ -10,12 +10,41 @@
 #include <QImageReader>
 #include <QMimeData>
 #include <QSaveFile>
+#include <array>
 
 namespace {
 constexpr auto PatchMime = "application/x-chroma-skin-pixels-v1";
 constexpr int PatchHeaderSize = 16;
 constexpr int MaximumPatchBytes = PatchHeaderSize + 64 * 64 * 4 + 64 * 64 / 8;
 constexpr int MaximumPngBytes = 1024 * 1024;
+
+struct SkinUvBox {
+    QPoint origin;
+    int width, height, depth;
+};
+
+SkinUvBox uvBox(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer, SkinModel::Model model)
+{
+    using D = SkinTextureDocument;
+    const QPoint base[] = { { 0, 0 }, { 16, 16 }, { 40, 16 }, { 32, 48 }, { 0, 16 }, { 16, 48 } };
+    const QPoint outer[] = { { 32, 0 }, { 16, 32 }, { 40, 32 }, { 48, 48 }, { 0, 32 }, { 0, 48 } };
+    const int armWidth = model == SkinModel::SLIM ? 3 : 4;
+    return { layer == D::Base ? base[part] : outer[part],
+             part == D::Head || part == D::Body ? 8 : part == D::RightArm || part == D::LeftArm ? armWidth : 4,
+             part == D::Head ? 8 : 12, part == D::Head ? 8 : 4 };
+}
+
+std::array<QRect, 6> uvFaces(const SkinUvBox& box)
+{
+    const auto [origin, width, height, depth] = box;
+    // Front, left, back, right, bottom, top; the same order as SkinGeometry.
+    return { QRect(origin + QPoint(depth, depth), QSize(width, height)),
+             QRect(origin + QPoint(depth + width, depth), QSize(depth, height)),
+             QRect(origin + QPoint(2 * depth + width, depth), QSize(width, height)),
+             QRect(origin + QPoint(0, depth), QSize(depth, height)),
+             QRect(origin + QPoint(depth + width, 0), QSize(width, depth)),
+             QRect(origin + QPoint(depth, 0), QSize(width, depth)) };
+}
 
 bool validPatch(const SkinTextureDocument::PixelPatch& patch)
 {
@@ -28,6 +57,43 @@ bool sameFillColor(QRgb left, QRgb right)
 {
     return left == right || (qAlpha(left) == 0 && qAlpha(right) == 0);
 }
+
+quint32 textureNoise(int x, int y)
+{
+    // Stable integer noise keeps repeated mouse events from changing a texel.
+    quint32 value = quint32(x) * 0x9e3779b9u ^ quint32(y) * 0x85ebca6bu ^ 0xc2b2ae35u;
+    value ^= value >> 16;
+    value *= 0x7feb352du;
+    value ^= value >> 15;
+    value *= 0x846ca68bu;
+    return value ^ (value >> 16);
+}
+
+QColor textureColor(QColor original, QPoint point, SkinTextureDocument::TextureSettings settings)
+{
+    using D = SkinTextureDocument;
+    int grain = 0;
+    switch (settings.style) {
+        case D::Fine:
+            grain = int(textureNoise(point.x(), point.y()) % 201) - 100;
+            break;
+        case D::Fabric:
+            grain = ((point.x() + point.y()) % 2 ? -70 : 70) + int(textureNoise(point.x(), point.y()) % 41) - 20;
+            break;
+        case D::Hair:
+            grain = int(textureNoise(point.x(), 0) % 177) - 88 + int(textureNoise(point.x(), point.y() / 3) % 25) - 12;
+            break;
+    }
+    // Adjust value, keeping each existing pixel's hue, saturation and alpha.
+    // Hair shares a column's main shade to form strands; fabric alternates a
+    // small weave; Fine scatters highlights and shadows independently.
+    const qreal shift = grain * qBound(0, settings.strength, 100) * .000024;
+    auto result = QColor::fromHsvF(qMax(qreal(0), qreal(original.hsvHueF())), original.hsvSaturationF(),
+                                  qBound(qreal(0), original.valueF() + shift, qreal(1)));
+    result.setAlpha(original.alpha());
+    return result;
+}
+
 QColor effectColor(QColor original, SkinTextureDocument::Effect effect, int amount)
 {
     using E = SkinTextureDocument;
@@ -127,25 +193,54 @@ QImage SkinTextureDocument::readPng(const QString& path, QString* error)
 QRegion SkinTextureDocument::uvRegion(Part part, Layer layer, SkinModel::Model model)
 {
     QRegion result;
-    auto addBox = [&result](QPoint origin, int width, int height, int depth) {
-        result += QRect(origin + QPoint(depth, 0), QSize(width * 2, depth));
-        result += QRect(origin + QPoint(0, depth), QSize(2 * (width + depth), height));
-    };
-    const int armWidth = model == SkinModel::SLIM ? 3 : 4;
     for (int p = Head; p <= LeftLeg; ++p) {
         if (part != All && p != part)
             continue;
-        const QPoint base[] = { { 0, 0 }, { 16, 16 }, { 40, 16 }, { 32, 48 }, { 0, 16 }, { 16, 48 } };
-        const QPoint outer[] = { { 32, 0 }, { 16, 32 }, { 40, 32 }, { 48, 48 }, { 0, 32 }, { 0, 48 } };
-        const int width = p == Head || p == Body ? 8 : p == RightArm || p == LeftArm ? armWidth : 4;
-        const int height = p == Head ? 8 : 12;
-        const int depth = p == Head ? 8 : 4;
-        if (layer != Overlay)
-            addBox(base[p], width, height, depth);
-        if (layer != Base)
-            addBox(outer[p], width, height, depth);
+        for (auto currentLayer : { Base, Overlay }) {
+            if (layer != Both && layer != currentLayer)
+                continue;
+            const auto [origin, width, height, depth] = uvBox(static_cast<Part>(p), currentLayer, model);
+            result += QRect(origin + QPoint(depth, 0), QSize(width * 2, depth));
+            result += QRect(origin + QPoint(0, depth), QSize(2 * (width + depth), height));
+        }
     }
     return result;
+}
+
+QPoint SkinTextureDocument::mirroredPixel(QPoint pixel) const
+{
+    for (int p = Head; p <= LeftLeg; ++p) {
+        Part target;
+        if (p == Head || p == Body) {
+            if (!m_mirrorOptions.headAndBody)
+                continue;
+            target = static_cast<Part>(p);
+        } else if (p == RightArm || p == LeftArm) {
+            if (!m_mirrorOptions.arms)
+                continue;
+            target = p == RightArm ? LeftArm : RightArm;
+        } else {
+            if (!m_mirrorOptions.legs)
+                continue;
+            target = p == RightLeg ? LeftLeg : RightLeg;
+        }
+        for (auto layer : { Base, Overlay }) {
+            const auto sourceFaces = uvFaces(uvBox(static_cast<Part>(p), layer, model()));
+            for (size_t face = 0; face < sourceFaces.size(); ++face) {
+                const auto& source = sourceFaces[face];
+                if (!source.contains(pixel))
+                    continue;
+                // Reflection across the character's center swaps side faces.
+                // Every face reverses its horizontal UV direction; vertical
+                // coordinates, including the differently oriented soles, stay.
+                const auto targetFace = face == 1 ? 3 : face == 3 ? 1 : face;
+                const auto destination = uvFaces(uvBox(target, layer, model()))[targetFace];
+                return QPoint(destination.right() - (pixel.x() - source.left()),
+                              destination.top() + pixel.y() - source.top());
+            }
+        }
+    }
+    return QPoint(-1, -1);
 }
 
 bool SkinTextureDocument::load(const QImage& image, SkinModel::Model model)
@@ -159,6 +254,7 @@ bool SkinTextureDocument::load(const QImage& image, SkinModel::Model model)
     m_history = { m_state };
     m_cursor = 0;
     m_stroke = false;
+    m_strokeBase = {};
     clearSelection();
     emit changed();
     return true;
@@ -197,34 +293,109 @@ void SkinTextureDocument::markSaved()
     emit changed();
 }
 
+void SkinTextureDocument::setMirrorOptions(MirrorOptions options)
+{
+    if (m_mirrorOptions.headAndBody == options.headAndBody && m_mirrorOptions.arms == options.arms &&
+        m_mirrorOptions.legs == options.legs)
+        return;
+    endStroke();
+    m_mirrorOptions = options;
+}
+
 void SkinTextureDocument::beginStroke()
 {
+    if (m_stroke)
+        return;
     finishColorAdjustments();
+    m_strokeBase = m_state.image;
     m_stroke = true;
 }
 
-void SkinTextureDocument::paintPixel(QPoint pixel, QColor color, int brushSize, Part part, Layer layer, bool erase)
+void SkinTextureDocument::paintPixel(QPoint pixel,
+                                     QColor color,
+                                     int brushSize,
+                                     Part part,
+                                     Layer layer,
+                                     bool erase,
+                                     const QRegion& allowed)
 {
     finishColorAdjustments();
     if (m_state.image.isNull())
         return;
-    const auto editable = editableRegion(uvRegion(part, layer, model()));
+    const auto permitted = editableRegion(allowed);
+    const auto editable = permitted & uvRegion(part, layer, model());
     const auto base = uvRegion(All, Base, model());
     const int size = qBound(1, brushSize, 8);
     const QRect brush(pixel - QPoint((size - 1) / 2, (size - 1) / 2), QSize(size, size));
     bool modified = false;
+    const auto paint = [&](QPoint point) {
+        if (!permitted.contains(point) || (erase && base.contains(point)))
+            return;
+        QColor next = erase ? QColor(Qt::transparent) : color;
+        if (base.contains(point))
+            next.setAlpha(255);
+        if (m_state.image.pixelColor(point) != next) {
+            m_state.image.setPixelColor(point, next);
+            modified = true;
+        }
+    };
     for (int y = brush.top(); y <= brush.bottom(); ++y) {
         for (int x = brush.left(); x <= brush.right(); ++x) {
             const QPoint point(x, y);
-            if (!editable.contains(point) || !m_state.image.rect().contains(point) || (erase && base.contains(point)))
+            if (!editable.contains(point))
                 continue;
-            QColor next = erase ? QColor(Qt::transparent) : color;
-            if (base.contains(point))
-                next.setAlpha(255);
-            if (m_state.image.pixelColor(point) != next) {
-                m_state.image.setPixelColor(point, next);
-                modified = true;
-            }
+            paint(point);
+            paint(mirroredPixel(point));
+        }
+    }
+    if (modified) {
+        if (!m_stroke)
+            record();
+        emit changed();
+    }
+}
+
+void SkinTextureDocument::texturePixel(QPoint pixel,
+                                       int brushSize,
+                                       Part part,
+                                       Layer layer,
+                                       TextureSettings settings,
+                                       const QRegion& allowed)
+{
+    if (m_state.image.isNull() || settings.strength <= 0 || settings.style < Fine || settings.style > Hair)
+        return;
+    finishColorAdjustments();
+    const auto permitted = editableRegion(allowed);
+    const auto editable = permitted & uvRegion(part, layer, model());
+    const int size = qBound(1, brushSize, 8);
+    const QRect brush(pixel - QPoint((size - 1) / 2, (size - 1) / 2), QSize(size, size));
+    // QImage's shared copy also freezes the baseline for standalone stamps.
+    const QImage baseline = m_stroke ? m_strokeBase : m_state.image;
+    bool modified = false;
+    const auto apply = [&](QPoint point, QPoint patternPoint) {
+        if (!permitted.contains(point))
+            return;
+        const auto original = baseline.pixelColor(point);
+        if (!original.alpha())
+            return;
+        const auto next = textureColor(original, patternPoint, settings);
+        if (m_state.image.pixel(point) != next.rgba()) {
+            m_state.image.setPixelColor(point, next);
+            modified = true;
+        }
+    };
+    for (int y = brush.top(); y <= brush.bottom(); ++y) {
+        for (int x = brush.left(); x <= brush.right(); ++x) {
+            const QPoint point(x, y);
+            if (!editable.contains(point) || !baseline.pixelColor(point).alpha())
+                continue;
+            const auto mirror = mirroredPixel(point);
+            // Both sides use the same pattern even when a stroke crosses the
+            // center. Each side still samples its own original painted color.
+            const bool useMirror = mirror.x() >= 0 && (mirror.y() < y || (mirror.y() == y && mirror.x() < x));
+            const auto patternPoint = useMirror ? mirror : point;
+            apply(point, patternPoint);
+            apply(mirror, patternPoint);
         }
     }
     if (modified) {
@@ -239,6 +410,7 @@ void SkinTextureDocument::endStroke()
     if (!m_stroke)
         return;
     m_stroke = false;
+    m_strokeBase = {};
     record();
     emit changed();
 }

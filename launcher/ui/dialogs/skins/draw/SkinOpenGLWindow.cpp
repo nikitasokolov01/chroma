@@ -30,6 +30,7 @@
 #include <QVector2D>
 #include <QVector3D>
 #include <QtMath>
+#include <cmath>
 #include <functional>
 
 #include "minecraft/skins/SkinModel.h"
@@ -206,6 +207,15 @@ void SkinOpenGLWindow::setTool(SkinCanvas::Tool tool)
     emit toolChanged(tool);
 }
 
+void SkinOpenGLWindow::setTextureSettings(SkinTextureDocument::TextureSettings settings)
+{
+    settings.strength = qBound(0, settings.strength, 100);
+    if (settings.style == m_textureSettings.style && settings.strength == m_textureSettings.strength)
+        return;
+    finishStroke();
+    m_textureSettings = settings;
+}
+
 void SkinOpenGLWindow::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer)
 {
     finishStroke();
@@ -330,7 +340,7 @@ void SkinOpenGLWindow::applyTool(QPointF position)
         emit colorPicked(m_document->image().pixelColor(pick->pixel));
         return;
     }
-    if (m_readOnly || (m_tool != SkinCanvas::Brush && m_tool != SkinCanvas::Eraser))
+    if (m_readOnly || (m_tool != SkinCanvas::Brush && m_tool != SkinCanvas::Eraser && m_tool != SkinCanvas::Texture))
         return;
     if (m_lastPaintPick && m_lastPaintPick->pixel == pick->pixel && m_lastPaintPick->faceRect == pick->faceRect)
         return;
@@ -341,9 +351,14 @@ void SkinOpenGLWindow::applyTool(QPointF position)
     QSignalBlocker blocker(m_document);
     const QRect brush(pick->pixel - QPoint((m_brushSize - 1) / 2, (m_brushSize - 1) / 2), QSize(m_brushSize, m_brushSize));
     const auto pixels = brush.intersected(pick->faceRect);
+    const auto allowed = editableRegion();
     for (int y = pixels.top(); y <= pixels.bottom(); ++y)
-        for (int x = pixels.left(); x <= pixels.right(); ++x)
-            m_document->paintPixel(QPoint(x, y), m_color, 1, pick->part, pick->layer, m_tool == SkinCanvas::Eraser);
+        for (int x = pixels.left(); x <= pixels.right(); ++x) {
+            if (m_tool == SkinCanvas::Texture)
+                m_document->texturePixel(QPoint(x, y), 1, pick->part, pick->layer, m_textureSettings, allowed);
+            else
+                m_document->paintPixel(QPoint(x, y), m_color, 1, pick->part, pick->layer, m_tool == SkinCanvas::Eraser, allowed);
+        }
     blocker.unblock();
     if (m_document->image().cacheKey() != previousKey)
         emit m_document->changed();
@@ -403,7 +418,7 @@ void SkinOpenGLWindow::mousePressEvent(QMouseEvent* event)
         } else if (m_tool == SkinCanvas::Bucket && !m_readOnly) {
             if (pick)
                 m_document->floodFill(pick->pixel, m_color, QRegion(pick->faceRect).intersected(editableRegion()));
-        } else if (!m_readOnly && (m_tool == SkinCanvas::Brush || m_tool == SkinCanvas::Eraser)) {
+        } else if (!m_readOnly && (m_tool == SkinCanvas::Brush || m_tool == SkinCanvas::Eraser || m_tool == SkinCanvas::Texture)) {
             m_document->beginStroke();
             m_painting = true;
             applyTool(event->position());
@@ -429,10 +444,8 @@ void SkinOpenGLWindow::mouseMoveEvent(QMouseEvent* event)
     }
     if (m_rotateButton != Qt::NoButton) {
         const auto movement = QVector2D(event->position()) - m_mousePosition;
-        m_yaw = std::fmod(m_yaw + movement.x() * .5f + 360.f, 360.f);
-        m_pitch = qBound(-80.f, m_pitch + movement.y() * .5f, 80.f);
+        setCameraState({ m_yaw + movement.x() * .5f, m_pitch + movement.y() * .5f, m_distance });
         m_mousePosition = QVector2D(event->position());
-        update();
     } else if (m_selecting) {
         selectTo(event->position());
     } else if (m_painting) {
@@ -822,9 +835,7 @@ void SkinOpenGLWindow::wheelEvent(QWheelEvent* event)
     finishStroke();
     // Adjust distance based on scroll
     int delta = event->angleDelta().y();  // Positive for scroll up, negative for scroll down
-    m_distance -= delta * 0.01f;          // Adjust sensitivity factor
-    m_distance = qBound(28.f, m_distance, 120.f);
-    update();  // Trigger a repaint
+    setCameraState({ m_yaw, m_pitch, m_distance - delta * .01f });
     event->accept();
 }
 void SkinOpenGLWindow::setElytraVisible(bool visible)
@@ -838,10 +849,26 @@ void SkinOpenGLWindow::setElytraVisible(bool visible)
 void SkinOpenGLWindow::resetView()
 {
     finishStroke();
-    m_distance = 48;
-    m_yaw = 90;
-    m_pitch = 0;
+    setCameraState({});
+}
+
+void SkinOpenGLWindow::setCameraState(CameraState state)
+{
+    if (!std::isfinite(state.yaw) || !std::isfinite(state.pitch) || !std::isfinite(state.distance))
+        return;
+    state.yaw = std::fmod(state.yaw, 360.f);
+    if (state.yaw < 0)
+        state.yaw += 360.f;
+    state.pitch = qBound(-80.f, state.pitch, 80.f);
+    state.distance = qBound(28.f, state.distance, 120.f);
+    if (m_yaw == state.yaw && m_pitch == state.pitch && m_distance == state.distance)
+        return;
+    finishStroke();
+    m_yaw = state.yaw;
+    m_pitch = state.pitch;
+    m_distance = state.distance;
     update();
+    emit cameraChanged();
 }
 
 void SkinOpenGLWindow::setLayersVisible(bool base, bool overlay)
@@ -921,6 +948,10 @@ void SkinOpenGLWindow::keyPressEvent(QKeyEvent* event)
                 setTool(SkinCanvas::Brush);
                 event->accept();
                 return;
+            case Qt::Key_T:
+                setTool(SkinCanvas::Texture);
+                event->accept();
+                return;
             case Qt::Key_E:
                 setTool(SkinCanvas::Eraser);
                 event->accept();
@@ -946,35 +977,36 @@ void SkinOpenGLWindow::keyPressEvent(QKeyEvent* event)
         }
     }
     finishStroke();
+    auto camera = cameraState();
     switch (event->key()) {
         case Qt::Key_Home:
         case Qt::Key_R:
-            resetView();
+            camera = {};
             break;
         case Qt::Key_Left:
-            m_yaw -= 10;
+            camera.yaw -= 10;
             break;
         case Qt::Key_Right:
-            m_yaw += 10;
+            camera.yaw += 10;
             break;
         case Qt::Key_Up:
-            m_pitch = qMax(-80.f, m_pitch - 10);
+            camera.pitch -= 10;
             break;
         case Qt::Key_Down:
-            m_pitch = qMin(80.f, m_pitch + 10);
+            camera.pitch += 10;
             break;
         case Qt::Key_Plus:
         case Qt::Key_Equal:
-            m_distance = qMax(28.f, m_distance - 4);
+            camera.distance -= 4;
             break;
         case Qt::Key_Minus:
-            m_distance = qMin(120.f, m_distance + 4);
+            camera.distance += 4;
             break;
         default:
             QOpenGLWidget::keyPressEvent(event);
             return;
     }
-    update();
+    setCameraState(camera);
     event->accept();
 }
 

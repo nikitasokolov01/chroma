@@ -22,6 +22,11 @@ ecm_add_test(SkinTextureDocument_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_V
 ecm_add_test(SkinExtras_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME SkinExtras)
 set_tests_properties(SkinTextureDocument SkinExtras PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+ecm_add_test(SkinOutfit_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME SkinOutfit)
+ecm_add_test(SkinPalette_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
+    TEST_NAME SkinPalette)
+set_tests_properties(SkinOutfit SkinPalette PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 ecm_add_test(SkinPreview_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test
     TEST_NAME SkinPreview)
 ecm_add_test(SkinPicking_test.cpp LINK_LIBRARIES Launcher_logic Qt${QT_VERSION_MAJOR}::Test

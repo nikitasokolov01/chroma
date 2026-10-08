@@ -27,14 +27,22 @@ Chroma rebuilds Prism Launcher's default interface around a card library, a pers
 
 Read the [v0.3.0 release notes](docs/releases/0.3.0.md) for requirements and verification results. **Upgrading from 0.2.0 requires this manual download once.** From 0.3.0, Chroma checks its GitHub releases automatically, including preview releases. You choose **Download update**, then **Install and restart** after checksum verification. Automatic checks can be disabled in **Settings → Launcher → Updater**. See [updating Chroma](docs/CHROMA.md#updating-chroma).
 
-## Skin Studio work in development
+## Local v1.0.0 release
 
-The `codex/skin-studio-tools` branch adds bucket fill, a marquee selection, Shift
+The **v1.0.0** release is built and validated locally. It adds bucket fill, a marquee selection, Shift
 painting through the outer layer, live hue and brightness adjustments, reference
 skins with shared tools, separate visibility controls and copy/paste, owned cape
 switching, and a named **Skin Extras** inventory for reusable pieces such as
-helmets or whole outer layers. See the [tools guide](docs/SKIN-STUDIO-TOOLS.md). These changes
-are separate from the published 0.3.0 download and await merging to `main`.
+helmets or whole outer layers. It also adds named **outfit presets**, independent
+**mirror painting** controls, and **palette swapping** with synchronized 3D
+previews, body-part/layer palettes, and a floating color picker. The **texture
+brush** adds fine grain, fabric, or hair shading from existing colors. See the
+[tools guide](docs/SKIN-STUDIO-TOOLS.md). Version 1 also adds a persistent update
+notice with a **What’s new** review and a custom Windows header that follows the
+Chroma theme. See the [v1.0.0 release notes](docs/releases/1.0.0.md).
+The local installer and portable ZIP are in `dist/release/v1.0.0/`.
+These changes are not yet published; the download links above still point to
+the existing 0.3.0 release.
 
 ![Skin Extras inventory in the development build](docs/screenshots/skin-extras-development.png)
 

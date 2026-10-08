@@ -28,7 +28,7 @@ foreach ($mode in @('installed', 'portable')) {
     $world = Join-Path $app 'instances\fixture\minecraft\saves\example'
     New-Item -ItemType Directory -Path $world -Force | Out-Null
     $preserved = @{}
-    foreach ($relative in @('profile.json', 'accounts.json', 'prismlauncher.cfg', 'skin-extras\helmet.skinextra', 'instances\fixture\minecraft\saves\example\level.dat')) {
+    foreach ($relative in @('profile.json', 'accounts.json', 'prismlauncher.cfg', 'skin-extras\helmet.skinextra', 'skin-outfits\winter.skinoutfit', 'instances\fixture\minecraft\saves\example\level.dat')) {
         $path = Join-Path $app $relative
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
         [IO.File]::WriteAllText($path, 'Synthetic updater preservation fixture')

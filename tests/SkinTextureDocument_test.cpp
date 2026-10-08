@@ -33,6 +33,373 @@ class SkinTextureDocumentTest : public QObject {
     }
 
    private slots:
+    void textureStylesKeepExistingColorsAndStableStrokeHistory_data()
+    {
+        QTest::addColumn<int>("style");
+        QTest::newRow("fine") << int(Document::Fine);
+        QTest::newRow("fabric") << int(Document::Fabric);
+        QTest::newRow("hair") << int(Document::Hair);
+    }
+
+    void textureStylesKeepExistingColorsAndStableStrokeHistory()
+    {
+        QFETCH(int, style);
+        QImage source(64, 64, QImage::Format_ARGB32);
+        source.fill(QColor(100, 160, 200, 137));
+        source.setPixelColor(40, 8, QColor(12, 24, 48, 0));
+        Document document;
+        QVERIFY(document.load(source));
+        const auto before = document.image();
+        const QRegion allowed(40, 8, 8, 8);
+        const Document::TextureSettings settings{ static_cast<Document::TextureStyle>(style), 20 };
+        QSignalSpy changes(&document, &Document::changed);
+        document.beginStroke();
+        document.texturePixel({ 43, 11 }, 8, Document::Head, Document::Overlay, settings, allowed);
+        const auto firstStamp = document.image();
+        QVERIFY(firstStamp != before);
+        QCOMPARE(changes.count(), 1);
+        // Duplicate begin/event delivery cannot reset the sampled baseline or
+        // progressively brighten/darken a pixel during the same drag.
+        document.beginStroke();
+        for (int repeat = 0; repeat < 20; ++repeat)
+            document.texturePixel({ 43, 11 }, 8, Document::Head, Document::Overlay, settings, allowed);
+        QCOMPARE(document.image(), firstStamp);
+        QCOMPARE(changes.count(), 1);
+        document.endStroke();
+        bool lighter = false, darker = false;
+        for (int y = 0; y < 64; ++y) {
+            for (int x = 0; x < 64; ++x) {
+                const auto original = before.pixelColor(x, y), result = document.image().pixelColor(x, y);
+                if (!allowed.contains(QPoint(x, y)) || !original.alpha()) {
+                    QCOMPARE(result, original);
+                    continue;
+                }
+                QCOMPARE(result.alpha(), original.alpha());
+                QVERIFY(qAbs(result.hsvHueF() - original.hsvHueF()) < .02);
+                QVERIFY(qAbs(result.hsvSaturationF() - original.hsvSaturationF()) < .02);
+                QVERIFY(qAbs(result.red() - original.red()) <= 13);
+                QVERIFY(qAbs(result.green() - original.green()) <= 13);
+                QVERIFY(qAbs(result.blue() - original.blue()) <= 13);
+                lighter |= result.value() > original.value();
+                darker |= result.value() < original.value();
+            }
+        }
+        QVERIFY(lighter && darker);
+        document.undo();
+        QCOMPARE(document.image(), before);
+        QVERIFY(!document.canUndo());
+        document.redo();
+        QCOMPARE(document.image(), firstStamp);
+    }
+
+    void texturePatternsAreDistinctAndHairFollowsStrands()
+    {
+        QImage source(64, 64, QImage::Format_ARGB32);
+        source.fill(QColor(128, 128, 128));
+        QVector<QImage> results;
+        for (auto style : { Document::Fine, Document::Fabric, Document::Hair }) {
+            Document document;
+            QVERIFY(document.load(source));
+            document.texturePixel({ 11, 11 }, 8, Document::Head, Document::Base, { style, 60 });
+            results.append(document.image());
+        }
+        QVERIFY(results[0] != results[1]);
+        QVERIFY(results[0] != results[2]);
+        QVERIFY(results[1] != results[2]);
+        int horizontalVariation = 0, verticalVariation = 0;
+        for (int y = 8; y < 15; ++y)
+            for (int x = 8; x < 15; ++x) {
+                const auto value = results[2].pixelColor(x, y).value();
+                horizontalVariation += qAbs(value - results[2].pixelColor(x + 1, y).value());
+                verticalVariation += qAbs(value - results[2].pixelColor(x, y + 1).value());
+            }
+        QVERIFY(horizontalVariation > verticalVariation * 3);
+    }
+
+    void textureMirrorsRespectMasksAndExistingPaint()
+    {
+        for (auto model : { SkinModel::CLASSIC, SkinModel::SLIM }) {
+            QImage source(64, 64, QImage::Format_ARGB32);
+            source.fill(QColor(120, 80, 40, 137));
+            Document document;
+            QVERIFY(document.load(source, model));
+            document.setMirrorOptions({ false, true, false });
+            const auto before = document.image();
+            const QPoint pixel(44, 36), mirror(model == SkinModel::SLIM ? 54 : 55, 52);
+            const Document::TextureSettings settings{ Document::Fabric, 50 };
+            document.texturePixel(pixel, 1, Document::RightArm, Document::Overlay, settings);
+            const auto color = document.image().pixelColor(pixel);
+            QVERIFY(color != before.pixelColor(pixel));
+            QCOMPARE(color.alpha(), 137);
+            auto expected = before;
+            expected.setPixelColor(pixel, color);
+            expected.setPixelColor(mirror, color);
+            QCOMPARE(document.image(), expected);
+            document.undo();
+            QVERIFY(!document.canUndo());
+
+            const auto allowed = Document::uvRegion(Document::RightArm, Document::Overlay, model);
+            document.texturePixel(pixel, 1, Document::RightArm, Document::Overlay, settings, allowed);
+            expected.setPixelColor(mirror, before.pixelColor(mirror));
+            QCOMPARE(document.image(), expected);
+            document.undo();
+            document.setSelection(QRegion(QRect(pixel, QSize(1, 1))));
+            document.texturePixel(pixel, 3, Document::RightArm, Document::Overlay, settings);
+            QCOMPARE(document.image(), expected);
+            document.undo();
+            document.clearSelection();
+            document.texturePixel(pixel, 1, Document::RightArm, Document::Base, settings);
+            QCOMPARE(document.image(), before);
+            document.texturePixel(pixel, 1, Document::RightArm, Document::Overlay, settings,
+                                  Document::uvRegion(Document::LeftArm, Document::Overlay, model));
+            QCOMPARE(document.image(), before);
+            QVERIFY(!document.canUndo());
+
+            // Texture never adds paint to an empty source or mirrored texel.
+            source.setPixelColor(pixel, QColor(12, 24, 48, 0));
+            QVERIFY(document.load(source, model));
+            const auto transparentSource = document.image();
+            document.texturePixel(pixel, 1, Document::RightArm, Document::Overlay, settings);
+            QCOMPARE(document.image(), transparentSource);
+            QVERIFY(!document.canUndo());
+            source.setPixelColor(pixel, before.pixelColor(pixel));
+            source.setPixelColor(mirror, QColor(12, 24, 48, 0));
+            QVERIFY(document.load(source, model));
+            document.texturePixel(pixel, 1, Document::RightArm, Document::Overlay, settings);
+            QCOMPARE(document.image().pixelColor(pixel), color);
+            QCOMPARE(document.image().pixelColor(mirror), source.pixelColor(mirror));
+        }
+    }
+
+    void textureStrengthAndInvalidPixelsStayBounded()
+    {
+        QImage source(64, 64, QImage::Format_ARGB32);
+        source.fill(QColor(120, 160, 200, 137));
+        Document document;
+        QVERIFY(document.load(source, SkinModel::SLIM));
+        const auto before = document.image();
+        document.texturePixel({ 8, 8 }, 8, Document::All, Document::Both, { Document::Fine, 0 });
+        document.texturePixel({ 8, 8 }, 8, Document::All, Document::Both, { Document::Fine, -50 });
+        document.texturePixel({ 8, 8 }, 8, Document::All, Document::Both, { static_cast<Document::TextureStyle>(-1), 20 });
+        document.texturePixel({ 54, 20 }, 1, Document::All, Document::Both, { Document::Fine, 20 });
+        document.texturePixel({ -20, -20 }, 8, Document::All, Document::Both, { Document::Fine, 20 });
+        QCOMPARE(document.image(), before);
+        QVERIFY(!document.canUndo());
+        document.texturePixel({ 11, 11 }, 8, Document::Head, Document::Base, { Document::Fabric, 1000 });
+        const auto maximum = document.image();
+        for (int y = 8; y < 16; ++y)
+            for (int x = 8; x < 16; ++x) {
+                QCOMPARE(maximum.pixelColor(x, y).alpha(), 255);
+                QVERIFY(qAbs(maximum.pixelColor(x, y).value() - before.pixelColor(x, y).value()) <= 62);
+            }
+        document.undo();
+        document.texturePixel({ 11, 11 }, 8, Document::Head, Document::Base, { Document::Fabric, 100 });
+        QCOMPARE(document.image(), maximum);
+    }
+
+    void textureBaselineFollowsDocumentLifecycle()
+    {
+        for (int operation = 0; operation < 4; ++operation) {
+            QImage source(64, 64, QImage::Format_ARGB32);
+            source.fill(QColor(120, 80, 40, 137));
+            Document document;
+            QVERIFY(document.load(source));
+            document.beginStroke();
+            document.texturePixel({ 43, 11 }, 8, Document::Head, Document::Overlay, { Document::Fabric, 60 });
+            if (operation == 0) {
+                document.undo();
+            } else if (operation == 1) {
+                source.fill(QColor(40, 120, 180, 192));
+                QVERIFY(document.load(source));
+            } else if (operation == 2) {
+                document.setModel(SkinModel::SLIM);
+            } else {
+                document.reset();
+            }
+            const auto freshBaseline = document.image();
+            Document expected;
+            QVERIFY(expected.load(freshBaseline, document.model()));
+            expected.texturePixel({ 43, 11 }, 8, Document::Head, Document::Overlay, { Document::Fine, 20 });
+            document.beginStroke();
+            document.texturePixel({ 43, 11 }, 8, Document::Head, Document::Overlay, { Document::Fine, 20 });
+            document.endStroke();
+            QCOMPARE(document.image(), expected.image());
+            document.undo();
+            QCOMPARE(document.image(), freshBaseline);
+        }
+    }
+
+    void mirrorUsesAnatomicalFaces_data()
+    {
+        QTest::addColumn<int>("model");
+        QTest::addColumn<int>("part");
+        QTest::addColumn<int>("layer");
+        QTest::addColumn<QPoint>("source");
+        QTest::addColumn<QPoint>("destination");
+        const auto row = [](const char* name, QPoint source, QPoint destination, Document::Part part = Document::Head,
+                            Document::Layer layer = Document::Base, SkinModel::Model model = SkinModel::CLASSIC) {
+            QTest::newRow(name) << int(model) << int(part) << int(layer) << source << destination;
+        };
+        row("head front", { 8, 8 }, { 15, 8 });
+        row("head back", { 24, 8 }, { 31, 8 });
+        row("head right to left", { 0, 9 }, { 23, 9 });
+        row("head left to right", { 16, 10 }, { 7, 10 });
+        row("head top", { 8, 0 }, { 15, 0 });
+        row("head bottom", { 16, 0 }, { 23, 0 });
+        row("hat side", { 32, 9 }, { 55, 9 }, Document::Head, Document::Overlay);
+        row("body front", { 20, 20 }, { 27, 20 }, Document::Body);
+        row("body back", { 32, 20 }, { 39, 20 }, Document::Body);
+        row("body side", { 16, 21 }, { 31, 21 }, Document::Body);
+        row("body top", { 20, 16 }, { 27, 16 }, Document::Body);
+        row("body bottom", { 28, 16 }, { 35, 16 }, Document::Body);
+        row("jacket front", { 20, 36 }, { 27, 36 }, Document::Body, Document::Overlay);
+        row("arm front", { 44, 20 }, { 39, 52 }, Document::RightArm);
+        row("arm right to left", { 40, 20 }, { 43, 52 }, Document::RightArm);
+        row("arm left to right", { 48, 20 }, { 35, 52 }, Document::RightArm);
+        row("arm back", { 52, 20 }, { 47, 52 }, Document::RightArm);
+        row("arm top", { 44, 16 }, { 39, 48 }, Document::RightArm);
+        row("arm bottom", { 48, 16 }, { 43, 48 }, Document::RightArm);
+        row("sleeve front", { 44, 36 }, { 55, 52 }, Document::RightArm, Document::Overlay);
+        row("slim front", { 44, 20 }, { 38, 52 }, Document::RightArm, Document::Base, SkinModel::SLIM);
+        row("slim right to left", { 40, 20 }, { 42, 52 }, Document::RightArm, Document::Base, SkinModel::SLIM);
+        row("slim left to right", { 47, 20 }, { 35, 52 }, Document::RightArm, Document::Base, SkinModel::SLIM);
+        row("slim back", { 51, 20 }, { 45, 52 }, Document::RightArm, Document::Base, SkinModel::SLIM);
+        row("slim top", { 44, 16 }, { 38, 48 }, Document::RightArm, Document::Base, SkinModel::SLIM);
+        row("slim bottom", { 47, 16 }, { 41, 48 }, Document::RightArm, Document::Base, SkinModel::SLIM);
+        row("slim sleeve front", { 44, 36 }, { 54, 52 }, Document::RightArm, Document::Overlay, SkinModel::SLIM);
+        row("slim sleeve side", { 40, 36 }, { 58, 52 }, Document::RightArm, Document::Overlay, SkinModel::SLIM);
+        row("leg front", { 4, 20 }, { 23, 52 }, Document::RightLeg);
+        row("leg right to left", { 0, 20 }, { 27, 52 }, Document::RightLeg);
+        row("leg left to right", { 8, 20 }, { 19, 52 }, Document::RightLeg);
+        row("leg back", { 12, 20 }, { 31, 52 }, Document::RightLeg);
+        row("leg top", { 4, 16 }, { 23, 48 }, Document::RightLeg);
+        row("leg bottom", { 8, 16 }, { 27, 48 }, Document::RightLeg);
+        row("trouser leg front", { 4, 36 }, { 7, 52 }, Document::RightLeg, Document::Overlay);
+    }
+
+    void mirrorUsesAnatomicalFaces()
+    {
+        QFETCH(int, model);
+        QFETCH(int, part);
+        QFETCH(int, layer);
+        QFETCH(QPoint, source);
+        QFETCH(QPoint, destination);
+        Document document;
+        QVERIFY(document.load(texture(), static_cast<SkinModel::Model>(model)));
+        document.setMirrorOptions({ true, true, true });
+        QVERIFY(!document.isDirty());
+        QVERIFY(!document.canUndo());
+        const auto before = document.image();
+        document.paintPixel(source, QColor(200, 40, 60, 80), 1, static_cast<Document::Part>(part), static_cast<Document::Layer>(layer));
+        const QColor expectedColor(200, 40, 60, layer == Document::Base ? 255 : 80);
+        auto expected = before;
+        expected.setPixelColor(source, expectedColor);
+        expected.setPixelColor(destination, expectedColor);
+        QCOMPARE(document.image(), expected);
+        document.undo();
+        QCOMPARE(document.image(), before);
+        QVERIFY(!document.canUndo());
+        document.redo();
+        QCOMPARE(document.image(), expected);
+        document.undo();
+        // Mirroring the opposite anatomical side must map back to the source.
+        document.paintPixel(destination, expectedColor, 1, Document::All, Document::Both);
+        QCOMPARE(document.image(), expected);
+    }
+
+    void mirrorGroupsAreIndependent()
+    {
+        const QPoint sources[] = { { 8, 8 }, { 20, 20 }, { 44, 20 }, { 4, 20 } };
+        const QPoint destinations[] = { { 15, 8 }, { 27, 20 }, { 39, 52 }, { 23, 52 } };
+        for (int enabled = -1; enabled < 3; ++enabled) {
+            Document document;
+            QVERIFY(document.load(texture()));
+            document.setMirrorOptions({ enabled == 0, enabled == 1, enabled == 2 });
+            const auto before = document.image();
+            auto expected = before;
+            document.beginStroke();
+            for (int i = 0; i < 4; ++i) {
+                document.paintPixel(sources[i], Qt::red, 1, Document::All, Document::Both);
+                expected.setPixelColor(sources[i], Qt::red);
+                if ((i < 2 && enabled == 0) || (i == 2 && enabled == 1) || (i == 3 && enabled == 2))
+                    expected.setPixelColor(destinations[i], Qt::red);
+            }
+            document.endStroke();
+            QCOMPARE(document.image(), expected);
+            document.undo();
+            QCOMPARE(document.image(), before);
+            QVERIFY(!document.canUndo());
+        }
+    }
+
+    void mirrorHonorsDestinationVisibilityAndSelection()
+    {
+        Document document;
+        QVERIFY(document.load(texture()));
+        document.setMirrorOptions({ true, true, true });
+        const auto before = document.image();
+        const QRegion rightArm = Document::uvRegion(Document::RightArm, Document::Both, document.model());
+        const QRegion leftArm = Document::uvRegion(Document::LeftArm, Document::Both, document.model());
+        document.paintPixel({ 44, 20 }, Qt::red, 1, Document::RightArm, Document::Base, false, rightArm);
+        QCOMPARE(document.image().pixelColor(44, 20), QColor(Qt::red));
+        QCOMPARE(document.image().pixelColor(39, 52), before.pixelColor(39, 52));
+        document.undo();
+        // A hidden source cannot paint its visible counterpart either.
+        document.paintPixel({ 44, 20 }, Qt::red, 1, Document::RightArm, Document::Base, false, leftArm);
+        QCOMPARE(document.image(), before);
+        QVERIFY(!document.canUndo());
+        const auto bothArms = rightArm + leftArm;
+        document.setSelection(QRegion(44, 20, 1, 1));
+        document.paintPixel({ 44, 20 }, Qt::red, 1, Document::RightArm, Document::Base, false, bothArms);
+        QCOMPARE(document.image().pixelColor(39, 52), before.pixelColor(39, 52));
+        document.undo();
+        document.setSelection(QRegion(44, 20, 1, 1) + QRegion(39, 52, 1, 1));
+        document.paintPixel({ 44, 20 }, Qt::blue, 3, Document::RightArm, Document::Base, false, bothArms);
+        auto expected = before;
+        expected.setPixelColor(44, 20, Qt::blue);
+        expected.setPixelColor(39, 52, Qt::blue);
+        QCOMPARE(document.image(), expected);
+        document.undo();
+        document.clearSelection();
+        // Hidden base pixels remain protected even when the outer layer is enabled.
+        document.paintPixel({ 44, 20 }, Qt::red, 1, Document::All, Document::Both, false,
+                            Document::uvRegion(Document::All, Document::Overlay, document.model()));
+        QCOMPARE(document.image(), before);
+        QVERIFY(!document.canUndo());
+    }
+
+    void mirrorEraserAndLargeStrokesPreserveLayersAndUndoTogether()
+    {
+        Document document;
+        QVERIFY(document.load(texture(), SkinModel::SLIM));
+        document.setMirrorOptions({ false, true, false });
+        const auto before = document.image();
+        document.beginStroke();
+        document.paintPixel({ 45, 37 }, Qt::red, 3, Document::RightArm, Document::Overlay);
+        document.paintPixel({ 45, 38 }, Qt::red, 3, Document::RightArm, Document::Overlay);
+        document.endStroke();
+        auto expected = before;
+        for (int y = 36; y <= 39; ++y)
+            for (int x = 44; x <= 46; ++x) {
+                expected.setPixelColor(x, y, Qt::red);
+                expected.setPixelColor(54 - (x - 44), y + 16, Qt::red);
+            }
+        QCOMPARE(document.image(), expected);
+        document.undo();
+        QCOMPARE(document.image(), before);
+        QVERIFY(!document.canUndo());
+        document.redo();
+        QCOMPARE(document.image(), expected);
+        document.paintPixel({ 45, 37 }, Qt::blue, 1, Document::RightArm, Document::Overlay, true);
+        QCOMPARE(document.image().pixelColor(45, 37).alpha(), 0);
+        QCOMPARE(document.image().pixelColor(53, 53).alpha(), 0);
+        QCOMPARE(document.image().pixelColor(44, 37), QColor(Qt::red));
+        document.undo();
+        QCOMPARE(document.image(), expected);
+        document.paintPixel({ 45, 21 }, Qt::blue, 3, Document::RightArm, Document::Base, true);
+        QCOMPARE(document.image(), expected);
+    }
+
     void liveAdjustmentsUseStartingColorsAndOneUndo()
     {
         QImage source(64, 64, QImage::Format_ARGB32);
