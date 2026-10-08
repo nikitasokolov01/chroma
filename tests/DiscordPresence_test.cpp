@@ -5,8 +5,18 @@
 
 #include "NullInstance.h"
 #include "discord/DiscordPresence.h"
+#include "minecraft/MinecraftInstance.h"
+#include "minecraft/PackProfile.h"
+#include "minecraft/VersionFile.h"
 #include "settings/ChromaSettingsObject.h"
 #include "settings/INISettingsObject.h"
+
+// The fixture exercises real component metadata without unrelated Java settings.
+class PresenceMinecraftInstance : public MinecraftInstance {
+   public:
+    using MinecraftInstance::MinecraftInstance;
+    void loadSpecificSettings() override {}
+};
 
 class DiscordPresenceTest : public QObject {
     Q_OBJECT
@@ -33,6 +43,41 @@ class DiscordPresenceTest : public QObject {
     }
 
    private slots:
+    void runningVersionsUseInstalledMetadataAndClearOnExit()
+    {
+        auto global = settings("versions");
+        DiscordPresence presence(global, "");
+        auto pack = std::make_shared<PresenceMinecraftInstance>(
+            global, std::make_shared<INISettingsObject>(m_directory.filePath("version-pack.cfg")), m_directory.path());
+        auto version = std::make_shared<VersionFile>();
+        version->uid = "net.minecraft";
+        version->name = "Minecraft";
+        version->version = "1.21.1";
+        auto profile = pack->getPackProfile();
+        profile->appendComponent(makeShared<Component>(profile.get(), version->uid, version));
+        pack->setName("Example Pack");
+        pack->setManagedPack("modrinth", "project", "Example Pack", "opaque-version-id", "2.4.0");
+        presence.observeInstance(pack);
+        pack->setMinecraftRunning(true);
+        QCOMPARE(presence.currentActivity().value("details").toString(), "Example Pack");
+        QCOMPARE(presence.currentActivity().value("state").toString(), QString::fromUtf8("Minecraft 1.21.1 · Pack 2.4.0"));
+        pack->setMinecraftRunning(false);
+        QVERIFY(!presence.currentActivity().contains("state"));
+        pack->setManagedPack("modrinth", "project", "Example Pack", "opaque-version-id", "");
+        pack->setMinecraftRunning(true);
+        QCOMPARE(presence.currentActivity().value("state").toString(), "Minecraft 1.21.1");
+        pack->setMinecraftRunning(false);
+        pack->setManagedPack("modrinth", "project", "Example Pack", "opaque-version-id", QString::fromUtf8("🌸").repeated(100));
+        pack->setMinecraftRunning(true);
+        const auto text = presence.currentActivity().value("state").toString();
+        QVERIFY(text.toUtf8().size() <= 128);
+        QCOMPARE(QString::fromUtf8(text.toUtf8()), text);
+        auto unknown = instance(global, "Unknown metadata");
+        presence.observeInstance(unknown);
+        unknown->setMinecraftRunning(true);
+        QVERIFY(!presence.currentActivity().contains("state"));
+    }
+
     void browsingUntilGameActuallyStartsAndAfterExit()
     {
         auto global = settings("lifecycle");

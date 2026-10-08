@@ -4,6 +4,8 @@
 #include <QDateTime>
 #include "DiscordArtwork.h"
 #include "DiscordRpcClient.h"
+#include "minecraft/MinecraftInstance.h"
+#include "minecraft/PackProfile.h"
 #include "settings/Setting.h"
 
 namespace {
@@ -111,6 +113,17 @@ void DiscordPresence::refresh()
     if (active) {
         const auto title = activityTitle(active->name());
         activity.insert("details", title);
+        QStringList versions;
+        if (auto* minecraft = qobject_cast<MinecraftInstance*>(active.get())) {
+            const auto version = minecraft->getPackProfile()->getComponentVersion("net.minecraft").simplified();
+            if (!version.isEmpty())
+                versions.append(QStringLiteral("Minecraft %1").arg(version));
+        }
+        const auto packVersion = active->getManagedPackVersionName().simplified();
+        if (active->isManagedPack() && !packVersion.isEmpty())
+            versions.append(QStringLiteral("Pack %1").arg(packVersion));
+        if (!versions.isEmpty())
+            activity.insert("state", activityTitle(versions.join(QStringLiteral(" · "))));
         activity.insert("timestamps", QJsonObject{ { "start", latest.started } });
         const auto artwork = active->discordArtworkUrl();
         assets.insert("large_image", artwork.isEmpty() ? chromaArtwork : artwork);

@@ -5,7 +5,7 @@ Chroma can share a Rich Presence activity with the Discord desktop app. It is en
 The activity shows **Playing Chroma**. The expanded profile shows:
 
 - **Browsing for modpacks** while no Minecraft instance is running, including during launch preparation.
-- The running instance's name, elapsed play time, and public modpack artwork when available.
+- The running instance's name, elapsed play time, and public modpack artwork when available. A second line shows installed versions, for example **Minecraft 1.21.1 · Pack 2.4.0**. Unavailable version information is omitted.
 - The most recently started instance when several games are running. When it exits, the previous running instance resumes; after the last game exits, browsing returns.
 
 Keep the Discord desktop app open and allow activity sharing in Discord. Chroma connects automatically when Discord becomes available and reconnects after it restarts. The status in General settings describes the connection. Discord's own activity privacy settings determine who can see it.
