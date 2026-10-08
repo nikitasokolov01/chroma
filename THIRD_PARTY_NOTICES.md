@@ -19,14 +19,14 @@ This supplement does not replace or narrow those notices or license grants.
 
 ## Get the matching source
 
-This local Chroma 1.0.0 release set includes these matching source archives beside
-the Windows binaries in `dist/release/v1.0.0/`, at no charge. It has not been
-published. If distributed publicly, all three source archives accompany the
-matching binaries on the same release page.
+The [Chroma 1.0.0 release](https://github.com/nikitasokolov01/chroma/releases/tag/v1.0.0)
+provides all three matching source archives beside the Windows binaries, at no
+charge. The application archive records the exact released Git revision and
+includes the populated Git submodules.
 
 | Archive | Contents |
 | --- | --- |
-| `Chroma-1.0.0-source.tar.gz` | The application working-tree snapshot, build/package scripts, notices, and populated Git submodules; base revision recorded in `SOURCE-REVISION.txt` and local file hashes in `SOURCE-MANIFEST.json`. |
+| `Chroma-1.0.0-source.tar.gz` | The exact v1.0.0 application revision, build/package scripts, notices, and populated Git submodules; revisions recorded in `SOURCE-REVISION.txt`. |
 | `Chroma-1.0.0-dependency-sources.tar.gz` | Matching dependency source archives, vcpkg ports, patches, build recipes and package provenance. |
 | `qt-everywhere-src-6.5.3.tar.xz` | Complete unmodified Qt 6.5.3 source, including the Qt modules and bundled third-party code used by this build. |
 

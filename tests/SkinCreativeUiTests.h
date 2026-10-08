@@ -182,10 +182,18 @@ inline void mirrorBrushUsesEditorControls(MainWindow* window, const QString& roo
     QCOMPARE(document->image().pixelColor(15, 8), before.pixelColor(15, 8));
     document->undo();
     document->clearSelection();
+    // Capture the complete mirror controls and a real mirrored stroke for the
+    // release guide before checking the compact layout below.
+    QTest::keyClick(canvas, Qt::Key_Space);
+    auto* layers = editor.findChild<QScrollArea*>("skinVisibilityScroll");
+    if (layers)
+        layers->ensureWidgetVisible(mirror);
+    QTest::qWait(80);
+    QVERIFY(window->grab().save(QDir(root).filePath("skin-mirror-1280.png")));
+    document->undo();
     window->resize(680, 640);
     QTest::qWait(80);
     QCOMPARE(window->size(), QSize(680, 640));
-    auto* layers = editor.findChild<QScrollArea*>("skinVisibilityScroll");
     if (layers)
         layers->ensureWidgetVisible(mirror);
     for (auto* scroll : editor.findChildren<QScrollArea*>())

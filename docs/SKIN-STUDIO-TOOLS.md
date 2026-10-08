@@ -1,7 +1,8 @@
 # Skin Studio tools for v1.0.0
 
-These tools are being prepared for v1.0.0. They are not included in the
-published 0.3.0 installer. See the [release preparation notes](releases/1.0.0.md).
+These tools are included in Chroma's first stable release, **v1.0.0**.
+See the [release notes](releases/1.0.0.md) and
+[Windows downloads](https://github.com/nikitasokolov01/chroma/releases/tag/v1.0.0).
 
 ## Paint, fill, and select
 
