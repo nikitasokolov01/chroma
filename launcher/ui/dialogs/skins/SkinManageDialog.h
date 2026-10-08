@@ -22,10 +22,13 @@
 #include <QItemSelection>
 #include <QLabel>
 #include <QPixmap>
+#include <memory>
 
 #include "minecraft/auth/MinecraftAccount.h"
+#include "minecraft/skins/SkinApplyTask.h"
 #include "minecraft/skins/SkinList.h"
 #include "minecraft/skins/SkinModel.h"
+#include "minecraft/skins/SkinOutfitLibrary.h"
 #include "ui/dialogs/skins/draw/SkinOpenGLWindow.h"
 
 namespace Ui {
@@ -33,6 +36,7 @@ class SkinManageDialog;
 }
 class QPushButton;
 class QComboBox;
+class QTemporaryDir;
 class SkinManageDialog : public QDialog, public SkinProvider {
     Q_OBJECT
    public:
@@ -55,6 +59,7 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     void on_urlBtn_clicked();
     void on_userBtn_clicked();
     void accept() override;
+    void reject() override;
     void on_capeCombo_currentIndexChanged(int index);
     void on_steveBtn_toggled(bool checked);
     void on_resetBtn_clicked();
@@ -72,6 +77,19 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     void refreshAccounts();
     void selectAccount(MinecraftAccountPtr account);
     void updateAccountActions();
+    bool canManageLibrarySelection() const;
+    void applySelectedCape();
+    void setupOutfits();
+    void refreshOutfits(const QString& selectedId = {});
+    void selectOutfit();
+    void restoreLibrarySelection();
+    void saveOutfit();
+    void renameOutfit();
+    void deleteOutfit();
+    void applyOutfit();
+    void updateOutfitActions();
+    void updatePreview();
+    QImage selectedCapeImage() const;
 
    private:
     MinecraftAccountPtr m_acct;
@@ -87,4 +105,16 @@ class SkinManageDialog : public QDialog, public SkinProvider {
     QComboBox* m_accountCombo = nullptr;
     QLabel* m_accountStatus = nullptr;
     bool m_previewFailed = false;
+    QPushButton* m_applyCape = nullptr;
+    shared_qobject_ptr<SkinApplyTask> m_capeTask;
+    SkinOutfitLibrary m_outfits;
+    std::optional<SkinOutfitLibrary::Entry> m_selectedOutfit;
+    std::unique_ptr<SkinModel> m_outfitSkin;
+    std::unique_ptr<QTemporaryDir> m_outfitUpload;
+    QComboBox* m_outfitCombo = nullptr;
+    QPushButton* m_saveOutfit = nullptr;
+    QPushButton* m_renameOutfit = nullptr;
+    QPushButton* m_deleteOutfit = nullptr;
+    QPushButton* m_applyOutfit = nullptr;
+    QLabel* m_outfitStatus = nullptr;
 };

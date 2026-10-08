@@ -55,6 +55,7 @@ class QToolButton;
 class InstanceProxyModel;
 class LabeledToolButton;
 class LauncherHome;
+class ChromaUpdater;
 class InlineWorkspace;
 class QLabel;
 class MinecraftLauncher;
@@ -81,6 +82,7 @@ class MainWindow : public QMainWindow {
     void checkInstancePathForProblems();
 
     void updatesAllowedChanged(bool allowed);
+    void setUpdateNotifier(ChromaUpdater* updater);
 
     void processURLs(QList<QUrl> urls);
     void applyHomeLayout();

@@ -18,19 +18,23 @@ The default main window is rebuilt in C++ and Qt Widgets:
 - A provider gallery for modpack discovery, followed by searchable cover grids and pack details with version selection.
 - A Skin Library with account switching, plus Skin Studio for direct 3D painting, 2D texture editing, layer visibility, and local PNG saving.
 - Pixel grids on both 3D skin layers, a clickable body-part diagram, and automatic selection of the visible outer layer for painting.
-- GitHub release checks, including preview releases, with downloads and installation started by the user.
+- Outfit presets with optional owned cape choices, plus Skin Extras for reusable parts and layers.
+- Mirror painting, bucket fill, marquee selections, reference-skin copy/paste, and live hue/brightness adjustments.
+- Scoped palette swaps with synchronized 3D previews and a floating picker, plus Fine grain, Fabric, and Hair texture brushes.
+- GitHub release checks, including optional preview releases, with a feature notice and an inline What's new page. Downloads and installation are started by the user.
+- Flat Windows controls in a separate top-right header that follows the selected theme.
 
 The structure lives in `LauncherHome`, `MainWindow`, `InlineWorkspace`, and `InstanceView`. It is compiled into the launcher. The Chroma palette supplies colors to those native widgets; no external theme installation or web wrapper is involved. The workspace reuses Prism's existing configuration and instance pages, including their validation and task handling.
 
 The layout takes visual inspiration from Modrinth. Social and friends features are outside the current scope.
 
-![Native home screen with synthetic example instances](screenshots/home.png)
+![Chroma v1 home with synthetic example instances and custom top-right window controls](screenshots/chroma-v1-header-light.png)
 
 This is the actual Qt interface rendered by the native test harness with sample instances. Screenshots also show the [compact home layout](screenshots/compact.png), [inline settings](screenshots/inline-settings.png), and [instance creation](screenshots/inline-new-instance.png).
 
 ## Install and run
 
-The [v0.3.0 preview release](https://github.com/nikitasokolov01/chroma/releases/tag/v0.3.0) provides a Windows x64 installer and a portable ZIP. Close Chroma before installing an update.
+The [v1.0.0 stable release](https://github.com/nikitasokolov01/chroma/releases/tag/v1.0.0) provides a Windows x64 installer and a portable ZIP. Close Chroma before installing an update.
 
 - **Installer:** install for your Windows account, then open Chroma. Its default profile is `%APPDATA%\Chroma`.
 - **Portable ZIP:** extract it and run `chroma.exe`. Keep the folder together; its default profile lives beside the executable.
@@ -39,15 +43,18 @@ Both packages support opening an existing Prism folder. A remembered selection t
 
 ### Updating Chroma
 
-**From 0.2.0 or earlier, download and install 0.3.0 manually once.** Those versions
+**From 0.2.0 or earlier, download and install v1.0.0 manually once.** Those versions
 do not contain Chroma's release updater. Keep your existing profile folder when
 replacing a portable installation, then select it with **Chroma header menu →
 Use Prism folder…** if needed.
 
 From 0.3.0, automatic update checks contact Chroma's GitHub releases. In
 **Settings → Launcher → Updater**, **Check for updates automatically** and
-**Include prereleases** are enabled by default. Checks normally run every 24
-hours; set **How Often?** to **On Launch** to check only when Chroma starts.
+**Include prereleases** are enabled by default. Version 1.0.0 checks shortly after
+launch and then hourly by default; an existing saved interval is preserved.
+Set **How Often?** to **On Launch** to check only when Chroma starts. Automatic
+checks show a notice with a feature summary; **What's new** opens the full notes
+without closing the current page. **Later** hides that release for the session.
 You can turn automatic checks off and still use **Check for updates now** or
 **Chroma header menu → Check for updates…**.
 
@@ -57,7 +64,7 @@ checksum before offering installation. Choose **Install and restart** when ready
 a check alone never downloads or installs an update. The release page remains
 available for manual downloads.
 
-The [0.3.0 release notes](releases/0.3.0.md) record release validation and any
+The [1.0.0 release notes](releases/1.0.0.md) record release validation and any
 remaining limitations.
 
 ### Run a source build
@@ -94,6 +101,11 @@ Read the [privacy guide](../PRIVACY.md) for local account storage, network conne
 
 ## Skin Library and Skin Studio
 
+For the tools in v1.0.0, see the
+[Skin Studio tools guide](SKIN-STUDIO-TOOLS.md), including outfits, mirror painting,
+palette swaps, texture brushes, selections, reference skins, and Skin Extras.
+The everyday editing controls are described below.
+
 Open **Skins** in the sidebar. The account dropdown chooses whose skins and capes
 to manage without changing the default launch account. Select or import a skin,
 then choose **Edit Skin…** or double-click it. Local editing also works without
@@ -109,8 +121,9 @@ between both modes. Without OpenGL, the 2D editor has a front/back image preview
   Enter `#RRGGBB` for an exact color or `#AARRGGBB` to include opacity. The opacity
   slider and palette swatches use the same brush color.
 - **Layers:** the **Body** and **Outer layer** buttons toggle visibility globally.
-  When Outer layer is visible, painting changes only the outer layer, including
-  transparent pixels. Hide it to paint the body. Hiding both layers disables
+  When Outer layer is visible, painting targets it, including transparent pixels.
+  Hold **Shift** to paint through to the visible body layer, or hide the outer
+  layer to keep painting the body. Hiding both layers disables
   painting. These rules also apply to the 2D texture. Body pixels stay opaque;
   outer pixels support transparency and erasing.
 - **Body parts:** click the head, torso, arms, or legs in the body diagram to hide
@@ -121,6 +134,7 @@ between both modes. Without OpenGL, the 2D editor has a front/back image preview
   outer surface in 3D. Both grids remain visible when both layers are enabled.
   The same control toggles the grid on the 2D texture when zoomed in.
 - **Tools:** with a canvas focused, press **B** for brush, **E** for eraser,
+  **T** for texture brush, **G** for bucket fill, **M** for marquee selection,
   **I** for color picker, or **H** to rotate the model or pan the texture.
   Alt-click samples a color. In 2D, arrow keys move the pixel cursor, **Space**
   paints, and plus/minus zoom. Middle-drag pans the texture.
@@ -130,7 +144,37 @@ between both modes. Without OpenGL, the 2D editor has a front/back image preview
   account with a Minecraft Java profile. Offline accounts can edit and export.
 
 The color wheel stays beside the canvas in compact windows; palette, layer, and
-model controls scroll beneath it when needed. Editing locally does not upload the skin.
+model controls scroll beneath it when needed. Selecting the texture brush shows
+its pattern and strength settings in place of the wheel. Editing locally does
+not upload the skin.
+
+### Recolor, mirror, and reuse
+
+In **Layers → Mirror strokes**, independently enable **Head and torso**, **Pair
+arms**, or **Pair legs**. Mirror brush, eraser, and texture strokes across visible
+parts; both sides share one undo step. Keep both destinations visible and use
+**All body regions** when painting paired limbs.
+
+Open **Palette** to compare your current skin with a synchronized 3D preview.
+Choose a body part and layer under **Where to recolor**, pick a color family, and
+choose a replacement. **Pick** opens a floating wheel. Adjust the related shade
+range, then use **Apply swap** to commit one undoable change. Shadows, highlights,
+and transparency are retained.
+
+[![Scoped palette swapping with synchronized 3D views](screenshots/v1-palette-swap.png)](screenshots/v1-palette-swap.png)
+
+Choose **Texture brush (T)** for **Fine grain**, **Fabric**, or **Hair** shading.
+It works from existing colors; transparent pixels stay clear. Adjust strength,
+paint in 2D or 3D, and undo the stroke to restore the original pixels.
+
+The **Extras** tab stores named pieces for future designs. A reference PNG can
+be viewed beside the editing skin, sampled, and copied from without changing it.
+Save a finished skin to the library, then use **Save outfit** there to store its
+look, model, and optional owned cape choice. Local previews require no account;
+applying an outfit requires an eligible signed-in Minecraft Java account.
+
+Extras and outfits live in the active profile's `skin-extras` and `skin-outfits`
+folders and are preserved by launcher updates. Back them up with your profile.
 
 ## Home, pins, and navigation
 
@@ -145,6 +189,11 @@ Launcher screens open inside the workspace. **Back** closes the current screen a
 Click **Chroma** in the header to open the launcher menu. It contains profile
 selection, update checks, accounts, and instance commands previously reached
 through the sidebar overflow button.
+
+On Windows, the separate strip above navigation holds the minimize,
+maximize/restore, and close buttons. Drag that strip to move the window;
+double-click its empty area to maximize or restore. Resizing and snapping remain
+available, and closing still checks for unsaved skin edits.
 
 ## Browse modpacks
 
@@ -185,7 +234,7 @@ CurseForge and Imgur credentials are empty by default. Chroma's updater checks i
 
 ### Native UI verification
 
-The optional Qt test harness exercises the real main window using synthetic instances in an isolated profile. It checks filtering, selection, action states, sorting, whole-page scrolling, sidebar pins, custom accent persistence, and direct profile use. Inline settings, instance editing, nested pickers, confirmations, and task cancellation are checked for correct navigation and dialog lifetimes. Catalog checks cover the provider gallery, populated card grids, keyboard selection, pack versions, instance options, search resets, and provider switching. Skin checks cover account selection, editing modes, shared history, the inline color wheel, opacity, the body diagram, and layer visibility using original synthetic textures. Updater checks use mock GitHub responses and preserve an unsaved skin while an inline update offer opens and closes. Layout checks cover 1280×820, 800×820, and 680×640 and save screenshots. The harness does not open your installed Prism profile, sign in, or launch Minecraft. See the [release notes](releases/0.3.0.md#verification) for the completed checks and final counts.
+The optional Qt test harness exercises the real main window using synthetic instances in an isolated profile. It checks filtering, selection, action states, sorting, whole-page scrolling, sidebar pins, custom accent persistence, and direct profile use. Inline settings, instance editing, nested pickers, confirmations, and task cancellation are checked for correct navigation and dialog lifetimes. Catalog checks cover the provider gallery, populated card grids, keyboard selection, pack versions, instance options, search resets, and provider switching. Skin checks cover account selection, editing modes, shared history, outfit persistence, mirror strokes, palette scopes and previews, texture brushes, and reusable Extras using original synthetic textures. Updater checks use mock GitHub responses and preserve an unsaved skin while an inline update offer opens and closes. Layout checks cover 1280×820, 800×820, and 680×640 and save screenshots. Native Windows checks exercise caption controls, maximize/restore, fullscreen transitions, and icon identity. The harness does not open your installed Prism profile, sign in, or launch Minecraft. See the [release notes](releases/1.0.0.md#validation-and-limitations) for the completed checks and final counts.
 
 ```powershell
 . .\scripts\build-chroma.ps1 -Action Environment # Add your dependency path arguments here.
@@ -217,32 +266,59 @@ On Windows, the test runner stages the two upstream directory-symlink fixtures i
 
 ## Release versions and Windows installer
 
-Chroma has its own version sequence. While it is in preview, feature releases
-increment the minor version (`0.3.0`, `0.4.0`) and fixes increment the patch version
-(`0.3.1`, `0.3.2`). The three `Launcher_VERSION_*` numbers in `CMakeLists.txt` are
-the source of truth for the app, installer, package README, and source archives.
-Update the download links and add notes under `docs/releases/` with each release.
+Chroma has its own version sequence, with **1.0.0** as the first stable release
+after the 0.x previews. The three `Launcher_VERSION_*` numbers in `CMakeLists.txt`
+are the source of truth for the app, installer, package README, and source
+archives. Add notes under `docs/releases/` and update public download links as
+part of publishing the matching release.
 
-Commit and tag the release as `v<version>`, then configure and build from that
-revision so the executable records its matching commit and version. Run the unit
-and native UI checks before packaging. With release tools prepared:
+For a local release candidate, configure with `-ReleaseBuild` to display the core
+version while preserving the actual Git commit and branch in build information.
+The underlying CMake option is `Launcher_RELEASE_BUILD`. A later configure without
+the switch restores development version display; the switch does not commit,
+tag, publish, or change update settings. Tagged builds also recognize matching
+`1.0.0` or `v1.0.0` tags as stable.
+
+Freeze source changes before the final build so the matching source archive can
+capture the same inputs. Run the unit and native UI checks before packaging.
+With the release tools and runtime DLLs prepared, a local candidate uses:
 
 ```powershell
+.\scripts\build-chroma.ps1 -Action All -ReleaseBuild
 .\scripts\build-installer.ps1
 .\scripts\test-installer.ps1
 $version = .\scripts\get-chroma-version.ps1
-.\.tools\python\Scripts\python.exe scripts/archive-chroma-source.py --ref "v$version" --output "dist/release/v$version/Chroma-$version-source.tar.gz"
+.\.tools\python\Scripts\python.exe scripts/archive-chroma-source.py --working-tree --output "dist/release/v$version/Chroma-$version-source.tar.gz"
 .\.tools\python\Scripts\python.exe scripts/archive-dependency-sources.py
+Copy-Item -LiteralPath '.tools/release-licenses/qt-everywhere-src-6.5.3.tar.xz' -Destination "dist/release/v$version/"
+.\scripts\write-release-checksums.ps1 -ReleaseDirectory "dist/release/v$version"
 ```
 
 The installer and portable ZIP are written to `dist/release/v<version>/`.
-Packaging rejects a stale executable version or existing release output.
+Packaging rejects a stale executable version or existing release output. It
+generates `SHA256SUMS.txt` for the binary packages and manifest; run the checksum
+helper again after adding all source assets. The matching Qt source archive must
+be available locally before copying it into the release directory.
 Installer checks use a temporary directory without shell integration and verify
 install, upgrade, uninstall, bundled runtime loading, and profile preservation.
+For an upgrade from an existing release, additionally run
+`scripts/test-update-packages.ps1` with `-ReleaseDirectory`, `-PreviousInstaller`,
+and `-PreviousZip` pointing to the new directory and previous release packages.
+
+The working-tree source mode includes tracked local changes and nonignored new
+source files, records the base commit and per-file content hashes, and excludes
+local tools, test output, environment files, and launcher profiles. It includes
+initialized submodules at their actual checked-out revisions and rejects dirty
+submodules. It uses fixed archive timestamps from the base commit so identical
+source inputs produce identical archives. When packaging a committed release,
+use `--ref "v$version"` instead of `--working-tree`. Both modes preserve submodule
+sources, and neither changes the repository.
+
 Publish both packages, the application and dependency source archives, the
 matching full Qt source archive, `package-manifest.json`, and `SHA256SUMS.txt` on
 the same GitHub release. See [release licensing](RELEASE-LICENSING.md) for the
-source inventory. Keep previous releases available.
+source inventory. Publication is a separate step; these local scripts do not
+create a release or upload anything. Keep previous releases available.
 
 ## Implementation notes
 

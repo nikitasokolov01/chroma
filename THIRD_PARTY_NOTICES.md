@@ -1,12 +1,14 @@
-# Chroma 0.3.0 — notices and source code
+# Chroma 1.0.0 — notices and source code
 
-## Modified version notice — 2026-09-29
+## Modified version notice — 2026-10-08
 
 Chroma is an independent, modified version of Prism Launcher 10.0.5, based on
 upstream commit `16e541f4483241455ffb674bfe975e20158001a2`. The Chroma changes made
-from 2026-09-26 through 2026-09-29 replace the launcher home, instance cards, navigation
+from 2026-09-26 through 2026-10-08 replace the launcher home, instance cards, navigation
 and modpack browsing UI; add accent preferences, pinned instances and direct Prism
-profile selection; and add Windows packaging, tests and documentation. The original
+profile selection; add Skin Studio editing, outfit presets, mirror painting,
+palette swapping and texture brushes; and add update notices, a custom Windows
+header, packaging, tests and documentation. The original
 copyright notices and licenses remain in the source. Chroma is not affiliated with
 or endorsed by Prism Launcher, Modrinth, Microsoft or Mojang.
 
@@ -17,13 +19,15 @@ This supplement does not replace or narrow those notices or license grants.
 
 ## Get the matching source
 
-The [Chroma 0.3.0 release](https://github.com/nikitasokolov01/chroma/releases/tag/v0.3.0)
-provides these source archives beside the Windows binaries, at no charge:
+The [Chroma 1.0.0 release](https://github.com/nikitasokolov01/chroma/releases/tag/v1.0.0)
+provides all three matching source archives beside the Windows binaries, at no
+charge. The application archive records the exact released Git revision and
+includes the populated Git submodules.
 
 | Archive | Contents |
 | --- | --- |
-| `Chroma-0.3.0-source.tar.gz` | The exact application revision, build/package scripts, notices, and populated Git submodules; revision recorded in `SOURCE-REVISION.txt`. |
-| `Chroma-0.3.0-dependency-sources.tar.gz` | Matching dependency source archives, vcpkg ports, patches, build recipes and package provenance. |
+| `Chroma-1.0.0-source.tar.gz` | The exact v1.0.0 application revision, build/package scripts, notices, and populated Git submodules; revisions recorded in `SOURCE-REVISION.txt`. |
+| `Chroma-1.0.0-dependency-sources.tar.gz` | Matching dependency source archives, vcpkg ports, patches, build recipes and package provenance. |
 | `qt-everywhere-src-6.5.3.tar.xz` | Complete unmodified Qt 6.5.3 source, including the Qt modules and bundled third-party code used by this build. |
 
 The Qt archive SHA-256 is
@@ -87,6 +91,13 @@ The full original license is `program_info/LICENSE`, also included in the binary
 license bundle as `Prism-branding-CC-BY-SA-4.0.txt`. Chroma changes the application
 name and interface; the retained upstream artwork is not claimed as new Chroma art.
 
+Chroma's application logo (`program_info/chroma.png` and its SVG, PNG, ICO and
+ICNS exports) adapts the Prism Launcher logo with a C-shaped opening on the right,
+retaining its colors and central cube. This adaptation is distributed under the
+same **CC BY-SA 4.0** license. Original logo contributors: AutiOne, Boba, ely,
+Fulmine, gon sawa, Pankakes, tobimori and Zeke. The approved Chroma adaptation was
+created with image generation; its application exports preserve that design.
+
 Other retained icons include the Batch, Material Design, Breeze and Oxygen sets.
 Their copyright and permission notices remain in `COPYING.md`; relevant resource
 sidecars, the SIL Open Font License and Apache 2.0 text are included in the license
@@ -112,7 +123,7 @@ in [`launcher/resources/fonts/README.md`](launcher/resources/fonts/README.md).
 
 ## Service identity
 
-This preview retains Prism's public Microsoft OAuth client ID for sign-in, so
+This build retains Prism's public Microsoft OAuth client ID for sign-in, so
 Microsoft's consent screen can identify Prism Launcher. A client ID is public
 application identification, not a client secret or an account token. Chroma remains
 an independent application; retaining that identifier is not a claim of endorsement

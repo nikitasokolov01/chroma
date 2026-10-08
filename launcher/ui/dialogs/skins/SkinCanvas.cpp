@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "SkinCanvas.h"
 
+#include <QHideEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -16,12 +17,85 @@ SkinCanvas::SkinCanvas(SkinTextureDocument* document, QWidget* parent) : QWidget
     setAccessibleName(tr("Skin texture canvas"));
     setAccessibleDescription(tr("Arrow keys move the pixel cursor. Space paints. Plus and minus zoom. Middle mouse drags the canvas."));
     connect(document, &SkinTextureDocument::changed, this, qOverload<>(&SkinCanvas::update));
+    connect(document, &SkinTextureDocument::selectionChanged, this, qOverload<>(&SkinCanvas::update));
+}
+
+void SkinCanvas::finishInteraction()
+{
+    m_document->endStroke();
+    m_painting = m_panning = m_selecting = false;
+}
+
+void SkinCanvas::setReadOnly(bool readOnly)
+{
+    finishInteraction();
+    m_readOnly = readOnly;
+    if (readOnly)
+        cancelPaste();
+}
+
+void SkinCanvas::setBodyThroughOverlay(bool enabled)
+{
+    const bool previous = bodyThroughOverlay();
+    m_bodyThroughOverlay = enabled;
+    if (!enabled)
+        m_shiftHeld = false;
+    if (previous != bodyThroughOverlay()) {
+        finishInteraction();
+        update();
+    }
+}
+
+void SkinCanvas::updateModifiers(Qt::KeyboardModifiers modifiers)
+{
+    const bool previous = bodyThroughOverlay();
+    m_shiftHeld = modifiers.testFlag(Qt::ShiftModifier);
+    if (previous != bodyThroughOverlay()) {
+        finishInteraction();
+        update();
+    }
+}
+
+SkinTextureDocument::Layer SkinCanvas::activeLayer() const
+{
+    return bodyThroughOverlay() ? SkinTextureDocument::Base : m_layer;
+}
+
+QRegion SkinCanvas::editableRegion() const
+{
+    return visibleRegion(activeLayer());
+}
+
+bool SkinCanvas::copySelection()
+{
+    return SkinTextureDocument::writeClipboard(m_document->copyPixels(visibleRegion(SkinTextureDocument::Both)));
+}
+
+bool SkinCanvas::beginPaste()
+{
+    finishInteraction();
+    if (m_readOnly)
+        return false;
+    m_paste = SkinTextureDocument::readClipboard();
+    update();
+    return pastePending();
+}
+
+void SkinCanvas::cancelPaste()
+{
+    m_paste = {};
+    update();
+}
+
+void SkinCanvas::selectTo(QPoint pixel)
+{
+    m_document->setSelection(QRegion(QRect(m_selectionStart, pixel).normalized()).intersected(editableRegion()));
 }
 
 void SkinCanvas::setTool(Tool tool)
 {
-    m_document->endStroke();
-    m_painting = m_panning = false;
+    finishInteraction();
+    cancelPaste();
     const bool changed = m_tool != tool;
     m_tool = tool;
     setCursor(tool == Pan ? Qt::OpenHandCursor : Qt::CrossCursor);
@@ -29,10 +103,18 @@ void SkinCanvas::setTool(Tool tool)
         emit toolChanged(tool);
 }
 
+void SkinCanvas::setTextureSettings(SkinTextureDocument::TextureSettings settings)
+{
+    settings.strength = qBound(0, settings.strength, 100);
+    if (settings.style == m_textureSettings.style && settings.strength == m_textureSettings.strength)
+        return;
+    finishInteraction();
+    m_textureSettings = settings;
+}
+
 void SkinCanvas::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer)
 {
-    m_document->endStroke();
-    m_painting = false;
+    finishInteraction();
     m_part = part;
     m_layer = layer;
     update();
@@ -40,8 +122,7 @@ void SkinCanvas::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::
 
 void SkinCanvas::setLayerVisibility(bool body, bool outer)
 {
-    m_document->endStroke();
-    m_painting = false;
+    finishInteraction();
     m_bodyVisible = body;
     m_outerVisible = outer;
     update();
@@ -51,8 +132,7 @@ void SkinCanvas::setPartVisible(int part, bool visible)
 {
     if (part < SkinTextureDocument::Head || part > SkinTextureDocument::LeftLeg)
         return;
-    m_document->endStroke();
-    m_painting = false;
+    finishInteraction();
     if (visible)
         m_visibleParts |= 1u << part;
     else
@@ -98,7 +178,7 @@ void SkinCanvas::paintEvent(QPaintEvent*)
         for (int x = 0; x < 64; x += 4)
             painter.fillRect(QRect(x, y, 4, 4), palette().color(((x + y) / 4) % 2 ? QPalette::Base : QPalette::AlternateBase));
     const auto visible = visibleRegion(SkinTextureDocument::Both);
-    const auto active = visibleRegion(m_layer);
+    const auto active = editableRegion();
     painter.save();
     painter.setClipRegion(visible, Qt::IntersectClip);
     painter.drawImage(QPoint(0, 0), m_document->image());
@@ -121,6 +201,22 @@ void SkinCanvas::paintEvent(QPaintEvent*)
     painter.setBrush(Qt::NoBrush);
     for (const auto& region : active)
         painter.drawRect(region);
+    const auto selection = m_document->selection().intersected(visible);
+    for (const auto& region : selection) {
+        painter.fillRect(region, QColor(40, 180, 255, 75));
+        painter.setPen(QPen(QColor(100, 220, 255), 0));
+        painter.drawRect(region);
+    }
+    if (pastePending()) {
+        painter.save();
+        painter.setClipRegion(active, Qt::IntersectClip);
+        if (m_document->hasSelection())
+            painter.setClipRegion(m_document->selection(), Qt::IntersectClip);
+        painter.setClipRegion(m_paste.mask.translated(m_cursor), Qt::IntersectClip);
+        painter.setOpacity(.65);
+        painter.drawImage(m_cursor, m_paste.image);
+        painter.restore();
+    }
     if (hasFocus()) {
         painter.setPen(QPen(Qt::white, 0));
         painter.drawRect(QRectF(m_cursor.x(), m_cursor.y(), 1, 1));
@@ -158,7 +254,8 @@ void SkinCanvas::zoomBy(qreal factor)
 void SkinCanvas::mousePressEvent(QMouseEvent* event)
 {
     setFocus();
-    if (event->button() == Qt::MiddleButton || (m_tool == Pan && event->button() == Qt::LeftButton)) {
+    updateModifiers(event->modifiers());
+    if (event->button() == Qt::MiddleButton || (m_tool == Pan && !pastePending() && event->button() == Qt::LeftButton)) {
         m_panning = true;
         m_dragPosition = event->position();
         setCursor(Qt::ClosedHandCursor);
@@ -170,9 +267,20 @@ void SkinCanvas::mousePressEvent(QMouseEvent* event)
     if (!m_document->image().rect().contains(pixel))
         return;
     m_cursor = pixel;
-    if (m_tool == Eyedropper || event->modifiers().testFlag(Qt::AltModifier)) {
+    if (event->modifiers().testFlag(Qt::AltModifier)) {
         emit colorPicked(m_document->image().pixelColor(pixel));
-    } else {
+    } else if (pastePending() && !m_readOnly) {
+        m_document->pastePixels(m_paste, pixel, editableRegion());
+        cancelPaste();
+    } else if (m_tool == Eyedropper) {
+        emit colorPicked(m_document->image().pixelColor(pixel));
+    } else if (m_tool == Select) {
+        m_selecting = true;
+        m_selectionStart = pixel;
+        selectTo(pixel);
+    } else if (!m_readOnly && m_tool == Bucket) {
+        m_document->floodFill(pixel, m_color, editableRegion());
+    } else if (!m_readOnly && (m_tool == Brush || m_tool == Eraser || m_tool == Texture)) {
         m_painting = true;
         m_lastPixel = pixel;
         m_document->beginStroke();
@@ -196,25 +304,19 @@ void SkinCanvas::paintTo(QPoint pixel)
 
 void SkinCanvas::paintPixel(QPoint pixel)
 {
-    if ((!m_bodyVisible && !m_outerVisible) || (m_layer == SkinTextureDocument::Base && !m_bodyVisible) ||
-        (m_layer == SkinTextureDocument::Overlay && !m_outerVisible))
+    if (m_readOnly)
         return;
-    for (int part = SkinTextureDocument::Head; part <= SkinTextureDocument::LeftLeg; ++part) {
-        if (!(m_visibleParts & (1u << part)) || (m_part != SkinTextureDocument::All && m_part != part))
-            continue;
-        const auto bodyPart = static_cast<SkinTextureDocument::Part>(part);
-        if (m_bodyVisible && m_layer != SkinTextureDocument::Overlay)
-            m_document->paintPixel(pixel, m_color, m_brushSize, bodyPart, SkinTextureDocument::Base, m_tool == Eraser);
-        if (m_outerVisible && m_layer != SkinTextureDocument::Base)
-            m_document->paintPixel(pixel, m_color, m_brushSize, bodyPart, SkinTextureDocument::Overlay, m_tool == Eraser);
-    }
+    if (m_tool == Texture)
+        m_document->texturePixel(pixel, m_brushSize, m_part, activeLayer(), m_textureSettings, editableRegion());
+    else
+        m_document->paintPixel(pixel, m_color, m_brushSize, m_part, activeLayer(), m_tool == Eraser, editableRegion());
 }
 
 void SkinCanvas::mouseMoveEvent(QMouseEvent* event)
 {
+    updateModifiers(event->modifiers());
     if (!(event->buttons() & (Qt::LeftButton | Qt::MiddleButton))) {
-        m_painting = m_panning = false;
-        m_document->endStroke();
+        finishInteraction();
         setCursor(m_tool == Pan ? Qt::OpenHandCursor : Qt::CrossCursor);
     }
     if (m_panning) {
@@ -231,13 +333,16 @@ void SkinCanvas::mouseMoveEvent(QMouseEvent* event)
     }
     if (m_painting)
         paintTo(QPoint(qBound(0, pixel.x(), 63), qBound(0, pixel.y(), 63)));
+    if (m_selecting)
+        selectTo(pixel);
     update();
 }
 
-void SkinCanvas::mouseReleaseEvent(QMouseEvent*)
+void SkinCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
-    m_panning = m_painting = false;
-    m_document->endStroke();
+    if (m_selecting && event->button() == Qt::LeftButton)
+        selectTo(pixelAt(event->position()));
+    finishInteraction();
     setCursor(m_tool == Pan ? Qt::OpenHandCursor : Qt::CrossCursor);
 }
 
@@ -249,19 +354,68 @@ void SkinCanvas::wheelEvent(QWheelEvent* event)
 
 void SkinCanvas::focusOutEvent(QFocusEvent* event)
 {
-    m_painting = m_panning = false;
-    m_document->endStroke();
+    finishInteraction();
+    m_shiftHeld = m_bodyThroughOverlay = false;
+    update();
     QWidget::focusOutEvent(event);
+}
+
+void SkinCanvas::hideEvent(QHideEvent* event)
+{
+    finishInteraction();
+    m_shiftHeld = m_bodyThroughOverlay = false;
+    cancelPaste();
+    QWidget::hideEvent(event);
+}
+
+void SkinCanvas::keyReleaseEvent(QKeyEvent* event)
+{
+    if (event->key() == Qt::Key_Shift && !event->isAutoRepeat()) {
+        finishInteraction();
+        m_shiftHeld = m_bodyThroughOverlay = false;
+        update();
+        event->accept();
+        return;
+    }
+    QWidget::keyReleaseEvent(event);
 }
 
 void SkinCanvas::keyPressEvent(QKeyEvent* event)
 {
+    if (event->matches(QKeySequence::Copy)) {
+        copySelection();
+        event->accept();
+        return;
+    }
+    if (event->matches(QKeySequence::Paste)) {
+        beginPaste();
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Shift) {
+        updateModifiers(event->modifiers() | Qt::ShiftModifier);
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Escape) {
+        finishInteraction();
+        if (pastePending())
+            cancelPaste();
+        else
+            m_document->clearSelection();
+        event->accept();
+        return;
+    }
     // Keep single-key tools local to the canvas, including when the editor is
     // reparented into the inline workspace. Text inputs keep their own keys.
     if (!(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
         switch (event->key()) {
             case Qt::Key_B:
                 setTool(Brush);
+                event->accept();
+                return;
+            case Qt::Key_T:
+                setTool(Texture);
                 event->accept();
                 return;
             case Qt::Key_E:
@@ -274,6 +428,14 @@ void SkinCanvas::keyPressEvent(QKeyEvent* event)
                 return;
             case Qt::Key_H:
                 setTool(Pan);
+                event->accept();
+                return;
+            case Qt::Key_G:
+                setTool(Bucket);
+                event->accept();
+                return;
+            case Qt::Key_M:
+                setTool(Select);
                 event->accept();
                 return;
             default:
@@ -294,9 +456,16 @@ void SkinCanvas::keyPressEvent(QKeyEvent* event)
             m_cursor.ry() = qMin(63, m_cursor.y() + 1);
             break;
         case Qt::Key_Space:
-            if (m_tool == Eyedropper)
+            if (pastePending() && !m_readOnly) {
+                m_document->pastePixels(m_paste, m_cursor, editableRegion());
+                cancelPaste();
+            } else if (m_tool == Eyedropper)
                 emit colorPicked(m_document->image().pixelColor(m_cursor));
-            else if (m_tool != Pan) {
+            else if (m_tool == Select)
+                m_document->setSelection(QRegion(QRect(m_cursor, QSize(1, 1))).intersected(editableRegion()));
+            else if (!m_readOnly && m_tool == Bucket)
+                m_document->floodFill(m_cursor, m_color, editableRegion());
+            else if (!m_readOnly && (m_tool == Brush || m_tool == Eraser || m_tool == Texture)) {
                 m_document->beginStroke();
                 paintPixel(m_cursor);
                 m_document->endStroke();

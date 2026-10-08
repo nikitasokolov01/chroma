@@ -1,7 +1,30 @@
 # Release licensing and source availability
 
-This records the Chroma 0.3.0 Windows release preparation on **2026-09-29**.
-It is a distribution record and maintainer guide, not a legal guarantee.
+## v1.0.0 distribution record
+
+Chroma's first stable release is **1.0.0**, dated **2026-10-08**. Its
+[release page](https://github.com/nikitasokolov01/chroma/releases/tag/v1.0.0)
+provides `Chroma-1.0.0-source.tar.gz`, `Chroma-1.0.0-dependency-sources.tar.gz`, and
+the matching complete Qt source archive alongside the installer and portable ZIP.
+The application archive comes from the exact v1.0.0 Git revision with populated
+submodules. The dependency archive retains the source hashes and build provenance
+for the packaged libraries. Component licenses and notices remain included.
+
+For the release, use `archive-chroma-source.py --ref v1.0.0`. For an uncommitted
+local candidate, `archive-chroma-source.py --working-tree`
+captures tracked changes and nonignored new source files with a content manifest
+and the actual base and submodule revisions. Excluded local tools, profile data,
+and environment files are not read into the source archive. Follow the
+[local release procedure](CHROMA.md#release-versions-and-windows-installer), inspect
+the final package inventory, and regenerate checksums after adding all sources.
+Do not substitute the old 0.3.0 launcher source for the 1.0.0 build.
+
+## Retained licensing review
+
+The component and service discussion below retains the review performed for
+Chroma 0.3.0 on **2026-09-29**. Version 1.0.0 uses the same dependency versions;
+its archive provenance and package inventory are checked separately. This is a
+distribution record and maintainer guide, not a legal guarantee.
 The controlling texts are [LICENSE](../LICENSE), [COPYING.md](../COPYING.md),
 [program_info/LICENSE](../program_info/LICENSE) and the retained component licenses.
 The [third-party notices](../THIRD_PARTY_NOTICES.md) contain the dated modification
@@ -10,11 +33,11 @@ notice, component inventory and recipient source instructions.
 ## Corresponding source
 
 Publish all three source assets with the installer and portable ZIP on the
-[same release page](https://github.com/nikitasokolov01/chroma/releases/tag/v0.3.0):
+[same release page](https://github.com/nikitasokolov01/chroma/releases/tag/v1.0.0):
 
-1. `Chroma-0.3.0-source.tar.gz`: created by `scripts/archive-chroma-source.py` from
+1. `Chroma-1.0.0-source.tar.gz`: created by `scripts/archive-chroma-source.py` from
    the released Git revision, with submodule contents and `SOURCE-REVISION.txt`.
-2. `Chroma-0.3.0-dependency-sources.tar.gz`: exact dependency archives and matching
+2. `Chroma-1.0.0-dependency-sources.tar.gz`: exact dependency archives and matching
    vcpkg port files, patches, build scripts and provenance from the release build.
 3. `qt-everywhere-src-6.5.3.tar.xz`: the complete official Qt source archive. SHA-256:
    `7cda4d119aad27a3887329cfc285f2aba5da85601212bcb0aea27bd6b7b544cb`.
@@ -79,7 +102,7 @@ made as **basic courtesy** to use a fork's own API credentials and clearly ident
 the fork. See the preserved [upstream README](UPSTREAM_README.md). That courtesy
 request is not an added GPL condition.
 
-At the project owner's request, the preview retains Prism's public Microsoft OAuth
+At the project owner's request, this build retains Prism's public Microsoft OAuth
 client ID. Microsoft documents a client ID as a public application identifier;
 that alone does not establish permission to use another application's registration.
 Chroma's name, documentation and release page identify the independent fork and the

@@ -390,6 +390,12 @@ set(MINECRAFT_SOURCES
     minecraft/skins/SkinModel.h
     minecraft/skins/SkinTextureDocument.cpp
     minecraft/skins/SkinTextureDocument.h
+    minecraft/skins/SkinExtrasLibrary.cpp
+    minecraft/skins/SkinExtrasLibrary.h
+    minecraft/skins/SkinOutfitLibrary.cpp
+    minecraft/skins/SkinOutfitLibrary.h
+    minecraft/skins/SkinPalette.cpp
+    minecraft/skins/SkinPalette.h
     minecraft/skins/SkinApplyTask.cpp
     minecraft/skins/SkinApplyTask.h
     minecraft/skins/SkinList.cpp
@@ -860,6 +866,10 @@ SET(LAUNCHER_SOURCES
     ui/MainWindow.cpp
     ui/widgets/LauncherHome.cpp
     ui/widgets/LauncherHome.h
+    ui/widgets/UpdateNotice.cpp
+    ui/widgets/UpdateNotice.h
+    ui/widgets/WindowControls.cpp
+    ui/widgets/WindowControls.h
     ui/widgets/ClayWidgets.cpp
     ui/widgets/ClayWidgets.h
     ui/widgets/FloatingUi.cpp
@@ -1137,6 +1147,12 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/skins/SkinManageDialog.h
     ui/dialogs/skins/SkinCanvas.cpp
     ui/dialogs/skins/SkinCanvas.h
+    ui/dialogs/skins/SkinExtrasPanel.cpp
+    ui/dialogs/skins/SkinExtrasPanel.h
+    ui/dialogs/skins/SkinPalettePanel.cpp
+    ui/dialogs/skins/SkinPalettePanel.h
+    ui/dialogs/skins/SkinPaletteCompare.cpp
+    ui/dialogs/skins/SkinPaletteCompare.h
     ui/dialogs/skins/SkinColorWheel.cpp
     ui/dialogs/skins/SkinColorWheel.h
     ui/dialogs/skins/SkinEditorDialog.cpp

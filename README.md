@@ -4,13 +4,13 @@
 Built on Prism Launcher with C++, Qt Widgets, and customizable light and dark clay themes.</p>
 
 <p align="center">
-  <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v0.3.0">Download for Windows</a> ·
+  <a href="https://github.com/nikitasokolov01/chroma/releases/tag/v1.0.0">Download for Windows</a> ·
   <a href="docs/CHROMA.md">Guide</a> ·
   <a href="docs/CHROMA-MIGRATION.md">Use your Prism library</a> ·
   <a href="https://github.com/nikitasokolov01/chroma/issues">Report an issue</a>
 </p>
 
-![Chroma home: recently played instances, a searchable library, and instance controls in a soft clay interface](docs/screenshots/home.png)
+![Chroma v1 in its dark clay theme, with a card library and window controls in the top-right corner](docs/screenshots/chroma-v1-header-dark.png)
 
 Chroma rebuilds Prism Launcher's default interface around a card library, a persistent sidebar, and screens that open inside the main window. It keeps Prism's instance management and installation workflows underneath, with a visual direction inspired by Modrinth.
 
@@ -18,28 +18,72 @@ Chroma rebuilds Prism Launcher's default interface around a card library, a pers
 
 ## Download
 
-**v0.3.0 preview · Windows x64**
+**v1.0.0 · First stable release · Windows x64**
 
 | Package | Use it when… |
 | --- | --- |
-| [Windows installer](https://github.com/nikitasokolov01/chroma/releases/download/v0.3.0/Chroma-0.3.0-Windows-x64-Setup.exe) | You want a normal installation for your Windows account. |
-| [Portable ZIP](https://github.com/nikitasokolov01/chroma/releases/download/v0.3.0/Chroma-0.3.0-Windows-x64.zip) | You want to extract a folder and run `chroma.exe` from it. Keep its files together. |
+| [Windows installer](https://github.com/nikitasokolov01/chroma/releases/download/v1.0.0/Chroma-1.0.0-Windows-x64-Setup.exe) | You want a normal installation for your Windows account. |
+| [Portable ZIP](https://github.com/nikitasokolov01/chroma/releases/download/v1.0.0/Chroma-1.0.0-Windows-x64.zip) | You want to extract a folder and run `chroma.exe` from it. Keep its files together. |
 
-Read the [v0.3.0 release notes](docs/releases/0.3.0.md) for requirements and verification results. **Upgrading from 0.2.0 requires this manual download once.** From 0.3.0, Chroma checks its GitHub releases automatically, including preview releases. You choose **Download update**, then **Install and restart** after checksum verification. Automatic checks can be disabled in **Settings → Launcher → Updater**. See [updating Chroma](docs/CHROMA.md#updating-chroma).
+Read the [v1.0.0 release notes](docs/releases/1.0.0.md) for requirements and verification results. The [release page](https://github.com/nikitasokolov01/chroma/releases/tag/v1.0.0) also includes checksums and corresponding source archives.
 
-## New in v0.3.0: clearer Skin Studio controls
+**Already using 0.3.0?** Use **Chroma header menu → Check for updates…**, or install the new package over your existing installation. From 0.2.0 or earlier, download v1.0.0 manually. Your launcher profile holds your instances, worlds, skins, Extras, and outfits; keep it when replacing a portable installation. See [updating Chroma](docs/CHROMA.md#updating-chroma).
+
+## New in v1.0.0
+
+Version 1 expands Skin Studio into a complete local skin workspace and brings
+update notices and themed window controls to the launcher.
+
+- **Outfit presets.** Save named looks with their Classic/Slim model and optional owned cape choice. Preview them locally, then apply a complete outfit to the selected account.
+- **Mirror painting.** Mirror the head and torso, pair arms, or pair legs independently. Brush, eraser, and texture strokes work in 2D and 3D, respect hidden parts and selections, and undo together.
+- **Palette swapping.** Compare large, synchronized **Current** and **Preview** 3D models. Recolor grouped shades for the whole skin or a chosen body part and layer while retaining highlights and shadows. The floating color picker keeps you in the editor.
+- **Texture brushes.** Add **Fine grain**, **Fabric**, or **Hair** shading from the colors already on your skin, with adjustable strength and support for mirrored strokes.
+- **Reusable skin pieces.** Save helmets, clothing, or whole layers in **Skin Extras**. Import a reference skin, sample colors, and copy selected pieces across. Bucket fill, marquee selections, Shift painting through the outer layer, and live hue/brightness adjustments round out the tools.
+- **Updates in the app.** A persistent notice highlights a new release; **What's new** shows its features without leaving your work behind. Download and install when you choose.
+- **A matching Windows header.** Flat minimize, maximize/restore, and close controls sit in the top-right corner above the navigation, with support for resizing, snapping, and fullscreen transitions.
+
+### Recolor and save your look
+
+| Palette swapping | Outfit presets |
+| --- | --- |
+| [![Current and Preview 3D skins with grouped color families and body-part and layer selectors](docs/screenshots/v1-palette-swap.png)](docs/screenshots/v1-palette-swap.png) | [![A named Night outfit in Skin Library with Save, Rename, Delete, and Apply outfit controls](docs/screenshots/v1-outfit-presets.png)](docs/screenshots/v1-outfit-presets.png) |
+
+The palette picker opens beside its control. Changes stay in the preview until
+you select **Apply swap**, and each swap is undoable.
+
+<p align="center"><img src="docs/screenshots/v1-palette-picker.png" alt="Floating color wheel with a hex field for previewing a palette replacement" width="230"></p>
+
+### Paint details and reuse them
+
+| Texture brush | Skin Extras |
+| --- | --- |
+| [![Fabric texture brush with adjustable strength in Skin Studio](docs/screenshots/v1-texture-brush.png)](docs/screenshots/v1-texture-brush.png) | [![A named reusable skin piece in the Skin Extras inventory](docs/screenshots/v1-skin-extras.png)](docs/screenshots/v1-skin-extras.png) |
+
+| Mirror painting | Reference skins |
+| --- | --- |
+| [![A mirrored head stroke with independent Head and torso, Pair arms, and Pair legs controls](docs/screenshots/v1-mirror.png)](docs/screenshots/v1-mirror.png) | [![Selecting pixels from a separate reference skin beside the editing texture and live 3D preview](docs/screenshots/v1-reference-skin.png)](docs/screenshots/v1-reference-skin.png) |
+
+Read the [Skin Studio tools guide](docs/SKIN-STUDIO-TOOLS.md) for mirror controls,
+palette scopes, reference skins, copy/paste, cape switching, and outfit management.
+
+### Review an update before installing
+
+[![In-app update notice and What's new page, demonstrated with a synthetic 99.0.0 release](docs/screenshots/chroma-update-notes-fixture.png)](docs/screenshots/chroma-update-notes-fixture.png)
+
+*Update UI demo: 99.0.0 is a synthetic test release. The stable release is v1.0.0.*
+Checks do not download or install updates. Chroma verifies the package checksum
+before offering **Install and restart**. Configure checks in
+**Settings → Launcher → Updater**.
+
+## Skin Studio
 
 Paint directly on a Classic or Slim 3D model, or switch to the 2D texture beside
 a live preview. Both views share the same skin, brush, color, and undo history.
 
-| Paint in 3D | Edit the 2D texture |
-| --- | --- |
-| [![Skin Studio with pixel grids on the 3D model, an inline color wheel, and a clickable body diagram](docs/screenshots/skin-studio.png)](docs/screenshots/skin-studio.png) | [![Skin Studio with its 2D texture canvas, live 3D preview, color wheel, and Body and Outer layer buttons](docs/screenshots/skin-studio-2d.png)](docs/screenshots/skin-studio-2d.png) |
-
 - **Pick colors in place.** The color wheel, hex value, and opacity stay visible beside the canvas.
 - **See each pixel.** The 3D grid follows both body and outer surfaces, including transparent outer pixels. The Grid control works in both editing views.
 - **Choose what is visible.** Use **Body** and **Outer layer** to show each layer; click the head, torso, arms, or legs in the body diagram to hide parts and reach surfaces behind them. Space toggles a focused part.
-- **Paint the visible outer layer.** When **Outer layer** is on, painting changes only that layer. Hide it to paint the body. The same rule applies in 2D.
+- **Paint the visible outer layer.** When **Outer layer** is on, painting targets it. Hold **Shift** to work on the body beneath it, or hide the outer layer. The same rule applies in 2D.
 - **Keep editing flexible.** Use brush, eraser, color picker, undo/redo, PNG import/export, and local library saving. Base pixels stay opaque; outer layers support transparency.
 
 Open **Skins** in the sidebar, choose a skin, then select **Edit Skin…**. In 3D,
@@ -59,7 +103,7 @@ and image preview.
 - **Browse modpacks and project details.** Browse Modrinth, CurseForge, ATLauncher, Technic, and FTB Legacy. Modrinth and CurseForge share **About**, **Gallery**, and **Releases** views with cached project information for offline use. Available services depend on the build's API configuration.
 - **Work inside one window.** Instance editing, settings, accounts, and installation flows open inline. Smooth scrolling and restored scroll positions help with navigation; clickable cards and controls use hand cursors.
 - **Handle larger libraries.** Card painting visits visible rows, geometry is cached, and progress updates avoid full layouts. The library background stays still while idle. Regression coverage includes a 4,000-instance library.
-- **Choose your appearance.** Use light or dark clay themes and preset or custom accents. Windows caption colors follow the theme while retaining native window controls.
+- **Choose your appearance.** Use light or dark clay themes and preset or custom accents. Custom Windows controls follow the selected theme.
 - **Use your existing Prism profile.** Open instances, worlds, accounts, and custom instance locations directly, without copying modpacks.
 
 Launcher commands now live in the **Chroma header menu**. Click **Chroma** at the
@@ -70,14 +114,10 @@ actions. The sidebar keeps navigation and pins together.
 
 | Light | Dark |
 | --- | --- |
-| [![Current Chroma home with the Skins sidebar entry, recent instances, and searchable library](docs/screenshots/home.png)](docs/screenshots/home.png) | [![Chroma home using the dark clay theme](docs/screenshots/dark-home.png)](docs/screenshots/dark-home.png) |
+| [![Chroma v1 home in the light clay theme with custom corner controls](docs/screenshots/chroma-v1-header-light.png)](docs/screenshots/chroma-v1-header-light.png) | [![Chroma v1 home in the dark clay theme with custom corner controls](docs/screenshots/chroma-v1-header-dark.png)](docs/screenshots/chroma-v1-header-dark.png) |
 
-### Skin Library
-
-[![Skin Library with its account dropdown, Classic and Slim models, and cape selector](docs/screenshots/skin-library.png)](docs/screenshots/skin-library.png)
-
-Choose whose skins and capes to manage with the account dropdown. Your default
-launch account stays unchanged, and local skins remain available without signing in.
+<details>
+<summary>More screenshots: modpack browsing, settings, and compact layouts</summary>
 
 ### Browse, choose, install
 
@@ -93,9 +133,12 @@ launch account stays unchanged, and local skins remain available without signing
 | --- | --- |
 | [![Settings open inside Chroma's main window](docs/screenshots/inline-settings.png)](docs/screenshots/inline-settings.png) | [![Modpack cards in a narrow Chroma window](docs/screenshots/modpack-catalog-compact.png)](docs/screenshots/modpack-catalog-compact.png) |
 
-These screenshots were captured from the running native Windows application for
-this revision. Instances, accounts, skins, and catalog entries use synthetic test
-data; they do not show a signed-in user's profile.
+</details>
+
+Screenshots show the native Windows application with synthetic instances,
+accounts, skins, and catalog entries; they do not show a signed-in user's profile.
+The v1 feature and header images show the updated interface. The additional
+browsing and settings images illustrate workflows carried forward from the previews.
 
 ## Already use Prism?
 
@@ -110,6 +153,7 @@ See the [existing-profile guide](docs/CHROMA-MIGRATION.md) for portable profiles
 ## Documentation and development
 
 - [Getting started, accounts, building, and testing](docs/CHROMA.md)
+- [Skin Studio tools, outfits, and reusable pieces](docs/SKIN-STUDIO-TOOLS.md)
 - [Appearance and accent colors](docs/appearance.md)
 - [Using an existing Prism folder](docs/CHROMA-MIGRATION.md)
 - [UI features, implementation notes, and verification results](docs/UI-MODERNIZATION.md)

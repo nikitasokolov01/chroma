@@ -322,6 +322,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     // File and color selection use the same inline workspace as other features.
     setAttribute(Qt::AA_DontUseNativeDialogs);
     setDesktopFileName(BuildConfig.LAUNCHER_APPID);
+    // Give every top-level window the launcher logo, including windows created
+    // by Qt before MainWindow and windows whose native handle is recreated.
+    setWindowIcon(logo());
     m_startTime = QDateTime::currentDateTime();
 
     // Don't quit on hiding the last window
@@ -1447,6 +1450,8 @@ void Application::performMainStartupAction()
 #endif
 #elif defined(Q_OS_WIN)
         m_updater.reset(new ChromaUpdater(m_mainWindow, m_rootPath, m_dataPath, m_portable, network().get()));
+        if (m_mainWindow)
+            m_mainWindow->setUpdateNotifier(qobject_cast<ChromaUpdater*>(m_updater.get()));
 #else
         m_updater.reset(new PrismExternalUpdater(m_mainWindow, m_rootPath, m_dataPath));
 #endif

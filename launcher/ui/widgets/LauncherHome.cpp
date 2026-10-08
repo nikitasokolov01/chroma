@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 #include "LauncherHome.h"
+#include "ui/themes/WindowChrome.h"
+#include "ui/widgets/UpdateNotice.h"
+#include "ui/widgets/WindowControls.h"
 
 #include <QAction>
 #include <QApplication>
@@ -118,7 +121,27 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     : QWidget(parent), m_view(view), m_model(model), m_actions(actions)
 {
     setObjectName("launcherHome");
-    auto* shell = new QVBoxLayout(this);
+    auto* outer = new QVBoxLayout(this);
+    outer->setContentsMargins(0, 0, 0, 0);
+    outer->setSpacing(0);
+    auto* titleBar = new QWidget(this);
+    titleBar->setObjectName("windowTitleBar");
+    titleBar->setFixedHeight(Clay::MinimumTarget);
+    auto* titleLayout = new QHBoxLayout(titleBar);
+    titleLayout->setContentsMargins(0, 0, 0, 0);
+    titleLayout->setSpacing(0);
+    titleLayout->addStretch();
+    m_windowControls = new WindowControls(window(), titleBar);
+    titleLayout->addWidget(m_windowControls);
+    outer->addWidget(titleBar);
+    if (!WindowChrome::installCustom(window(), titleBar, m_windowControls))
+        titleBar->hide();
+
+    auto* content = new QWidget(this);
+    content->setObjectName("homeWorkspace");
+    outer->addWidget(content, 1);
+    auto* shell = new QVBoxLayout(content);
+    m_contentLayout = shell;
     shell->setContentsMargins(0, 0, 0, 0);
     shell->setSpacing(0);
 
@@ -154,6 +177,8 @@ LauncherHome::LauncherHome(InstanceView* view, InstanceProxyModel* model, const 
     m_running->setObjectName("runningStatus");
     headerLayout->addWidget(m_running);
     shell->addWidget(header);
+    m_updateNotice = new UpdateNotice(this);
+    shell->addWidget(m_updateNotice);
 
     auto* body = new QHBoxLayout();
     body->setContentsMargins(0, 0, 0, 0);
@@ -782,9 +807,17 @@ void LauncherHome::refreshSelection()
 void LauncherHome::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
+    // Keep page titles readable on small screens. The running count remains
+    // available in each instance's details.
+    m_running->setVisible(event->size().width() >= 800);
     // The library and its context menu remain usable on smaller displays.
     m_details->setVisible(event->size().width() >= 1000);
     layoutRecentCards();
+}
+
+void LauncherHome::setUpdater(ChromaUpdater* updater)
+{
+    m_updateNotice->setUpdater(updater);
 }
 
 void LauncherHome::layoutRecentCards()
@@ -849,8 +882,8 @@ void LauncherHome::retranslate()
 void LauncherHome::applyStyle()
 {
     m_clayStyle = Clay::enabled();
-    layout()->setContentsMargins(m_clayStyle ? 12 : 0, m_clayStyle ? 10 : 0, m_clayStyle ? 12 : 0, m_clayStyle ? 10 : 0);
-    layout()->setSpacing(m_clayStyle ? 8 : 0);
+    m_contentLayout->setContentsMargins(m_clayStyle ? 12 : 0, m_clayStyle ? 10 : 0, m_clayStyle ? 12 : 0, m_clayStyle ? 10 : 0);
+    m_contentLayout->setSpacing(m_clayStyle ? 8 : 0);
     m_view->viewport()->setAutoFillBackground(!m_clayStyle);
     if (m_clayStyle) {
         setStyleSheet(QStringLiteral(R"(

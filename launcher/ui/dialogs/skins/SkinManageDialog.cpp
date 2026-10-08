@@ -22,15 +22,19 @@
 
 #include <FileSystem.h>
 #include <QAction>
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialog>
 #include <QEventLoop>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
+#include <QInputDialog>
 #include <QKeyEvent>
 #include <QListView>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMimeDatabase>
 #include <QPainter>
@@ -66,9 +70,20 @@
 #include "ui/widgets/ClayWidgets.h"
 
 SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
-    : QDialog(parent), m_acct(acct), m_ui(new Ui::SkinManageDialog), m_list(this, APPLICATION->settings()->get("SkinsDir").toString(), acct)
+    : QDialog(parent),
+      m_acct(acct),
+      m_ui(new Ui::SkinManageDialog),
+      m_list(this, APPLICATION->settings()->get("SkinsDir").toString(), acct),
+      m_outfits(QDir(APPLICATION->dataRoot()).filePath("skin-outfits"))
 {
     m_ui->setupUi(this);
+    m_applyCape = new QPushButton(tr("Apply cape"), m_ui->capeBox);
+    m_applyCape->setObjectName("skinApplyCape");
+    m_applyCape->setAutoDefault(false);
+    m_applyCape->setCursor(Qt::PointingHandCursor);
+    m_applyCape->setToolTip(tr("Equip the selected owned cape without changing the skin."));
+    m_ui->verticalLayout_4->insertWidget(2, m_applyCape);
+    connect(m_applyCape, &QPushButton::clicked, this, &SkinManageDialog::applySelectedCape);
     auto* importControls = new QGridLayout;
     int controlIndex = 0;
     while (auto* item = m_ui->buttonsHLayout->takeAt(0)) {
@@ -159,6 +174,8 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
     contentsWidget->installEventFilter(this);
     contentsWidget->setModel(&m_list);
     connect(&m_list, &QAbstractItemModel::modelReset, this, [this] {
+        if (m_selectedOutfit)
+            return;
         int row = m_list.getSkinIndex(m_selectedSkinKey);
         if (row < 0)
             row = m_list.getSelectedAccountSkin();
@@ -178,6 +195,7 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
         on_capeCombo_currentIndexChanged(0);
     });
 
+    setupOutfits();
     setupCapes();
 
     auto selectedIndex = m_list.getSelectedAccountSkin();
@@ -209,6 +227,7 @@ SkinManageDialog::SkinManageDialog(QWidget* parent, MinecraftAccountPtr acct)
     connect(APPLICATION->accounts().get(), &AccountList::listChanged, this, &SkinManageDialog::refreshAccounts);
     connect(APPLICATION->accounts().get(), &AccountList::listActivityChanged, this, &SkinManageDialog::updateAccountActions);
     refreshAccounts();
+    updatePreview();
 }
 
 SkinManageDialog::~SkinManageDialog()
@@ -220,6 +239,8 @@ SkinManageDialog::~SkinManageDialog()
 
 void SkinManageDialog::refreshAccounts()
 {
+    if (m_capeTask && m_capeTask->isRunning())
+        return;
     const QSignalBlocker blocker(m_accountCombo);
     m_accountCombo->clear();
     const auto accounts = APPLICATION->accounts();
@@ -255,25 +276,62 @@ void SkinManageDialog::selectAccount(MinecraftAccountPtr account)
     m_selectedSkinKey.clear();
     setupCapes();
     m_list.setAccount(account);
+    if (m_selectedOutfit)
+        selectOutfit();
     updateAccountActions();
 }
 
 void SkinManageDialog::updateAccountActions()
 {
     const bool online = m_acct && m_acct->accountType() == AccountType::MSA && m_acct->hasProfile();
-    const bool ready = online && !m_acct->isActive() && !m_acct->isInUse();
+    const bool changingCape = m_capeTask && m_capeTask->isRunning();
+    const bool ready = online && !m_acct->isActive() && !m_acct->isInUse() && !changingCape;
     const auto* skin = getSelectedSkin();
-    m_editButton->setEnabled(skin != nullptr);
-    m_ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(skin && ready);
+    m_editButton->setEnabled(skin != nullptr && !changingCape);
+    findChild<QPushButton*>("skinManageAccounts")->setEnabled(!changingCape);
+    m_ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(skin && ready && !m_selectedOutfit);
     m_ui->resetBtn->setEnabled(ready);
+    m_applyCape->setEnabled(ready && !m_selectedOutfit &&
+                            m_ui->capeCombo->currentData().toString() != m_acct->accountData()->minecraftProfile.currentCape);
+    m_ui->capeCombo->setEnabled(!changingCape && !m_selectedOutfit);
+    m_ui->modelBox->setEnabled(!changingCape && !m_selectedOutfit);
+    m_accountCombo->setEnabled(!changingCape && APPLICATION->accounts()->count() > 0);
+    m_ui->buttonBox->button(QDialogButtonBox::Cancel)->setEnabled(!changingCape);
+    m_ui->listView->setEnabled(!changingCape);
+    m_ui->action_Rename_Skin->setEnabled(canManageLibrarySelection());
+    m_ui->action_Delete_Skin->setEnabled(canManageLibrarySelection());
+    for (auto* button : { m_ui->fileBtn, m_ui->urlBtn, m_ui->userBtn })
+        button->setEnabled(!changingCape);
+    updateOutfitActions();
+    if (changingCape)
+        return;
     m_accountStatus->setText(!m_acct   ? tr("Local library · Add an account to apply skins.")
                              : !online ? tr("Local editing · Microsoft sign-in is required to apply skins.")
                              : !ready  ? tr("Close Minecraft and finish sign-in before applying a skin.")
                                        : tr("Applying a skin updates %1’s Minecraft profile.").arg(m_acct->profileName()));
 }
 
+void SkinManageDialog::applySelectedCape()
+{
+    if (!m_applyCape->isEnabled())
+        return;
+    const auto account = m_acct;
+    m_capeTask = SkinApplyTask::forCape(account, m_ui->capeCombo->currentData().toString());
+    connect(m_capeTask.get(), &Task::started, this, &SkinManageDialog::updateAccountActions);
+    connect(m_capeTask.get(), &Task::status, m_accountStatus, &QLabel::setText);
+    connect(m_capeTask.get(), &Task::finished, this, [this, account] {
+        refreshAccounts();
+        updateAccountActions();
+        m_accountStatus->setText(m_capeTask->wasSuccessful() ? tr("Cape updated on %1’s Minecraft account.").arg(account->profileName())
+                                                             : m_capeTask->failReason());
+    });
+    m_capeTask->start();
+}
+
 void SkinManageDialog::activated(QModelIndex index)
 {
+    if (!canManageLibrarySelection() || index != m_ui->listView->currentIndex())
+        return;
     m_selectedSkinKey = index.data(Qt::UserRole).toString();
     editSelectedSkin();
 }
@@ -281,14 +339,22 @@ void SkinManageDialog::activated(QModelIndex index)
 void SkinManageDialog::selectionChanged(QItemSelection selected, [[maybe_unused]] QItemSelection deselected)
 {
     if (selected.empty()) {
-        m_editButton->setEnabled(false);
-        m_ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
+        if (m_selectedOutfit)
+            return;
+        updateAccountActions();
+        updatePreview();
         return;
     }
 
     QString key = selected.first().indexes().first().data(Qt::UserRole).toString();
     if (key.isEmpty())
         return;
+    {
+        const QSignalBlocker blocker(m_outfitCombo);
+        m_outfitCombo->setCurrentIndex(0);
+        m_selectedOutfit.reset();
+        m_outfitSkin.reset();
+    }
     m_selectedSkinKey = key;
     auto skin = getSelectedSkin();
     updateAccountActions();
@@ -303,6 +369,7 @@ void SkinManageDialog::selectionChanged(QItemSelection selected, [[maybe_unused]
     m_ui->capeCombo->setCurrentIndex(m_capesIdx.value(skin->getCapeId()));
     m_ui->steveBtn->setChecked(skin->getModel() == SkinModel::CLASSIC);
     m_ui->alexBtn->setChecked(skin->getModel() == SkinModel::SLIM);
+    updatePreview();
 }
 
 void SkinManageDialog::delayed_scroll(QModelIndex model_index)
@@ -346,6 +413,332 @@ QPixmap previewCape(QImage capeImage, bool elytra = false)
         return QPixmap::fromImage(combined.scaled(84, 128, Qt::KeepAspectRatio, Qt::FastTransformation));
     }
     return QPixmap::fromImage(capeImage.copy(1, 1, 10, 16).scaled(80, 128, Qt::IgnoreAspectRatio, Qt::FastTransformation));
+}
+
+void SkinManageDialog::setupOutfits()
+{
+    auto* box = new QGroupBox(tr("Outfits"), this);
+    box->setObjectName("skinOutfitBox");
+    auto* layout = new QGridLayout(box);
+    m_outfitCombo = new ClayComboBox(box);
+    m_outfitCombo->setObjectName("skinOutfitCombo");
+    m_outfitCombo->setAccessibleName(tr("Saved outfit"));
+    m_outfitCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_outfitCombo->setMinimumContentsLength(12);
+    m_saveOutfit = new QPushButton(tr("Save outfit…"), box);
+    m_saveOutfit->setObjectName("skinOutfitSave");
+    m_saveOutfit->setToolTip(tr("Save this skin, including any Extras already applied in Skin Studio, as a reusable outfit."));
+    m_renameOutfit = new QPushButton(tr("Rename…"), box);
+    m_renameOutfit->setObjectName("skinOutfitRename");
+    m_deleteOutfit = new QPushButton(tr("Delete…"), box);
+    m_deleteOutfit->setObjectName("skinOutfitDelete");
+    m_applyOutfit = new QPushButton(tr("Apply outfit"), box);
+    m_applyOutfit->setObjectName("skinOutfitApply");
+    for (auto* button : { m_saveOutfit, m_renameOutfit, m_deleteOutfit, m_applyOutfit })
+        button->setAutoDefault(false);
+    layout->addWidget(m_outfitCombo, 0, 0, 1, 3);
+    layout->addWidget(m_applyOutfit, 0, 3);
+    layout->addWidget(m_saveOutfit, 1, 0);
+    layout->addWidget(m_renameOutfit, 1, 1);
+    layout->addWidget(m_deleteOutfit, 1, 2);
+    layout->setColumnStretch(0, 1);
+    m_outfitStatus = new QLabel(box);
+    m_outfitStatus->setObjectName("skinOutfitStatus");
+    m_outfitStatus->setWordWrap(true);
+    m_outfitStatus->setTextFormat(Qt::PlainText);
+    layout->addWidget(m_outfitStatus, 2, 0, 1, 4);
+    m_ui->verticalLayout->insertWidget(2, box);
+    connect(m_outfitCombo, &QComboBox::currentIndexChanged, this, &SkinManageDialog::selectOutfit);
+    connect(m_saveOutfit, &QPushButton::clicked, this, &SkinManageDialog::saveOutfit);
+    connect(m_renameOutfit, &QPushButton::clicked, this, &SkinManageDialog::renameOutfit);
+    connect(m_deleteOutfit, &QPushButton::clicked, this, &SkinManageDialog::deleteOutfit);
+    connect(m_applyOutfit, &QPushButton::clicked, this, &SkinManageDialog::applyOutfit);
+    refreshOutfits();
+}
+
+void SkinManageDialog::refreshOutfits(const QString& selectedId)
+{
+    QString warning;
+    {
+        const QSignalBlocker blocker(m_outfitCombo);
+        m_outfitCombo->clear();
+        m_outfitCombo->addItem(tr("Skin library selection"), QString());
+        for (const auto& entry : m_outfits.entries(&warning)) {
+            const SkinModel skin(entry.image, entry.model);
+            m_outfitCombo->addItem(QIcon(QPixmap::fromImage(skin.getPreview())), entry.name, entry.id);
+        }
+        m_outfitCombo->setCurrentIndex(qMax(0, m_outfitCombo->findData(selectedId)));
+    }
+    // During construction the remaining preview controls are still being set up.
+    if (!selectedId.isEmpty() || m_selectedOutfit)
+        selectOutfit();
+    if (!warning.isEmpty())
+        m_outfitStatus->setText(warning);
+}
+
+void SkinManageDialog::selectOutfit()
+{
+    const auto id = m_outfitCombo->currentData().toString();
+    m_selectedOutfit.reset();
+    m_outfitSkin.reset();
+    if (id.isEmpty()) {
+        restoreLibrarySelection();
+        return;
+    }
+    QString error;
+    m_selectedOutfit = m_outfits.load(id, &error);
+    if (!m_selectedOutfit) {
+        restoreLibrarySelection();
+        m_outfitStatus->setText(error);
+        return;
+    }
+    m_outfitSkin = std::make_unique<SkinModel>(m_selectedOutfit->image, m_selectedOutfit->model);
+    const auto capeId = m_selectedOutfit->capeId.value_or(m_acct ? m_acct->accountData()->minecraftProfile.currentCape : QString());
+    m_outfitSkin->setCapeId(capeId);
+    {
+        const QSignalBlocker selectionBlocker(m_ui->listView->selectionModel());
+        m_ui->listView->setCurrentIndex(QModelIndex());
+        const QSignalBlocker capeBlocker(m_ui->capeCombo);
+        m_ui->capeCombo->setCurrentIndex(capeId.isEmpty() ? 0 : m_ui->capeCombo->findData(capeId));
+        const QSignalBlocker modelBlocker(m_ui->steveBtn);
+        m_ui->steveBtn->setChecked(m_selectedOutfit->model == SkinModel::CLASSIC);
+        m_ui->alexBtn->setChecked(m_selectedOutfit->model == SkinModel::SLIM);
+    }
+    updatePreview();
+    updateAccountActions();
+}
+
+void SkinManageDialog::restoreLibrarySelection()
+{
+    m_selectedOutfit.reset();
+    m_outfitSkin.reset();
+    const QSignalBlocker outfitBlocker(m_outfitCombo);
+    m_outfitCombo->setCurrentIndex(0);
+    int row = m_list.getSkinIndex(m_selectedSkinKey);
+    if (row < 0)
+        row = m_list.getSelectedAccountSkin();
+    if (row < 0 && m_list.rowCount())
+        row = 0;
+    const auto index = m_list.index(row);
+    {
+        const QSignalBlocker selectionBlocker(m_ui->listView->selectionModel());
+        m_ui->listView->setCurrentIndex(index);
+    }
+    m_selectedSkinKey = index.isValid() ? index.data(Qt::UserRole).toString() : QString();
+    const auto* skin = getSelectedSkin();
+    {
+        const QSignalBlocker capeBlocker(m_ui->capeCombo);
+        m_ui->capeCombo->setCurrentIndex(skin ? m_capesIdx.value(skin->getCapeId()) : 0);
+        const QSignalBlocker modelBlocker(m_ui->steveBtn);
+        m_ui->steveBtn->setChecked(!skin || skin->getModel() == SkinModel::CLASSIC);
+        m_ui->alexBtn->setChecked(skin && skin->getModel() == SkinModel::SLIM);
+    }
+    updatePreview();
+    updateAccountActions();
+}
+
+QImage SkinManageDialog::selectedCapeImage() const
+{
+    if (m_selectedOutfit) {
+        if (!m_selectedOutfit->capeImage.isNull())
+            return m_selectedOutfit->capeImage;
+        const auto id = m_selectedOutfit->capeId.value_or(m_acct ? m_acct->accountData()->minecraftProfile.currentCape : QString());
+        return m_capes.value(id);
+    }
+    return m_capes.value(m_ui->capeCombo->currentData().toString());
+}
+
+void SkinManageDialog::updatePreview()
+{
+    const auto cape = selectedCapeImage();
+    if (auto* skin = getSelectedSkin()) {
+        if (m_skinPreview) {
+            m_skinPreview->updateScene(skin);
+            m_skinPreview->updateCape(cape);
+        }
+        m_skinPreviewLabel->setPixmap(
+            QPixmap::fromImage(skin->getPreview()).scaled(m_skinPreviewLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
+        if (m_skinPreviewContainer)
+            m_skinPreviewContainer->setVisible(isEnabled() && !m_previewFailed);
+        m_skinPreviewLabel->setVisible(!m_skinPreview || m_previewFailed);
+    } else {
+        if (m_skinPreview) {
+            QImage empty(64, 64, QImage::Format_ARGB32);
+            empty.fill(Qt::transparent);
+            m_skinPreview->setTexture(empty, SkinModel::CLASSIC);
+            m_skinPreview->updateCape({});
+        }
+        if (m_skinPreviewContainer)
+            m_skinPreviewContainer->hide();
+        m_skinPreviewLabel->setText(tr("Import a skin PNG to start your collection."));
+        m_skinPreviewLabel->show();
+        m_ui->capeImage->clear();
+        return;
+    }
+    if (cape.isNull())
+        m_ui->capeImage->clear();
+    else
+        m_ui->capeImage->setPixmap(previewCape(cape, m_ui->elytraCB->isChecked()));
+}
+
+void SkinManageDialog::updateOutfitActions()
+{
+    if (!m_outfitCombo)
+        return;
+    const bool busy = m_capeTask && m_capeTask->isRunning();
+    const bool online = m_acct && m_acct->accountType() == AccountType::MSA && m_acct->hasProfile();
+    const bool ready = online && !m_acct->isActive() && !m_acct->isInUse();
+    const bool ownsCape = !m_selectedOutfit || !m_selectedOutfit->capeId || m_selectedOutfit->capeId->isEmpty() ||
+                          (m_acct && m_acct->accountData()->minecraftProfile.capes.contains(*m_selectedOutfit->capeId));
+    m_outfitCombo->setEnabled(!busy);
+    m_saveOutfit->setEnabled(!busy && getSelectedSkin());
+    m_renameOutfit->setEnabled(!busy && m_selectedOutfit.has_value());
+    m_deleteOutfit->setEnabled(!busy && m_selectedOutfit.has_value());
+    m_applyOutfit->setEnabled(!busy && ready && ownsCape && m_selectedOutfit.has_value());
+    m_ui->capeBox->setEnabled(m_acct != nullptr || m_selectedOutfit.has_value());
+    if (busy)
+        return;
+    if (!m_selectedOutfit) {
+        m_outfitStatus->setText(tr("Save a skin and optional cape together. Outfits stay in your local library."));
+        return;
+    }
+    if (!online)
+        m_outfitStatus->setText(tr("Local outfit preview · Select a Microsoft account to apply it."));
+    else if (!ownsCape)
+        m_outfitStatus->setText(tr("This outfit uses a cape that %1 does not own. Select an account that owns it to apply the outfit.")
+                                   .arg(m_acct->profileName()));
+    else if (!ready)
+        m_outfitStatus->setText(tr("Close Minecraft and finish sign-in before applying this outfit."));
+    else if (!m_selectedOutfit->capeId)
+        m_outfitStatus->setText(tr("Apply outfit changes the skin and keeps %1’s current cape.").arg(m_acct->profileName()));
+    else if (m_selectedOutfit->capeId->isEmpty())
+        m_outfitStatus->setText(tr("Apply outfit changes the skin and removes %1’s cape.").arg(m_acct->profileName()));
+    else
+        m_outfitStatus->setText(tr("Apply outfit updates the skin and owned cape on %1’s account.").arg(m_acct->profileName()));
+}
+
+void SkinManageDialog::saveOutfit()
+{
+    const auto* skin = getSelectedSkin();
+    if (!skin || !m_saveOutfit->isEnabled())
+        return;
+    SkinOutfitLibrary::Entry entry{ {}, {}, skin->getTexture(), skin->getModel(), std::nullopt, {} };
+    const auto capeId = m_selectedOutfit
+                            ? m_selectedOutfit->capeId.value_or(m_acct ? m_acct->accountData()->minecraftProfile.currentCape : QString())
+                            : m_ui->capeCombo->currentData().toString();
+    const auto capeImage = selectedCapeImage();
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("Save outfit"));
+    dialog.resize(380, 210);
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* label = new QLabel(tr("Outfit name"), &dialog);
+    auto* name = new QLineEdit(m_selectedOutfit ? m_selectedOutfit->name : skin->name(), &dialog);
+    name->setObjectName("skinOutfitName");
+    name->setMaxLength(80);
+    label->setBuddy(name);
+    layout->addWidget(label);
+    layout->addWidget(name);
+    auto* includeCape = new QCheckBox(tr("Include cape selection"), &dialog);
+    includeCape->setObjectName("skinOutfitIncludeCape");
+    includeCape->setChecked(m_selectedOutfit ? m_selectedOutfit->capeId.has_value()
+                                           : m_acct && m_acct->accountType() == AccountType::MSA && m_acct->hasProfile());
+    layout->addWidget(includeCape);
+    auto* help = new QLabel(tr("Includes Extras already applied in Skin Studio. A saved No Cape selection removes the equipped cape. "
+                              "Leave this unchecked to keep the account’s current cape."),
+                           &dialog);
+    help->setWordWrap(true);
+    layout->addWidget(help);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(name, &QLineEdit::textChanged, buttons, [buttons](const QString& text) {
+        buttons->button(QDialogButtonBox::Save)->setEnabled(!text.trimmed().isEmpty());
+    });
+    buttons->button(QDialogButtonBox::Save)->setEnabled(!name->text().trimmed().isEmpty());
+    name->selectAll();
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    entry.name = name->text();
+    if (includeCape->isChecked()) {
+        entry.capeId = capeId;
+        entry.capeImage = capeId.isEmpty() ? QImage() : capeImage;
+    }
+    QString error;
+    const auto id = m_outfits.save(entry, &error);
+    if (id.isEmpty()) {
+        m_outfitStatus->setText(error);
+        return;
+    }
+    refreshOutfits(id);
+    m_outfitStatus->setText(tr("Outfit saved locally. %1").arg(m_outfitStatus->text()));
+}
+
+void SkinManageDialog::renameOutfit()
+{
+    if (!m_selectedOutfit || !m_renameOutfit->isEnabled())
+        return;
+    const auto id = m_selectedOutfit->id;
+    bool ok = false;
+    const auto name = QInputDialog::getText(this, tr("Rename outfit"), tr("Outfit name"), QLineEdit::Normal, m_selectedOutfit->name, &ok);
+    if (!ok)
+        return;
+    QString error;
+    if (!m_outfits.rename(id, name, &error))
+        m_outfitStatus->setText(error);
+    else {
+        refreshOutfits(id);
+        m_outfitStatus->setText(tr("Outfit renamed. %1").arg(m_outfitStatus->text()));
+    }
+}
+
+void SkinManageDialog::deleteOutfit()
+{
+    if (!m_selectedOutfit || !m_deleteOutfit->isEnabled())
+        return;
+    const auto id = m_selectedOutfit->id;
+    if (QMessageBox::question(this, tr("Delete outfit?"),
+                              tr("Delete the saved outfit “%1”? The source skin and Extras remain in your library.")
+                                  .arg(m_selectedOutfit->name),
+                              QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel) != QMessageBox::Yes)
+        return;
+    QString error;
+    if (!m_outfits.remove(id, &error))
+        m_outfitStatus->setText(error);
+    else {
+        refreshOutfits();
+        m_outfitStatus->setText(tr("Outfit deleted."));
+    }
+}
+
+void SkinManageDialog::applyOutfit()
+{
+    // Repeat eligibility checks at the action boundary, even if the account has
+    // changed since the button was enabled. SkinApplyTask also checks ownership.
+    updateOutfitActions();
+    if (!m_selectedOutfit || !m_applyOutfit->isEnabled())
+        return;
+    m_outfitUpload = std::make_unique<QTemporaryDir>();
+    const auto path = m_outfitUpload->filePath("outfit.png");
+    if (!m_outfitUpload->isValid() || !m_selectedOutfit->image.save(path, "PNG")) {
+        m_outfitStatus->setText(tr("The outfit could not be prepared for upload. Your saved outfit is still available."));
+        m_outfitUpload.reset();
+        return;
+    }
+    const auto account = m_acct;
+    m_capeTask = makeShared<SkinApplyTask>(account, path, m_selectedOutfit->model, m_selectedOutfit->capeId);
+    connect(m_capeTask.get(), &Task::started, this, &SkinManageDialog::updateAccountActions);
+    connect(m_capeTask.get(), &Task::status, m_outfitStatus, &QLabel::setText);
+    connect(m_capeTask.get(), &Task::finished, this, [this, account] {
+        m_outfitUpload.reset();
+        refreshAccounts();
+        if (m_selectedOutfit)
+            selectOutfit();
+        updateAccountActions();
+        m_outfitStatus->setText(m_capeTask->wasSuccessful() ? tr("Outfit applied to %1’s Minecraft account.").arg(account->profileName())
+                                                         : m_capeTask->failReason());
+    });
+    m_capeTask->start();
 }
 
 void SkinManageDialog::setupCapes()
@@ -417,6 +810,11 @@ void SkinManageDialog::setupCapes()
 
 void SkinManageDialog::on_capeCombo_currentIndexChanged(int index)
 {
+    Q_UNUSED(index)
+    if (m_selectedOutfit) {
+        updatePreview();
+        return;
+    }
     auto id = m_ui->capeCombo->currentData();
     auto cape = m_capes.value(id.toString(), {});
     if (!cape.isNull()) {
@@ -437,10 +835,13 @@ void SkinManageDialog::on_capeCombo_currentIndexChanged(int index)
                 QPixmap::fromImage(skin->getPreview()).scaled(m_skinPreviewLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
         }
     }
+    updateAccountActions();
 }
 
 void SkinManageDialog::on_steveBtn_toggled(bool checked)
 {
+    if (m_selectedOutfit)
+        return;
     if (auto skin = getSelectedSkin(); skin) {
         skin->setModel(checked ? SkinModel::CLASSIC : SkinModel::SLIM);
         if (m_skinPreview) {
@@ -454,6 +855,12 @@ void SkinManageDialog::on_steveBtn_toggled(bool checked)
 
 void SkinManageDialog::accept()
 {
+    if (m_capeTask && m_capeTask->isRunning())
+        return;
+    if (m_selectedOutfit) {
+        applyOutfit();
+        return;
+    }
     if (!m_acct)
         return;
     auto skin = m_list.skin(m_selectedSkinKey);
@@ -470,6 +877,12 @@ void SkinManageDialog::accept()
     QDialog::accept();
 }
 
+void SkinManageDialog::reject()
+{
+    if (!m_capeTask || !m_capeTask->isRunning())
+        QDialog::reject();
+}
+
 void SkinManageDialog::editSelectedSkin()
 {
     const auto* skin = getSelectedSkin();
@@ -477,6 +890,10 @@ void SkinManageDialog::editSelectedSkin()
         return;
     SkinEditorDialog editor(this, m_acct, *skin);
     connect(&editor, &SkinEditorDialog::skinSaved, this, [this](const QString& path, SkinModel::Model model) {
+        m_selectedOutfit.reset();
+        m_outfitSkin.reset();
+        const QSignalBlocker blocker(m_outfitCombo);
+        m_outfitCombo->setCurrentIndex(0);
         SkinModel saved(path);
         saved.setModel(model);
         m_list.updateSkin(&saved);
@@ -489,7 +906,7 @@ void SkinManageDialog::changeEvent(QEvent* event)
 {
     QDialog::changeEvent(event);
     if (event->type() == QEvent::EnabledChange && m_skinPreviewContainer)
-        m_skinPreviewContainer->setVisible(isEnabled() && !m_previewFailed);
+        m_skinPreviewContainer->setVisible(isEnabled() && !m_previewFailed && getSelectedSkin());
 }
 
 void SkinManageDialog::on_resetBtn_clicked()
@@ -523,6 +940,8 @@ void SkinManageDialog::on_resetBtn_clicked()
 
 void SkinManageDialog::show_context_menu(const QPoint& pos)
 {
+    if (!canManageLibrarySelection())
+        return;
     QMenu myMenu(tr("Context menu"), this);
     myMenu.addAction(m_ui->action_Rename_Skin);
     myMenu.addAction(m_ui->action_Delete_Skin);
@@ -552,15 +971,16 @@ bool SkinManageDialog::eventFilter(QObject* obj, QEvent* ev)
 
 void SkinManageDialog::on_action_Rename_Skin_triggered(bool)
 {
-    if (!m_selectedSkinKey.isEmpty()) {
+    if (canManageLibrarySelection()) {
         m_ui->listView->edit(m_ui->listView->currentIndex());
     }
 }
 
 void SkinManageDialog::on_action_Delete_Skin_triggered(bool)
 {
-    if (m_selectedSkinKey.isEmpty())
+    if (!canManageLibrarySelection())
         return;
+    const auto selectedKey = m_selectedSkinKey;
 
     if (m_list.getSkinIndex(m_selectedSkinKey) == m_list.getSelectedAccountSkin()) {
         CustomMessageBox::selectable(this, tr("Delete error"), tr("Can not delete skin that is in use."), QMessageBox::Warning)->exec();
@@ -578,11 +998,20 @@ void SkinManageDialog::on_action_Delete_Skin_triggered(bool)
                                                  QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No, QMessageBox::No)
                         ->exec();
 
-    if (response == QMessageBox::Yes) {
-        if (!m_list.deleteSkin(m_selectedSkinKey, true)) {
-            m_list.deleteSkin(m_selectedSkinKey, false);
+    if (response == QMessageBox::Yes && canManageLibrarySelection() && m_selectedSkinKey == selectedKey &&
+        m_list.getSkinIndex(selectedKey) != m_list.getSelectedAccountSkin()) {
+        if (!m_list.deleteSkin(selectedKey, true)) {
+            m_list.deleteSkin(selectedKey, false);
         }
     }
+}
+
+bool SkinManageDialog::canManageLibrarySelection() const
+{
+    const auto index = m_ui->listView->currentIndex();
+    return !m_selectedOutfit && !(m_capeTask && m_capeTask->isRunning()) && index.isValid() &&
+           m_ui->listView->selectionModel()->isSelected(index) && index.data(Qt::UserRole).toString() == m_selectedSkinKey &&
+           m_list.skin(m_selectedSkinKey);
 }
 
 void SkinManageDialog::on_urlBtn_clicked()
@@ -774,14 +1203,13 @@ void SkinManageDialog::resizeEvent(QResizeEvent* event)
     QWidget::resizeEvent(event);
     QSize s = size() * (1. / 3);
 
-    auto id = m_ui->capeCombo->currentData();
-    auto cape = m_capes.value(id.toString(), {});
+    auto cape = selectedCapeImage();
     if (!cape.isNull()) {
         m_ui->capeImage->setPixmap(previewCape(cape, m_ui->elytraCB->isChecked()).scaled(s, Qt::KeepAspectRatio, Qt::FastTransformation));
     } else {
         m_ui->capeImage->clear();
     }
-    if (auto skin = getSelectedSkin(); skin && !m_skinPreview) {
+    if (auto skin = getSelectedSkin(); skin && (!m_skinPreview || m_previewFailed)) {
         m_skinPreviewLabel->setPixmap(
             QPixmap::fromImage(skin->getPreview()).scaled(m_skinPreviewLabel->size(), Qt::KeepAspectRatio, Qt::FastTransformation));
     }
@@ -789,6 +1217,12 @@ void SkinManageDialog::resizeEvent(QResizeEvent* event)
 
 SkinModel* SkinManageDialog::getSelectedSkin()
 {
+    if (m_outfitSkin)
+        return m_outfitSkin.get();
+    const auto index = m_ui->listView->currentIndex();
+    if (!index.isValid() || !m_ui->listView->selectionModel()->isSelected(index) ||
+        index.data(Qt::UserRole).toString() != m_selectedSkinKey)
+        return nullptr;
     if (auto skin = m_list.skin(m_selectedSkinKey); skin && skin->isValid()) {
         return skin;
     }
@@ -797,5 +1231,8 @@ SkinModel* SkinManageDialog::getSelectedSkin()
 
 QHash<QString, QImage> SkinManageDialog::capes()
 {
-    return m_capes;
+    auto result = m_capes;
+    if (m_selectedOutfit && m_selectedOutfit->capeId && !m_selectedOutfit->capeImage.isNull())
+        result.insert(*m_selectedOutfit->capeId, m_selectedOutfit->capeImage);
+    return result;
 }

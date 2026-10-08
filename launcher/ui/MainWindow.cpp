@@ -112,6 +112,7 @@
 #include "ui/themes/ITheme.h"
 #include "ui/themes/ThemeManager.h"
 #include "ui/themes/WindowChrome.h"
+#include "updater/ChromaUpdater.h"
 #include "ui/widgets/InlineWorkspace.h"
 #include "ui/widgets/LabeledToolButton.h"
 #include "ui/widgets/LauncherHome.h"
@@ -157,7 +158,6 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     setWindowIcon(APPLICATION->logo());
     setWindowTitle(APPLICATION->applicationDisplayName());
-    WindowChrome::install(this);
 #ifndef QT_NO_ACCESSIBILITY
     setAccessibleName(BuildConfig.LAUNCHER_DISPLAYNAME);
 #endif
@@ -482,6 +482,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     };
     ui->horizontalLayout->removeWidget(view);
     m_home = new LauncherHome(view, proxymodel, homeActions, ui->centralWidget);
+    setUpdateNotifier(qobject_cast<ChromaUpdater*>(APPLICATION->updater().get()));
     ui->horizontalLayout->addWidget(m_home);
     m_home->setSelectedInstance(m_selectedInstance ? m_selectedInstance->id() : QString());
     m_workspace = new InlineWorkspace(this, m_home->pageHost());
@@ -1657,6 +1658,12 @@ void MainWindow::on_actionViewSelectedInstFolder_triggered()
         QString str = m_selectedInstance->instanceRoot();
         DesktopServices::openPath(QFileInfo(str));
     }
+}
+
+void MainWindow::setUpdateNotifier(ChromaUpdater* updater)
+{
+    if (m_home)
+        m_home->setUpdater(updater);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)

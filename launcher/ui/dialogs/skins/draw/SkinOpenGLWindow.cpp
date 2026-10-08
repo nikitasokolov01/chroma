@@ -25,10 +25,12 @@
 #include <QMouseEvent>
 #include <QOpenGLBuffer>
 #include <QOpenGLContext>
+#include <QPainter>
 #include <QSignalBlocker>
 #include <QVector2D>
 #include <QVector3D>
 #include <QtMath>
+#include <cmath>
 #include <functional>
 
 #include "minecraft/skins/SkinModel.h"
@@ -79,26 +81,114 @@ void SkinOpenGLWindow::cleanupGL()
     m_textureDirty = m_textureDirty || hadScene;
     m_capeDirty = m_capeDirty || hadScene;
     m_isFirstFrame = true;
+    m_selectionDirty = true;
 }
 
 void SkinOpenGLWindow::setDocument(SkinTextureDocument* document)
 {
     finishStroke();
     disconnect(m_documentChanged);
+    disconnect(m_selectionChanged);
+    cancelPaste();
+    m_selecting = false;
     m_document = document;
     if (document) {
         m_documentChanged = connect(document, &SkinTextureDocument::changed, this, [this] {
             if (m_document)
                 setTexture(m_document->image(), m_document->model());
         });
+        m_selectionChanged = connect(document, &SkinTextureDocument::selectionChanged, this, [this] {
+            m_selectionDirty = true;
+            update();
+        });
         setTexture(document->image(), document->model());
     }
+    m_selectionDirty = true;
+    updateCursor();
+}
+
+void SkinOpenGLWindow::setReadOnly(bool readOnly)
+{
+    finishStroke();
+    m_readOnly = readOnly;
+    if (readOnly)
+        cancelPaste();
+}
+
+void SkinOpenGLWindow::setBodyThroughOverlay(bool enabled)
+{
+    const bool previous = bodyThroughOverlay();
+    m_bodyThroughOverlay = enabled;
+    if (!enabled)
+        m_shiftHeld = false;
+    if (previous != bodyThroughOverlay()) {
+        finishStroke();
+        update();
+    }
+}
+
+void SkinOpenGLWindow::updateModifiers(Qt::KeyboardModifiers modifiers)
+{
+    const bool previous = bodyThroughOverlay();
+    m_shiftHeld = modifiers.testFlag(Qt::ShiftModifier);
+    if (previous != bodyThroughOverlay()) {
+        finishStroke();
+        update();
+    }
+}
+
+QRegion SkinOpenGLWindow::editableRegion() const
+{
+    QRegion allowed;
+    for (int part = 0; part < 6; ++part) {
+        if (m_part != SkinTextureDocument::All && m_part != part)
+            continue;
+        const bool outer = !bodyThroughOverlay() && m_overlayVisible && (m_outerParts & (1u << part));
+        const bool base = m_baseVisible && (m_baseParts & (1u << part));
+        if (outer || base)
+            allowed += SkinTextureDocument::uvRegion(static_cast<SkinTextureDocument::Part>(part),
+                                                     outer ? SkinTextureDocument::Overlay : SkinTextureDocument::Base, m_model);
+    }
+    return allowed;
+}
+
+bool SkinOpenGLWindow::copySelection()
+{
+    if (!m_document)
+        return false;
+    QRegion visible;
+    for (int part = 0; part < 6; ++part) {
+        if (m_part != SkinTextureDocument::All && m_part != part)
+            continue;
+        const auto bodyPart = static_cast<SkinTextureDocument::Part>(part);
+        if (m_baseVisible && (m_baseParts & (1u << part)))
+            visible += SkinTextureDocument::uvRegion(bodyPart, SkinTextureDocument::Base, m_model);
+        if (m_overlayVisible && (m_outerParts & (1u << part)))
+            visible += SkinTextureDocument::uvRegion(bodyPart, SkinTextureDocument::Overlay, m_model);
+    }
+    return SkinTextureDocument::writeClipboard(m_document->copyPixels(visible));
+}
+
+bool SkinOpenGLWindow::beginPaste()
+{
+    finishStroke();
+    if (m_readOnly || !m_document)
+        return false;
+    m_paste = SkinTextureDocument::readClipboard();
+    updateCursor();
+    return pastePending();
+}
+
+void SkinOpenGLWindow::cancelPaste()
+{
+    m_paste = {};
     updateCursor();
 }
 
 void SkinOpenGLWindow::setEditingEnabled(bool enabled)
 {
     finishStroke();
+    m_selecting = false;
     m_rotateButton = Qt::NoButton;
     m_editingEnabled = enabled;
     updateCursor();
@@ -110,14 +200,26 @@ void SkinOpenGLWindow::setTool(SkinCanvas::Tool tool)
         return;
     finishStroke();
     m_rotateButton = Qt::NoButton;
+    m_selecting = false;
+    cancelPaste();
     m_tool = tool;
     updateCursor();
     emit toolChanged(tool);
 }
 
+void SkinOpenGLWindow::setTextureSettings(SkinTextureDocument::TextureSettings settings)
+{
+    settings.strength = qBound(0, settings.strength, 100);
+    if (settings.style == m_textureSettings.style && settings.strength == m_textureSettings.strength)
+        return;
+    finishStroke();
+    m_textureSettings = settings;
+}
+
 void SkinOpenGLWindow::setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer)
 {
     finishStroke();
+    m_selecting = false;
     m_part = part;
     // 3D layer selection follows the enabled surfaces; the layer argument is
     // retained for the shared editor controls used by the 2D canvas.
@@ -131,9 +233,9 @@ void SkinOpenGLWindow::setGridVisible(bool visible)
 
 void SkinOpenGLWindow::updateCursor()
 {
-    setCursor(m_rotateButton != Qt::NoButton                                  ? Qt::ClosedHandCursor
-              : !m_editingEnabled || !m_document || m_tool == SkinCanvas::Pan ? Qt::OpenHandCursor
-                                                                              : Qt::CrossCursor);
+    setCursor(m_rotateButton != Qt::NoButton                                                       ? Qt::ClosedHandCursor
+              : !m_editingEnabled || !m_document || (m_tool == SkinCanvas::Pan && !pastePending()) ? Qt::OpenHandCursor
+                                                                                                   : Qt::CrossCursor);
 }
 
 void SkinOpenGLWindow::finishStroke()
@@ -163,7 +265,65 @@ std::optional<opengl::SkinPick> SkinOpenGLWindow::pickAt(QPointF position) const
     const float x = (2.f * position.x() / width() - 1.f) * float(width()) / height() * tangent;
     const float y = (1.f - 2.f * position.y() / height()) * tangent;
     return opengl::pickSkin(eye, forward + x * right + y * up, m_model == SkinModel::SLIM, m_baseVisible ? m_baseParts : 0,
-                            m_overlayVisible ? m_outerParts : 0, m_part);
+                            m_overlayVisible && !bodyThroughOverlay() ? m_outerParts : 0, m_part);
+}
+
+QRegion SkinOpenGLWindow::selectionIn(QRectF rectangle) const
+{
+    QRegion selected;
+    const auto eye = cameraEye();
+    const auto forward = (QVector3D(0, -8, 0) - eye).normalized();
+    const auto right = QVector3D::crossProduct(forward, QVector3D(0, 1, 0)).normalized();
+    const auto up = QVector3D::crossProduct(right, forward);
+    const float tangent = qTan(qDegreesToRadians(22.5f));
+    // Visit UV texel centers, never screen pixels: work is bounded by a skin's
+    // 64x64 atlas even on a large high-DPI screen. A depth pick rejects hidden
+    // parts and rear faces before adding each pixel to the marquee.
+    for (const auto& box : opengl::skinBoxes(m_model == SkinModel::SLIM)) {
+        if (m_part != SkinTextureDocument::All && box.part != m_part)
+            continue;
+        if (!(box.layer == SkinTextureDocument::Base ? m_baseVisible && (m_baseParts & (1u << box.part))
+                                                     : !bodyThroughOverlay() && m_overlayVisible && (m_outerParts & (1u << box.part))))
+            continue;
+        for (const auto& face : opengl::boxFaces(box.size, box.center, box.uv, box.textureSize)) {
+            const auto normal = QVector3D::crossProduct(face.horizontal, face.vertical);
+            if (QVector3D::dotProduct(eye - face.origin, normal) <= 0)
+                continue;
+            for (int y = face.pixels.top(); y <= face.pixels.bottom(); ++y) {
+                for (int x = face.pixels.left(); x <= face.pixels.right(); ++x) {
+                    const float horizontal = (x + .5f - face.uv.x()) / face.uvHorizontal.x();
+                    const float vertical = (y + .5f - face.uv.y()) / face.uvVertical.y();
+                    const auto offset = face.origin + horizontal * face.horizontal + vertical * face.vertical - eye;
+                    const float depth = QVector3D::dotProduct(offset, forward);
+                    if (depth <= 0)
+                        continue;
+                    const QPointF point(width() / 2.f + QVector3D::dotProduct(offset, right) * height() / (2.f * tangent * depth),
+                                        height() / 2.f - QVector3D::dotProduct(offset, up) * height() / (2.f * tangent * depth));
+                    if (!rectangle.contains(point))
+                        continue;
+                    const auto pick = pickAt(point);
+                    if (pick && pick->part == box.part && pick->layer == box.layer && pick->pixel == QPoint(x, y))
+                        selected += QRect(x, y, 1, 1);
+                }
+            }
+        }
+    }
+    return selected;
+}
+
+void SkinOpenGLWindow::selectTo(QPointF position)
+{
+    if (!m_document)
+        return;
+    m_marquee = QRectF(m_selectionStart, position).normalized();
+    auto selected = selectionIn(m_marquee);
+    if (m_marquee.width() < 3 && m_marquee.height() < 3) {
+        const auto pick = pickAt(position);
+        if (pick)
+            selected += QRect(pick->pixel, QSize(1, 1));
+    }
+    m_document->setSelection(selected);
+    update();
 }
 
 void SkinOpenGLWindow::applyTool(QPointF position)
@@ -180,6 +340,8 @@ void SkinOpenGLWindow::applyTool(QPointF position)
         emit colorPicked(m_document->image().pixelColor(pick->pixel));
         return;
     }
+    if (m_readOnly || (m_tool != SkinCanvas::Brush && m_tool != SkinCanvas::Eraser && m_tool != SkinCanvas::Texture))
+        return;
     if (m_lastPaintPick && m_lastPaintPick->pixel == pick->pixel && m_lastPaintPick->faceRect == pick->faceRect)
         return;
     m_lastPaintPick = pick;
@@ -189,9 +351,14 @@ void SkinOpenGLWindow::applyTool(QPointF position)
     QSignalBlocker blocker(m_document);
     const QRect brush(pick->pixel - QPoint((m_brushSize - 1) / 2, (m_brushSize - 1) / 2), QSize(m_brushSize, m_brushSize));
     const auto pixels = brush.intersected(pick->faceRect);
+    const auto allowed = editableRegion();
     for (int y = pixels.top(); y <= pixels.bottom(); ++y)
-        for (int x = pixels.left(); x <= pixels.right(); ++x)
-            m_document->paintPixel(QPoint(x, y), m_color, 1, pick->part, pick->layer, m_tool == SkinCanvas::Eraser);
+        for (int x = pixels.left(); x <= pixels.right(); ++x) {
+            if (m_tool == SkinCanvas::Texture)
+                m_document->texturePixel(QPoint(x, y), 1, pick->part, pick->layer, m_textureSettings, allowed);
+            else
+                m_document->paintPixel(QPoint(x, y), m_color, 1, pick->part, pick->layer, m_tool == SkinCanvas::Eraser, allowed);
+        }
     blocker.unblock();
     if (m_document->image().cacheKey() != previousKey)
         emit m_document->changed();
@@ -221,8 +388,9 @@ void SkinOpenGLWindow::mousePressEvent(QMouseEvent* event)
         return;
     }
     setFocus(Qt::MouseFocusReason);
+    updateModifiers(event->modifiers());
     finishStroke();
-    if (event->button() != Qt::LeftButton || !m_editingEnabled || !m_document || m_tool == SkinCanvas::Pan) {
+    if (event->button() != Qt::LeftButton || !m_editingEnabled || !m_document || (m_tool == SkinCanvas::Pan && !pastePending())) {
         m_rotateButton = event->button();
         m_mousePosition = QVector2D(event->position());
         updateCursor();
@@ -236,29 +404,50 @@ void SkinOpenGLWindow::mousePressEvent(QMouseEvent* event)
             event->accept();
             return;
         }
-        if (m_tool != SkinCanvas::Eyedropper) {
+        const auto pick = pickAt(event->position());
+        if (pastePending() && !m_readOnly) {
+            if (pick) {
+                const auto allowed = SkinTextureDocument::uvRegion(pick->part, pick->layer, m_model).intersected(editableRegion());
+                m_document->pastePixels(m_paste, pick->pixel, allowed);
+                cancelPaste();
+            }
+        } else if (m_tool == SkinCanvas::Select) {
+            m_selecting = true;
+            m_selectionStart = event->position();
+            selectTo(event->position());
+        } else if (m_tool == SkinCanvas::Bucket && !m_readOnly) {
+            if (pick)
+                m_document->floodFill(pick->pixel, m_color, QRegion(pick->faceRect).intersected(editableRegion()));
+        } else if (!m_readOnly && (m_tool == SkinCanvas::Brush || m_tool == SkinCanvas::Eraser || m_tool == SkinCanvas::Texture)) {
             m_document->beginStroke();
             m_painting = true;
+            applyTool(event->position());
+        } else if (m_tool == SkinCanvas::Eyedropper) {
+            applyTool(event->position());
         }
-        applyTool(event->position());
     }
     event->accept();
 }
 
 void SkinOpenGLWindow::mouseMoveEvent(QMouseEvent* event)
 {
+    updateModifiers(event->modifiers());
     if (m_painting && !(event->buttons() & Qt::LeftButton))
         finishStroke();
+    if (m_selecting && !(event->buttons() & Qt::LeftButton)) {
+        m_selecting = false;
+        update();
+    }
     if (m_rotateButton != Qt::NoButton && !(event->buttons() & m_rotateButton)) {
         m_rotateButton = Qt::NoButton;
         updateCursor();
     }
     if (m_rotateButton != Qt::NoButton) {
         const auto movement = QVector2D(event->position()) - m_mousePosition;
-        m_yaw = std::fmod(m_yaw + movement.x() * .5f + 360.f, 360.f);
-        m_pitch = qBound(-80.f, m_pitch + movement.y() * .5f, 80.f);
+        setCameraState({ m_yaw + movement.x() * .5f, m_pitch + movement.y() * .5f, m_distance });
         m_mousePosition = QVector2D(event->position());
-        update();
+    } else if (m_selecting) {
+        selectTo(event->position());
     } else if (m_painting) {
         paintTo(event->position());
     } else if (m_editingEnabled && m_document) {
@@ -272,6 +461,11 @@ void SkinOpenGLWindow::mouseMoveEvent(QMouseEvent* event)
 void SkinOpenGLWindow::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
+        if (m_selecting) {
+            selectTo(event->position());
+            m_selecting = false;
+            update();
+        }
         if (m_painting)
             paintTo(event->position());
         finishStroke();
@@ -285,14 +479,20 @@ void SkinOpenGLWindow::mouseReleaseEvent(QMouseEvent* event)
 void SkinOpenGLWindow::focusOutEvent(QFocusEvent* event)
 {
     finishStroke();
+    m_selecting = false;
+    m_shiftHeld = m_bodyThroughOverlay = false;
     m_rotateButton = Qt::NoButton;
     updateCursor();
+    update();
     QOpenGLWidget::focusOutEvent(event);
 }
 
 void SkinOpenGLWindow::hideEvent(QHideEvent* event)
 {
     finishStroke();
+    m_selecting = false;
+    m_shiftHeld = m_bodyThroughOverlay = false;
+    cancelPaste();
     m_rotateButton = Qt::NoButton;
     updateCursor();
     QOpenGLWidget::hideEvent(event);
@@ -358,7 +558,28 @@ bool SkinOpenGLWindow::initShaders()
         return false;
 
     // Compile fragment shader
-    if (!m_modelProgram->addCacheableShaderFromSourceFile(QOpenGLShader::Fragment, ":/shaders/fshader.glsl"))
+    static const char modelFragment[] = R"(
+#ifdef GL_ES
+precision mediump float;
+#endif
+uniform sampler2D texture;
+uniform sampler2D selectedPixels;
+uniform float showSelection;
+uniform float layerOpacity;
+varying vec2 v_texcoord;
+void main()
+{
+    vec4 color = texture2D(texture, v_texcoord);
+    if (showSelection > 0.5 && texture2D(selectedPixels, v_texcoord).r > 0.5) {
+        color.rgb = mix(color.rgb, vec3(0.16, 0.71, 1.0), 0.45);
+        color.a = max(color.a, 0.45);
+    }
+    if (color.a < 0.1)
+        discard;
+    gl_FragColor = vec4(color.rgb, color.a * layerOpacity);
+}
+)";
+    if (!m_modelProgram->addCacheableShaderFromSourceCode(QOpenGLShader::Fragment, modelFragment))
         return false;
 
     // Link shader pipeline
@@ -480,6 +701,10 @@ void SkinOpenGLWindow::paintGL()
             m_scene->setCape(m_pendingCape);
         m_capeDirty = false;
     }
+    if (m_selectionDirty) {
+        m_scene->setSelection(m_document ? m_document->selection() : QRegion{});
+        m_selectionDirty = false;
+    }
     // Enable depth buffer
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LESS);
@@ -513,7 +738,7 @@ void SkinOpenGLWindow::paintGL()
     m_modelProgram->bind();
     m_modelProgram->setUniformValue("mvp_matrix", m_projection * matrix);
 
-    m_scene->draw(m_modelProgram, grid);
+    m_scene->draw(m_modelProgram, grid, bodyThroughOverlay());
     m_modelProgram->release();
     if (m_vertexArray.isCreated())
         m_vertexArray.release();
@@ -522,6 +747,12 @@ void SkinOpenGLWindow::paintGL()
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
     glDisable(GL_BLEND);
+    if (m_selecting) {
+        QPainter painter(this);
+        painter.setPen(QPen(QColor(100, 220, 255), 1, Qt::DashLine));
+        painter.setBrush(QColor(40, 180, 255, 25));
+        painter.drawRect(m_marquee);
+    }
 
     // Redraw the first frame; this is necessary because the pixel ratio for Wayland fractional scaling is not negotiated properly on the
     // first frame
@@ -604,9 +835,7 @@ void SkinOpenGLWindow::wheelEvent(QWheelEvent* event)
     finishStroke();
     // Adjust distance based on scroll
     int delta = event->angleDelta().y();  // Positive for scroll up, negative for scroll down
-    m_distance -= delta * 0.01f;          // Adjust sensitivity factor
-    m_distance = qBound(28.f, m_distance, 120.f);
-    update();  // Trigger a repaint
+    setCameraState({ m_yaw, m_pitch, m_distance - delta * .01f });
     event->accept();
 }
 void SkinOpenGLWindow::setElytraVisible(bool visible)
@@ -620,10 +849,26 @@ void SkinOpenGLWindow::setElytraVisible(bool visible)
 void SkinOpenGLWindow::resetView()
 {
     finishStroke();
-    m_distance = 48;
-    m_yaw = 90;
-    m_pitch = 0;
+    setCameraState({});
+}
+
+void SkinOpenGLWindow::setCameraState(CameraState state)
+{
+    if (!std::isfinite(state.yaw) || !std::isfinite(state.pitch) || !std::isfinite(state.distance))
+        return;
+    state.yaw = std::fmod(state.yaw, 360.f);
+    if (state.yaw < 0)
+        state.yaw += 360.f;
+    state.pitch = qBound(-80.f, state.pitch, 80.f);
+    state.distance = qBound(28.f, state.distance, 120.f);
+    if (m_yaw == state.yaw && m_pitch == state.pitch && m_distance == state.distance)
+        return;
+    finishStroke();
+    m_yaw = state.yaw;
+    m_pitch = state.pitch;
+    m_distance = state.distance;
     update();
+    emit cameraChanged();
 }
 
 void SkinOpenGLWindow::setLayersVisible(bool base, bool overlay)
@@ -671,10 +916,40 @@ bool SkinOpenGLWindow::partLayerVisible(int part, SkinTextureDocument::Layer lay
 
 void SkinOpenGLWindow::keyPressEvent(QKeyEvent* event)
 {
+    if (m_document && event->matches(QKeySequence::Copy)) {
+        copySelection();
+        event->accept();
+        return;
+    }
+    if (m_document && event->matches(QKeySequence::Paste)) {
+        beginPaste();
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Shift) {
+        updateModifiers(event->modifiers() | Qt::ShiftModifier);
+        event->accept();
+        return;
+    }
+    if (event->key() == Qt::Key_Escape && m_document) {
+        finishStroke();
+        m_selecting = false;
+        if (pastePending())
+            cancelPaste();
+        else
+            m_document->clearSelection();
+        update();
+        event->accept();
+        return;
+    }
     if (m_editingEnabled && m_document && !(event->modifiers() & (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier))) {
         switch (event->key()) {
             case Qt::Key_B:
                 setTool(SkinCanvas::Brush);
+                event->accept();
+                return;
+            case Qt::Key_T:
+                setTool(SkinCanvas::Texture);
                 event->accept();
                 return;
             case Qt::Key_E:
@@ -689,41 +964,62 @@ void SkinOpenGLWindow::keyPressEvent(QKeyEvent* event)
                 setTool(SkinCanvas::Pan);
                 event->accept();
                 return;
+            case Qt::Key_G:
+                setTool(SkinCanvas::Bucket);
+                event->accept();
+                return;
+            case Qt::Key_M:
+                setTool(SkinCanvas::Select);
+                event->accept();
+                return;
             default:
                 break;
         }
     }
     finishStroke();
+    auto camera = cameraState();
     switch (event->key()) {
         case Qt::Key_Home:
         case Qt::Key_R:
-            resetView();
+            camera = {};
             break;
         case Qt::Key_Left:
-            m_yaw -= 10;
+            camera.yaw -= 10;
             break;
         case Qt::Key_Right:
-            m_yaw += 10;
+            camera.yaw += 10;
             break;
         case Qt::Key_Up:
-            m_pitch = qMax(-80.f, m_pitch - 10);
+            camera.pitch -= 10;
             break;
         case Qt::Key_Down:
-            m_pitch = qMin(80.f, m_pitch + 10);
+            camera.pitch += 10;
             break;
         case Qt::Key_Plus:
         case Qt::Key_Equal:
-            m_distance = qMax(28.f, m_distance - 4);
+            camera.distance -= 4;
             break;
         case Qt::Key_Minus:
-            m_distance = qMin(120.f, m_distance + 4);
+            camera.distance += 4;
             break;
         default:
             QOpenGLWidget::keyPressEvent(event);
             return;
     }
-    update();
+    setCameraState(camera);
     event->accept();
+}
+
+void SkinOpenGLWindow::keyReleaseEvent(QKeyEvent* event)
+{
+    if (event->key() == Qt::Key_Shift && !event->isAutoRepeat()) {
+        finishStroke();
+        m_shiftHeld = m_bodyThroughOverlay = false;
+        update();
+        event->accept();
+        return;
+    }
+    QOpenGLWidget::keyReleaseEvent(event);
 }
 
 bool SkinOpenGLWindow::hasOpenGL()

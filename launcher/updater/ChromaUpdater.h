@@ -4,6 +4,7 @@
 #include <QCryptographicHash>
 #include <QPointer>
 #include <QSettings>
+#include <QSet>
 #include <QTimer>
 #include <memory>
 #include "ChromaRelease.h"
@@ -58,10 +59,23 @@ class ChromaUpdater : public ExternalUpdater {
     void setUpdateCheckInterval(double seconds) override;
     void setBetaAllowed(bool allowed) override;
     QString status() const { return m_status; }
-    bool canCheckForUpdates() const { return !m_busy; }
+    bool canCheckForUpdates() const { return !m_busy && !m_keepStage; }
     void setWindow(QWidget* window);
+    bool hasAvailableUpdate() const { return m_release.has_value(); }
+    QString availableVersion() const { return m_release ? m_release->version.text : QString(); }
+    QString availableTag() const { return m_release ? m_release->tag : QString(); }
+    QString availableNotes() const { return m_release ? m_release->notes : QString(); }
+    bool availableIsPrerelease() const { return m_release && m_release->prerelease; }
+    bool shouldShowUpdateNotice() const { return m_release && !m_dismissedTags.contains(m_release->tag); }
+
+   public slots:
+    void checkBackgroundUpdates();
+    void showAvailableUpdate();
+    void dismissAvailableUpdate();
    signals:
     void statusChanged(QString status);
+    void availableUpdateChanged();
+    void releaseAvailable();
 
    private:
     void check(bool manual);
@@ -82,7 +96,8 @@ class ChromaUpdater : public ExternalUpdater {
     QSettings m_settings;
     QTimer m_timer;
     QString m_appDir, m_dataDir, m_status;
-    bool m_portable, m_manual = false, m_busy = false, m_ready = false, m_keepStage = false;
+    bool m_portable, m_manual = false, m_busy = false, m_checking = false, m_ready = false, m_keepStage = false;
+    QSet<QString> m_dismissedTags;
     QJsonArray m_releases;
     std::optional<ChromaUpdate::Release> m_release;
     QPointer<ChromaUpdateTransfer> m_transfer;

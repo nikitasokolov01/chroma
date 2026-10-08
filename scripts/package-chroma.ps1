@@ -49,6 +49,9 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'Qt6OpenGLWidgets.dll'))) {
     throw 'Qt deployment did not include the Skin Studio OpenGL widget runtime.'
 }
+if (-not (Test-Path -LiteralPath (Join-Path $packageRoot 'iconengines\qsvgicon.dll'))) {
+    throw 'Qt deployment did not include the SVG icon engine required for the Chroma window and taskbar logo.'
+}
 Get-ChildItem -LiteralPath $RuntimeDirectory -Filter '*.dll' -File | Copy-Item -Destination $packageRoot -Force
 Set-Content -LiteralPath (Join-Path $packageRoot 'qt.conf') -Encoding ASCII -Value @('[Paths]', 'Plugins=.', 'Libraries=.', 'Prefix=.')
 $licenseDestination = Join-Path $packageRoot 'licenses'
@@ -61,7 +64,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'docs\licenses') -Destination (Jo
 Copy-Item -LiteralPath (Join-Path $projectRoot 'THIRD_PARTY_NOTICES.md'), (Join-Path $projectRoot 'docs\RELEASE-LICENSING.md'), (Join-Path $projectRoot 'PRIVACY.md') -Destination $packageRoot -Force
 $profileHome = if ($PackageKind -eq 'Portable') { 'this portable folder' } else { '%APPDATA%\Chroma' }
 $packageReadme = @"
-# Chroma $releaseVersion preview ($PackageKind)
+# Chroma $releaseVersion ($PackageKind)
 
 Chroma is an independent native UI fork of Prism Launcher 10.0.5. It is not
 an official Prism Launcher or Modrinth release and is not affiliated with or
@@ -80,15 +83,16 @@ licenses/release/Microsoft-Visual-Cpp-Runtime-14.44.rtf. These terms apply only
 to Microsoft's runtime DLLs; Chroma and other open-source components retain
 their own licenses. The installer presents these Microsoft terms separately.
 
-This preview retains Prism's public Microsoft OAuth client ID for sign-in.
+This build retains Prism's public Microsoft OAuth client ID for sign-in.
 CurseForge and Imgur credentials are not included. Chroma checks its GitHub
 releases automatically, including previews. Choose when to download and restart;
 update preferences and a manual check are available in Settings > Launcher.
 Java and Minecraft are not bundled.
 
 Source and build instructions: https://github.com/nikitasokolov01/chroma
-Matching application, dependency, and Qt source archives accompany this release:
+Public releases provide matching application, dependency, and Qt source archives:
 https://github.com/nikitasokolov01/chroma/releases/tag/v$releaseVersion
+For an unpublished local package, use its matching local source archives.
 Upstream source: https://github.com/PrismLauncher/PrismLauncher
 See LICENSE, COPYING.md, THIRD_PARTY_NOTICES.md, RELEASE-LICENSING.md, and licenses/.
 Privacy: PRIVACY.md or https://github.com/nikitasokolov01/chroma/blob/main/PRIVACY.md

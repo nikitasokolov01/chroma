@@ -43,6 +43,11 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     Q_OBJECT
 
    public:
+    struct CameraState {
+        float yaw = 90;
+        float pitch = 0;
+        float distance = 48;
+    };
     SkinOpenGLWindow(SkinProvider* provider, QColor color, QWidget* parent = nullptr);
     virtual ~SkinOpenGLWindow();
 
@@ -51,17 +56,28 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void updateCape(const QImage& cape);
     void setElytraVisible(bool visible);
     void resetView();
+    CameraState cameraState() const { return { m_yaw, m_pitch, m_distance }; }
+    void setCameraState(CameraState state);
     void setLayersVisible(bool base, bool overlay);
     void setPartVisible(int part, bool visible);
     void setPartLayerVisible(int part, SkinTextureDocument::Layer layer, bool visible);
     bool partLayerVisible(int part, SkinTextureDocument::Layer layer) const;
     void setDocument(SkinTextureDocument* document);
     void setEditingEnabled(bool enabled);
+    void setReadOnly(bool readOnly);
+    bool isReadOnly() const { return m_readOnly; }
+    void setBodyThroughOverlay(bool enabled);
+    bool bodyThroughOverlay() const { return m_bodyThroughOverlay || m_shiftHeld; }
+    bool copySelection();
+    bool beginPaste();
+    void cancelPaste();
+    bool pastePending() const { return !m_paste.image.isNull(); }
     void setTool(SkinCanvas::Tool tool);
     void setGridVisible(bool visible);
     bool gridVisible() const { return m_gridVisible; }
     void setColor(QColor color) { m_color = color; }
     void setBrushSize(int size) { m_brushSize = qBound(1, size, 8); }
+    void setTextureSettings(SkinTextureDocument::TextureSettings settings);
     void setRegion(SkinTextureDocument::Part part, SkinTextureDocument::Layer layer);
     std::optional<opengl::SkinPick> pickAt(QPointF position) const;
 
@@ -75,6 +91,7 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     // Signals completed drawing. Read grabFramebuffer() outside this callback
     // because a widget framebuffer readback may itself invoke paintGL().
     void frameRendered();
+    void cameraChanged();
 
    protected:
     void mousePressEvent(QMouseEvent* e) override;
@@ -82,6 +99,7 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void mouseMoveEvent(QMouseEvent* event) override;
     void wheelEvent(QWheelEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void keyReleaseEvent(QKeyEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
     void hideEvent(QHideEvent* event) override;
 
@@ -101,6 +119,10 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     void updateCursor();
     void paintTo(QPointF position);
     void applyTool(QPointF position);
+    void updateModifiers(Qt::KeyboardModifiers modifiers);
+    QRegion editableRegion() const;
+    QRegion selectionIn(QRectF rectangle) const;
+    void selectTo(QPointF position);
     QMetaObject::Connection m_contextCleanup;
     QOpenGLVertexArrayObject m_vertexArray;
     QOpenGLShaderProgram* m_modelProgram = nullptr;
@@ -115,11 +137,21 @@ class SkinOpenGLWindow : public QOpenGLWidget, protected QOpenGLFunctions {
     Qt::MouseButton m_rotateButton = Qt::NoButton;
     QPointer<SkinTextureDocument> m_document;
     QMetaObject::Connection m_documentChanged;
+    QMetaObject::Connection m_selectionChanged;
     bool m_editingEnabled = false;
     bool m_painting = false;
+    bool m_readOnly = false;
+    bool m_bodyThroughOverlay = false;
+    bool m_shiftHeld = false;
+    bool m_selecting = false;
+    bool m_selectionDirty = true;
+    QPointF m_selectionStart;
+    QRectF m_marquee;
+    SkinTextureDocument::PixelPatch m_paste;
     SkinCanvas::Tool m_tool = SkinCanvas::Brush;
     QColor m_color = Qt::white;
     int m_brushSize = 1;
+    SkinTextureDocument::TextureSettings m_textureSettings;
     SkinTextureDocument::Part m_part = SkinTextureDocument::All;
     bool m_gridVisible = true;
     QPointF m_lastPaintPosition;

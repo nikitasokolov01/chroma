@@ -19,7 +19,11 @@
 #include <QPushButton>
 #include <QSaveFile>
 #include <QTemporaryDir>
-#include <QTextEdit>
+#include <QTextBrowser>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QTextBlock>
+#include <QImage>
 #include <QVBoxLayout>
 #include "Application.h"
 #include "BuildConfig.h"
@@ -174,7 +178,7 @@ ChromaUpdater::ChromaUpdater(QWidget* parent, const QString& appDir, const QStri
     , m_portable(portable)
 {
     m_timer.setSingleShot(true);
-    connect(&m_timer, &QTimer::timeout, this, [this] { check(false); });
+    connect(&m_timer, &QTimer::timeout, this, &ChromaUpdater::checkBackgroundUpdates);
     schedule(true);
 }
 ChromaUpdater::~ChromaUpdater()
@@ -195,7 +199,7 @@ bool ChromaUpdater::getAutomaticallyChecksForUpdates()
 }
 double ChromaUpdater::getUpdateCheckInterval()
 {
-    return qBound(0.0, m_settings.value("Interval", 86400).toDouble(), 604800.0);
+    return qBound(0.0, m_settings.value("Interval", 3600).toDouble(), 604800.0);
 }
 bool ChromaUpdater::getBetaAllowed()
 {
@@ -218,10 +222,14 @@ void ChromaUpdater::setBetaAllowed(bool allowed)
 void ChromaUpdater::schedule(bool startup)
 {
     m_timer.stop();
-    if (!getAutomaticallyChecksForUpdates())
+    if (m_keepStage || !getAutomaticallyChecksForUpdates())
         return;
+    if (startup) {
+        m_timer.start(5000);
+        return;
+    }
     const qint64 interval = static_cast<qint64>(getUpdateCheckInterval());
-    if (!interval && !startup)
+    if (!interval)
         return;
     const auto now = QDateTime::currentSecsSinceEpoch();
     const auto last = m_settings.value("LastCheck", 0).toLongLong();
@@ -239,22 +247,64 @@ void ChromaUpdater::checkForUpdates()
 {
     check(true);
 }
+void ChromaUpdater::checkBackgroundUpdates()
+{
+    check(false);
+}
+void ChromaUpdater::showAvailableUpdate()
+{
+    if (m_keepStage)
+        return;
+    if (!m_release) {
+        checkForUpdates();
+        return;
+    }
+    // Review the known release immediately, even during a periodic refresh.
+    // Package transfers continue in their existing details page.
+    if (m_checking) {
+        cancelTransfer();
+        m_releases = {};
+        m_checking = false;
+        m_busy = false;
+        schedule();
+        emit canCheckForUpdatesChanged(true);
+    }
+    m_manual = true;
+    m_dismissedTags.remove(m_release->tag);
+    emit availableUpdateChanged();
+    offer();
+}
+void ChromaUpdater::dismissAvailableUpdate()
+{
+    if (m_keepStage || !m_release || m_dismissedTags.contains(m_release->tag))
+        return;
+    m_dismissedTags.insert(m_release->tag);
+    emit availableUpdateChanged();
+}
 void ChromaUpdater::check(bool manual)
 {
+    if (m_keepStage)
+        return;
     if (m_busy || (!manual && m_dialog)) {
+        if (manual && m_checking)
+            m_manual = true;
         if (getAutomaticallyChecksForUpdates() && getUpdateCheckInterval() > 0)
             m_timer.start(60000);
         return;
     }
     if (m_dialog) {
-        m_dialog->show();
-        m_dialog->raise();
+        showAvailableUpdate();
         return;
     }
     m_manual = manual;
     m_busy = true;
-    m_ready = false;
-    m_release.reset();
+    m_checking = true;
+    // Keep the last valid offer throughout a refresh. A transient network
+    // failure must not make an already discovered update disappear.
+    if (manual && m_release) {
+        m_dismissedTags.remove(m_release->tag);
+        emit availableUpdateChanged();
+    }
     m_releases = {};
     m_timer.stop();
     setStatus(tr("Checking GitHub for Chroma updates…"));
@@ -321,18 +371,28 @@ void ChromaUpdater::finishCheck()
         fail(tr("This development version cannot be compared with published releases."));
         return;
     }
+    const auto previousTag = availableTag();
     m_release = ChromaUpdate::selectRelease(m_releases, *current, m_portable, getBetaAllowed());
     m_releases = {};
     m_busy = false;
+    m_checking = false;
+    m_ready = false;
     m_settings.setValue("LastCheck", QDateTime::currentSecsSinceEpoch());
     schedule();
     emit canCheckForUpdatesChanged(true);
     if (m_release) {
+        if (m_manual)
+            m_dismissedTags.remove(m_release->tag);
         setStatus(tr("Chroma %1 is available%2.").arg(m_release->version.text, m_release->prerelease ? tr(" (prerelease)") : QString()));
-        auto* window = qobject_cast<MainWindow*>(m_window.data());
-        if (m_window && (m_manual || !window || !window->inlineWorkspace() || !window->inlineWorkspace()->pageCount()))
+        emit availableUpdateChanged();
+        if (previousTag != m_release->tag)
+            emit releaseAvailable();
+        // Automatic checks surface the global notice without taking focus or
+        // opening a page, including when the user is on the home screen.
+        if (m_manual && m_window)
             offer();
     } else {
+        emit availableUpdateChanged();
         setStatus(tr("Chroma is up to date."));
         if (m_manual)
             QMessageBox::information(m_window, tr("Chroma updates"), m_status);
@@ -340,9 +400,12 @@ void ChromaUpdater::finishCheck()
 }
 void ChromaUpdater::fail(const QString& reason)
 {
+    const bool checking = m_checking;
     cancelTransfer();
     m_busy = false;
-    m_ready = false;
+    m_checking = false;
+    if (!checking)
+        m_ready = false;
     setStatus(reason);
     if (m_action) {
         m_action->setText(tr("Try download again"));
@@ -354,30 +417,107 @@ void ChromaUpdater::fail(const QString& reason)
     m_settings.setValue("LastCheck", QDateTime::currentSecsSinceEpoch());
     schedule();
     emit canCheckForUpdatesChanged(true);
-    if (m_manual && !m_dialog)
-        QMessageBox::warning(m_window, tr("Chroma updates"), reason);
+    if (m_manual && !m_dialog) {
+        if (checking && m_release) {
+            showAvailableUpdate();
+            setStatus(tr("The latest check failed: %1 You can still review the previously found release.").arg(reason));
+        } else {
+            QMessageBox::warning(m_window, tr("Chroma updates"), reason);
+        }
+    }
 }
+
+namespace {
+// Release notes are untrusted text. Markdown formatting is supported, but
+// images and any other document resources are never loaded from disk or URL.
+class ReleaseNotesDocument : public QTextDocument {
+   public:
+    explicit ReleaseNotesDocument(QObject* parent) : QTextDocument(parent)
+    {
+        setResourceProvider([](const QUrl&) { return QVariant::fromValue(QImage()); });
+    }
+
+   protected:
+    QVariant loadResource(int, const QUrl&) override { return QVariant::fromValue(QImage()); }
+};
+void populateReleaseNotes(QTextBrowser* notes, const QString& markdown)
+{
+    auto* document = new ReleaseNotesDocument(notes);
+    document->setDefaultFont(notes->font());
+    notes->setDocument(document);
+    document->setMarkdown(markdown.left(128 * 1024), QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub) | QTextDocument::MarkdownNoHTML);
+    // Remove image placeholders as well: the notes should remain readable when
+    // a release contains a banner, badge, or screenshot.
+    QList<QPair<int, int>> images;
+    for (auto block = document->begin(); block.isValid(); block = block.next())
+        for (auto it = block.begin(); !it.atEnd(); ++it) {
+            const auto fragment = it.fragment();
+            if (fragment.isValid() && fragment.charFormat().isImageFormat())
+                images.append({ fragment.position(), fragment.length() });
+        }
+    for (auto it = images.crbegin(); it != images.crend(); ++it) {
+        QTextCursor cursor(document);
+        cursor.setPosition(it->first);
+        cursor.setPosition(it->first + it->second, QTextCursor::KeepAnchor);
+        cursor.removeSelectedText();
+    }
+}
+}  // namespace
+
 void ChromaUpdater::offer()
 {
+    if (!m_release || !m_window)
+        return;
+    if (m_dialog) {
+        if (auto* window = qobject_cast<MainWindow*>(m_window.data()))
+            window->openInlinePage(m_dialog, tr("What’s new"));
+        else {
+            m_dialog->show();
+            m_dialog->raise();
+        }
+        return;
+    }
     auto* dialog = new QDialog(m_window);
     dialog->setObjectName("chromaUpdateDialog");
-    dialog->setWindowTitle(tr("Chroma update"));
+    dialog->setWindowTitle(tr("What’s new in Chroma"));
     dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->resize(620, 480);
+    dialog->setProperty("chromaOwnsScrolling", true);
+    dialog->resize(620, 520);
     m_dialog = dialog;
     auto* layout = new QVBoxLayout(dialog);
+    layout->setContentsMargins(20, 16, 20, 16);
+    layout->setSpacing(12);
     auto* heading =
         new QLabel(tr("Chroma %1%2").arg(m_release->version.text, m_release->prerelease ? tr(" · Prerelease") : QString()), dialog);
+    heading->setObjectName("chromaUpdateHeading");
     heading->setTextFormat(Qt::PlainText);
+    heading->setWordWrap(true);
+    auto headingFont = heading->font();
+    headingFont.setPixelSize(24);
+    headingFont.setBold(true);
+    heading->setFont(headingFont);
     layout->addWidget(heading);
-    auto* notes = new QTextEdit(dialog);
+    auto* introduction = new QLabel(tr("What’s new"), dialog);
+    introduction->setObjectName("chromaUpdateNotesHeading");
+    auto introductionFont = introduction->font();
+    introductionFont.setBold(true);
+    introduction->setFont(introductionFont);
+    layout->addWidget(introduction);
+    auto* notes = new QTextBrowser(dialog);
     notes->setObjectName("chromaUpdateNotes");
+    notes->setAccessibleName(tr("Release notes"));
     notes->setReadOnly(true);
-    notes->setPlainText(m_release->notes.isEmpty() ? tr("A new Chroma release is available.") : m_release->notes);
+    notes->setOpenLinks(false);
+    notes->setOpenExternalLinks(false);
+    notes->setFrameShape(QFrame::NoFrame);
+    notes->setMinimumSize(0, 100);
+    notes->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Expanding);
+    populateReleaseNotes(notes, m_release->notes.isEmpty() ? tr("A new Chroma release is available.") : m_release->notes);
     layout->addWidget(notes, 1);
     m_message = new QLabel(tr("Your instances, accounts and settings will be preserved. Downloading does not close Chroma."), dialog);
     m_message->setTextFormat(Qt::PlainText);
     m_message->setWordWrap(true);
+    m_message->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     layout->addWidget(m_message);
     m_progress = new QProgressBar(dialog);
     m_progress->hide();
@@ -386,12 +526,16 @@ void ChromaUpdater::offer()
     m_action = buttons->addButton(m_ready ? tr("Install and restart") : tr("Download update"), QDialogButtonBox::ActionRole);
     m_action->setObjectName("chromaUpdateAction");
     auto* later = buttons->addButton(tr("Later"), QDialogButtonBox::RejectRole);
-    connect(later, &QPushButton::clicked, dialog, &QDialog::reject);
+    connect(later, &QPushButton::clicked, this, [this, dialog] {
+        dismissAvailableUpdate();
+        dialog->reject();
+    });
     connect(m_action, &QPushButton::clicked, this, [this] { m_ready ? install() : download(); });
     layout->addWidget(buttons);
     connect(dialog, &QDialog::finished, this, [this] {
         cancelTransfer();
         m_busy = false;
+        m_checking = false;
         if (!m_keepStage) {
             m_ready = false;
             m_stage.reset();
@@ -401,13 +545,16 @@ void ChromaUpdater::offer()
         m_progress.clear();
         m_action.clear();
         schedule();
-        emit canCheckForUpdatesChanged(true);
+        emit canCheckForUpdatesChanged(!m_keepStage);
     });
-    dialog->show();
+    if (auto* window = qobject_cast<MainWindow*>(m_window.data()))
+        window->openInlinePage(dialog, tr("What’s new"));
+    else
+        dialog->show();
 }
 void ChromaUpdater::download()
 {
-    if (!m_release || m_busy)
+    if (!m_release || m_busy || m_keepStage)
         return;
     m_manual = true;
     m_busy = true;
@@ -488,9 +635,15 @@ void ChromaUpdater::install()
         return;
     }
     auto* window = qobject_cast<MainWindow*>(m_window.data());
+    // Closing pages may open a nested save confirmation. Keep the verified
+    // release and package stable until the user finishes that decision.
     m_keepStage = true;
+    m_timer.stop();
+    emit canCheckForUpdatesChanged(false);
     const bool approved = !window || window->prepareInlineNavigation();
     m_keepStage = false;
+    schedule();
+    emit canCheckForUpdatesChanged(true);
     if (!m_dialog)
         offer();
     if (!approved)

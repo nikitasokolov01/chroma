@@ -17,14 +17,41 @@ SkinApplyTask::SkinApplyTask(MinecraftAccountPtr account, QString path, SkinMode
     setObjectName("Apply Minecraft skin");
 }
 
+shared_qobject_ptr<SkinApplyTask> SkinApplyTask::forCape(MinecraftAccountPtr account,
+                                                         QString cape,
+                                                         shared_qobject_ptr<QNetworkAccessManager> network)
+{
+    auto task = makeShared<SkinApplyTask>(std::move(account), QString(), SkinModel::CLASSIC, std::move(cape));
+    task->m_capeOnly = true;
+    task->m_capeNetwork = std::move(network);
+    task->setObjectName("Apply Minecraft cape");
+    return task;
+}
+
 void SkinApplyTask::executeTask()
 {
     if (!m_account || m_account->accountType() == AccountType::Offline || !m_account->hasProfile()) {
-        emitFailed(tr("Select a Microsoft account with a Minecraft Java profile to apply this skin."));
+        emitFailed(m_capeOnly ? tr("Select a Microsoft account with a Minecraft Java profile to change its cape.")
+                              : tr("Select a Microsoft account with a Minecraft Java profile to apply this skin."));
         return;
     }
     if (m_account->isActive() || m_account->isInUse()) {
-        emitFailed(tr("Close Minecraft and wait for account sign-in to finish before applying a skin. Your edited skin is saved locally."));
+        emitFailed(
+            m_capeOnly
+                ? tr("Close Minecraft and wait for account sign-in to finish before changing a cape.")
+                : tr("Close Minecraft and wait for account sign-in to finish before applying a skin. Your edited skin is saved locally."));
+        return;
+    }
+    if (m_cape && !m_cape->isEmpty() && !m_account->accountData()->minecraftProfile.capes.contains(*m_cape)) {
+        emitFailed(tr("Choose a cape owned by the selected Minecraft account."));
+        return;
+    }
+    if (m_capeOnly) {
+        if (m_account->shouldRefresh()) {
+            setStatus(tr("Refreshing Minecraft sign-in…"));
+            runStep(m_account->refresh().staticCast<Task>(), [this] { applyCape(); });
+        } else
+            applyCape();
         return;
     }
     QString error;
@@ -59,8 +86,9 @@ void SkinApplyTask::runStep(Task::Ptr task, std::function<void()> success)
     });
     connect(task.get(), &Task::failed, this, [this](const QString&) {
         // Do not surface authentication service response bodies or credentials.
-        emitFailed(
-            tr("Minecraft sign-in could not be refreshed. Refresh this account in Accounts, then retry. Your skin is saved locally."));
+        emitFailed(m_capeOnly ? tr("Minecraft sign-in could not be refreshed. Refresh this account in Accounts, then retry.")
+                              : tr("Minecraft sign-in could not be refreshed. Refresh this account in Accounts, then retry. Your skin is "
+                                   "saved locally."));
     });
     connect(task.get(), &Task::aborted, this, [this] { emitAborted(); });
     task->start();
@@ -70,6 +98,12 @@ void SkinApplyTask::upload()
 {
     if (m_account->isInUse() || m_account->accessToken().isEmpty()) {
         emitFailed(tr("The account is in use or needs sign-in. Refresh the account after closing Minecraft, then retry."));
+        return;
+    }
+    // Refresh may change the account's cape inventory. Revalidate before
+    // uploading the skin so an incompatible outfit never starts a partial apply.
+    if (m_cape && !m_cape->isEmpty() && !m_account->accountData()->minecraftProfile.capes.contains(*m_cape)) {
+        emitFailed(tr("This cape is no longer listed on the selected Minecraft account. Choose another outfit or cape before applying."));
         return;
     }
     setStatus(tr("Uploading skin…"));
@@ -127,9 +161,17 @@ void SkinApplyTask::applyCape()
         emitSucceeded();
         return;
     }
+    if (m_account->isInUse() || m_account->accessToken().isEmpty()) {
+        emitFailed(tr("Refresh this account after closing Minecraft, then retry the cape change."));
+        return;
+    }
+    if (!m_cape->isEmpty() && !m_account->accountData()->minecraftProfile.capes.contains(*m_cape)) {
+        emitFailed(tr("This cape is no longer listed on the selected Minecraft account."));
+        return;
+    }
     setStatus(tr("Updating cape…"));
     auto request = CapeChange::make(m_account->accessToken(), *m_cape);
-    request->setNetwork(APPLICATION->network());
+    request->setNetwork(m_capeNetwork ? m_capeNetwork : APPLICATION->network());
     m_step = request.staticCast<Task>();
     m_steps.append(m_step);
     connect(request.get(), &Task::succeeded, this, [this] {
@@ -138,7 +180,8 @@ void SkinApplyTask::applyCape()
         emitSucceeded();
     });
     connect(request.get(), &Task::failed, this, [this](const QString&) {
-        emitFailed(tr("Your skin was applied, but the cape change failed. Check your connection and retry the cape change."));
+        emitFailed(m_capeOnly ? tr("The cape change failed. Check your connection and refresh the account, then retry.")
+                              : tr("Your skin was applied, but the cape change failed. Check your connection and retry the cape change."));
     });
     connect(request.get(), &Task::aborted, this, [this] { emitAborted(); });
     request->start();

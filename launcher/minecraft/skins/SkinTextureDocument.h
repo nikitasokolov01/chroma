@@ -16,6 +16,22 @@ class SkinTextureDocument : public QObject {
    public:
     enum Part { All = -1, Head, Body, RightArm, LeftArm, RightLeg, LeftLeg };
     enum Layer { Both, Base, Overlay };
+    enum Effect { Hue, Brightness, Grayscale, Invert };
+    enum TextureStyle { Fine, Fabric, Hair };
+    struct TextureSettings {
+        TextureStyle style = Fine;
+        int strength = 20;  // 0–100; the default adds subtle highlights and shadows.
+    };
+    struct MirrorOptions {
+        bool headAndBody = false;
+        bool arms = false;
+        bool legs = false;
+    };
+    struct PixelPatch {
+        QImage image;
+        QRegion mask;   // Coordinates relative to image; pixels outside this mask are not pasted.
+        QPoint origin;  // Original top-left position in the source texture.
+    };
 
     explicit SkinTextureDocument(QObject* parent = nullptr);
     const QImage& image() const { return m_state.image; }
@@ -23,6 +39,10 @@ class SkinTextureDocument : public QObject {
     bool isDirty() const;
     bool canUndo() const { return m_cursor > 0; }
     bool canRedo() const { return m_cursor + 1 < m_history.size(); }
+    QRegion selection() const { return m_selection; }
+    bool hasSelection() const { return !m_selection.isEmpty(); }
+    void setSelection(QRegion selection);
+    void clearSelection();
 
     static QImage readPng(const QString& path, QString* error = nullptr);
     static QRegion uvRegion(Part part, Layer layer, SkinModel::Model model);
@@ -30,10 +50,36 @@ class SkinTextureDocument : public QObject {
     bool importPng(const QString& path, QString* error = nullptr);
     bool exportPng(const QString& path, QString* error = nullptr) const;
     void markSaved();
+    void setMirrorOptions(MirrorOptions options);
+    MirrorOptions mirrorOptions() const { return m_mirrorOptions; }
     void beginStroke();
-    void paintPixel(QPoint pixel, QColor color, int brushSize, Part part, Layer layer, bool erase = false);
+    void paintPixel(QPoint pixel,
+                    QColor color,
+                    int brushSize,
+                    Part part,
+                    Layer layer,
+                    bool erase = false,
+                    const QRegion& allowed = QRegion(0, 0, 64, 64));
+    void texturePixel(QPoint pixel,
+                      int brushSize,
+                      Part part,
+                      Layer layer,
+                      TextureSettings settings,
+                      const QRegion& allowed = QRegion(0, 0, 64, 64));
     void endStroke();
     void setModel(SkinModel::Model model);
+    void floodFill(QPoint seed, QColor color, const QRegion& allowed);
+    void applyEffect(Effect effect, int amount, const QRegion& allowed);
+    void setColorAdjustments(int hue, int brightness, const QRegion& allowed);
+    void finishColorAdjustments();
+    int hueAdjustment() const { return m_hueAdjustment; }
+    int brightnessAdjustment() const { return m_brightnessAdjustment; }
+    PixelPatch copyPixels(const QRegion& allowed) const;
+    void pastePixels(const PixelPatch& patch, QPoint destination, const QRegion& allowed);
+    static QByteArray encodePatch(const PixelPatch& patch);
+    static PixelPatch decodePatch(const QByteArray& bytes);
+    static bool writeClipboard(const PixelPatch& patch);
+    static PixelPatch readClipboard();
 
    public slots:
     void undo();
@@ -42,18 +88,35 @@ class SkinTextureDocument : public QObject {
 
    signals:
     void changed();
+    void selectionChanged();
+    void adjustmentsChanged();
 
    private:
     struct State {
         QImage image;
         SkinModel::Model model = SkinModel::CLASSIC;
+        QImage adjustmentBase;
+        QRegion adjustmentRegion;
+        int hue = 0;
+        int brightness = 0;
         bool operator==(const State& other) const { return model == other.model && image == other.image; }
     };
     void record();
+    void restoreColorAdjustments();
+    QRegion editableRegion(const QRegion& allowed) const;
+    QPoint mirroredPixel(QPoint pixel) const;
+    MirrorOptions m_mirrorOptions;
+    QRegion m_selection;
     State m_state;
     State m_original;
     State m_saved;
     QVector<State> m_history;
     int m_cursor = 0;
     bool m_stroke = false;
+    QImage m_strokeBase;
+    QImage m_adjustmentBase;
+    QRegion m_adjustmentRegion;
+    int m_adjustmentHistory = -1;
+    int m_hueAdjustment = 0;
+    int m_brightnessAdjustment = 0;
 };

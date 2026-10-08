@@ -178,13 +178,14 @@ set(Launcher_FMLLIBS_BASE_URL "https://files.prismlauncher.org/fmllibs/" CACHE S
 
 ######## Set version numbers ########
 # Chroma's release version; the upstream base is Prism Launcher 10.0.5.
-set(Launcher_VERSION_MAJOR 0)
-set(Launcher_VERSION_MINOR 3)
+set(Launcher_VERSION_MAJOR 1)
+set(Launcher_VERSION_MINOR 0)
 set(Launcher_VERSION_PATCH 0)
 
 set(Launcher_VERSION_NAME "${Launcher_VERSION_MAJOR}.${Launcher_VERSION_MINOR}.${Launcher_VERSION_PATCH}")
 set(Launcher_VERSION_NAME4 "${Launcher_VERSION_MAJOR}.${Launcher_VERSION_MINOR}.${Launcher_VERSION_PATCH}.0")
 set(Launcher_VERSION_NAME4_COMMA "${Launcher_VERSION_MAJOR},${Launcher_VERSION_MINOR},${Launcher_VERSION_PATCH},0")
+option(Launcher_RELEASE_BUILD "Display the core release version while retaining the build's actual Git provenance" OFF)
 
 # Build platform.
 set(Launcher_BUILD_PLATFORM "unknown" CACHE STRING "A short string identifying the platform that this build was built for. Only used to display in the about dialog.")
@@ -390,7 +391,7 @@ if(UNIX AND APPLE)
     install(FILES ${Launcher_Branding_ICNS} DESTINATION ${RESOURCES_DEST_DIR} RENAME ${Launcher_Name}.icns)
 
     find_program(ACTOOL_EXE actool DOC "Path to the apple asset catalog compiler")
-    if(ACTOOL_EXE)
+    if(ACTOOL_EXE AND Launcher_Branding_MAC_ICON)
         execute_process(
             COMMAND xcodebuild -version
             OUTPUT_VARIABLE XCODE_VERSION_OUTPUT
@@ -429,7 +430,7 @@ if(UNIX AND APPLE)
             message(WARNING "Xcode ${XCODE_VERSION} is too old. Minimum required version is 26.0. Not compiling liquid glass icons.")
         endif()
 
-    else()
+    elseif(Launcher_Branding_MAC_ICON)
         message(WARNING "actool not found. Cannot compile macOS app icons.\n"
                 "Install Xcode command line tools: 'xcode-select --install'")
     endif()
